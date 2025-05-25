@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-P">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image OCR with Flask</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Tailwind gray-100 */
+        }
+        .container {
+            max-width: 768px; /* Tailwind md */
+            margin-left: auto;
+            margin-right: auto;
+            padding: 2rem; /* Tailwind p-8 */
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.5rem; /* Tailwind rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Tailwind shadow-md */
+            padding: 1.5rem; /* Tailwind p-6 */
+        }
+        .file-input-label {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background-color: #3b82f6; /* Tailwind blue-500 */
+            color: white;
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .file-input-label:hover {
+            background-color: #2563eb; /* Tailwind blue-600 */
+        }
+        .file-input {
+            display: none;
+        }
+        .submit-button {
+            padding: 0.75rem 1.5rem;
+            background-color: #10b981; /* Tailwind green-500 */
+            color: white;
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .submit-button:hover {
+            background-color: #059669; /* Tailwind green-600 */
+        }
+        .result-box {
+            margin-top: 1.5rem; /* Tailwind mt-6 */
+            padding: 1rem; /* Tailwind p-4 */
+            background-color: #e5e7eb; /* Tailwind gray-200 */
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            white-space: pre-wrap; /* Preserve line breaks */
+            word-wrap: break-word;
+        }
+        .error-message {
+            color: #ef4444; /* Tailwind red-500 */
+            background-color: #fee2e2; /* Tailwind red-100 */
+            border: 1px solid #fca5a5; /* Tailwind red-300 */
+            padding: 0.75rem; /* Tailwind p-3 */
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            margin-top: 1rem; /* Tailwind mt-4 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="container">
+        <div class="card">
+            <h1 class="text-2xl font-bold text-center text-gray-700 mb-6">Image to Text (OCR)</h1>
+            
+            <form method="POST" enctype="multipart/form-data" class="space-y-6">
+                <div>
+                    <label for="file-upload" class="file-input-label">
+                        Choose Image
+                    </label>
+                    <input id="file-upload" name="file" type="file" accept="image/*" class="file-input" onchange="displayFileName(this)">
+                    <span id="file-name" class="ml-3 text-gray-600">No file chosen</span>
+                </div>
+                <div>
+                    <button type="button" class="file-input-label" onclick="openCameraModal()">Take Photo</button>
+                    <div id="camera-preview-container" style="margin-top: 0.5rem;">
+                        <img id="camera-preview" src="" alt="Camera Preview" style="max-width: 150px; display: none; border-radius: 0.375rem; border: 1px solid #e5e7eb;">
+                    </div>
+                </div>
+                <input id="camera-upload" name="file" type="file" accept="image/*" style="display:none;">
+                <button type="submit" class="submit-button w-full">
+                    Recognize Text
+                </button>
+            </form>
+
+            <div id="camera-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:1000;">
+                <div style="background:white; padding:1rem; border-radius:0.5rem; text-align:center;">
+                    <video id="camera-stream" autoplay playsinline style="max-width:300px; border-radius:0.5rem;"></video>
+                    <br>
+                    <button type="button" onclick="capturePhoto()" class="submit-button mt-2">Capture</button>
+                    <button type="button" onclick="closeCameraModal()" class="submit-button mt-2">Cancel</button>
+                </div>
+            </div>
+
+            {% if error_message %}
+                <div class="error-message">
+                    <p class="font-semibold">Error:</p>
+                    <p>{{ error_message }}</p>
+                </div>
+            {% endif %}
+
+            {% if recognized_text %}
+                <div class="mt-8">
+                    <h2 class="text-xl font-semibold text-gray-700">Recognized Text:</h2>
+                    {% if uploaded_image_name %}
+                        <p class="text-sm text-gray-500 mb-2">From image: {{ uploaded_image_name }}</p>
+                    {% endif %}
+                    <div class="result-box">
+                        <p>LaTeX code:</p>
+                        <pre id="recognized-text">{{ recognized_text }}</pre>
+                        <p>Preview:</p>
+                        <div>
+                            $$ {{ recognized_text }} $$
+                        </div>
+                    </div>
+                    <button type="button" class="submit-button mt-2" onclick="copyInline()">
+                        Copy Inline Mode
+                    </button>
+                    <button type="button" class="submit-button mt-2" onclick="copyDisplay()">
+                        Copy Display Mode
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</body>
+</html>
