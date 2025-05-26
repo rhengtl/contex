@@ -22,9 +22,13 @@ except Exception as e:
     processor = None
     model = None
 
-@app.route('/', methods=['GET', 'POST'])
-def upload_and_process():
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('home.html')
 
+
+@app.route('/equation', methods=['GET', 'POST'])
+def upload_and_process():
     if model is None or processor is None:
         return "Error: OCR Model not loaded. Please check server logs.", 500
 
@@ -58,14 +62,14 @@ def upload_and_process():
                     final_text = generated_text_list[0]
                 print(f"Generated text: {final_text}")
 
-                return render_template('index.html', recognized_text=final_text, uploaded_image_name=file.filename)
+                return render_template('equation.html', recognized_text=final_text, uploaded_image_name=file.filename)
             
             except Exception as e:
                 print(f"Error during OCR processing: {e}")
-                return render_template('index.html', error_message=f"An error occurred: {e}")
+                return render_template('equation.html', error_message=f"An error occurred: {e}")
 
     # For GET request, just display the upload form
-    return render_template('index.html', recognized_text=None)
+    return render_template('equation.html', recognized_text=None)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
