@@ -5,12 +5,22 @@ from PIL import Image
 from transformers import TrOCRProcessor
 from optimum.onnxruntime import ORTModelForVision2Seq
 import io
+from textract import extract_text_from_file
+import os
+
 
 # Initialize Flask app
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads' # Optional: if you want to save uploads
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder if it doesn't exist
 
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('home.html')
+
+
+
+#---------------------------------------------------------------------------------------------------
 try:
     print("Loading OCR model and processor...")
     processor = TrOCRProcessor.from_pretrained('breezedeus/pix2text-mfr')
@@ -21,11 +31,6 @@ except Exception as e:
     # Fallback or exit if model loading fails
     processor = None
     model = None
-
-@app.route('/', methods=['GET'])
-def home():
-    return render_template('home.html')
-
 
 @app.route('/equation', methods=['GET', 'POST'])
 def upload_and_process():
@@ -70,6 +75,23 @@ def upload_and_process():
 
     # For GET request, just display the upload form
     return render_template('equation.html', recognized_text=None)
+
+@app.route('/textract', methods=['GET', 'POST'])
+def textract_route():
+    if request.method == 'POST':
+        file = request.files.get('file')
+        if not file or file.filename == '':
+            return render_template('textract.html', error="No file selected.")
+
+        # Save file
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
+
+        result_text = extract_text_from_file(file_path)
+        return render_template('textract.html', recognized_text=result_text)
+
+    return render_template('textract.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
