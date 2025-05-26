@@ -57,7 +57,7 @@ def extract_text_from_file(file_path, languages=available_languages):
                 page_results = reader.readtext(image_np)
                 if page_results:
                     combined_text_page = ' '.join([text_item[1] for text_item in page_results])
-                    extracted_text.append(f"[Page {i+1}] {combined_text_page}")
+                    extracted_text.append(f"{combined_text_page}")
                 else:
                     extracted_text.append(f"[Page {i+1}] No text detected.")
 
