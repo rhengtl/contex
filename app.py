@@ -1,11 +1,11 @@
 # app.py
 import os
-from flask import Flask, request, render_template, redirect, url_for
+from flask import Flask, request, render_template, redirect, url_for, send_file
 from PIL import Image
 from transformers import TrOCRProcessor
 from optimum.onnxruntime import ORTModelForVision2Seq
 import io
-from textract import extract_text_from_file
+from textract import extract_text_from_file, generate_tex_file
 from equation import is_model_loaded, process_image
 
 
@@ -19,7 +19,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder i
 def home():
     return render_template('home.html')
 
-#---------------------------------------------------------------------------------------------------
+
 @app.route('/equation', methods=['GET', 'POST'])
 def upload_and_process():
     if not is_model_loaded():
@@ -52,9 +52,18 @@ def textract_route():
         file.save(file_path)
 
         result_text = extract_text_from_file(file_path)
-        return render_template('textract.html', recognized_text=result_text)
+
+        tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
+        generate_tex_file(result_text, tex_file_path)
+
+        return render_template('textract.html', recognized_text=result_text, tex_file = True)
 
     return render_template('textract.html')
+
+@app.route('/download-tex')
+def download_tex():
+    tex_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
+    return send_file(tex_path, as_attachment=True)
 
 
 if __name__ == '__main__':

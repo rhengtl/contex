@@ -66,5 +66,21 @@ def extract_text_from_file(file_path, languages=available_languages):
 
     except Exception as e:
         return f"Unexpected error during OCR: {e}"
+    return '\n'.join(extracted_text) 
 
-    return '\n'.join(extracted_text)
+def generate_tex_file(text, output = "output.tex"):
+    tex_content = f"""\\documentclass{{article}}
+\\usepackage[utf8]{{inputenc}}
+\\begin{{document}}
+
+{text}
+
+\\end{{document}}
+"""
+    
+    try:
+        with open(output, 'w', encoding='utf-8') as tex_file:
+            tex_file.write(tex_content)
+        return output
+    except Exception as e:
+        return f"Error writing .tex file: {e}"
