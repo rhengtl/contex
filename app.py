@@ -9,7 +9,6 @@ from textract import extract_text_from_file, generate_tex_file
 from equation import is_model_loaded, process_image
 
 
-
 # Initialize Flask app
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads' # Optional: if you want to save uploads

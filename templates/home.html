@@ -1,19 +1,22 @@
 <!-- templates/home.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Pix2Text App</title>
+    <title>ConTex App</title>
+    <link rel="stylesheet" href = "home.css">
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
 <body>
-    <h1>Welcome to the Pix2Text OCR App</h1>
+    <h1>Welcome to ConTex App</h1>
     <p>This tool lets you upload an image and extract the equation or text using OCR.</p>
 
     <!-- Button to go to /equation -->
     <form action="{{ url_for('upload_and_process') }}">
-        <button type="submit">Go to Equation Uploader</button>
+        <button type="submit">Equation</button>
     </form>
     <form action="{{ url_for('textract_route') }}">
-        <button type="submit">Go to Textract</button>
+        <button type="submit">Textract</button>
     </form>
 </body>
 </html>
