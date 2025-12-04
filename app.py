@@ -97,11 +97,13 @@ def textract_route():
             session['textract_error'] = "No file selected."
             return redirect(url_for('home') + '#textract')
 
-        # Save file
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
+        # Save file (commented out - no longer saving uploads)
+        # file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        # file.save(file_path)
 
-        result_text = extract_text_from_file(file_path)
+        # Process file directly from memory
+        file.seek(0)  # Reset file pointer
+        result_text = extract_text_from_file(file)
         print(f"DEBUG: Textract result: {result_text}")
 
         tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
