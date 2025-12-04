@@ -12,7 +12,10 @@ except ImportError:
     PDF2IMAGE_AVAILABLE = False
 
 # Set the path to the tesseract executable if it's not in your PATH
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# For local Windows development
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# On Linux (Render), tesseract should be in PATH automatically
 
 def extract_text_from_file(file_path, languages='eng'):
     """

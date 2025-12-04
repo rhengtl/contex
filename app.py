@@ -128,5 +128,5 @@ if __name__ == "__main__":
     print("Server starting... PRG pattern active. Please restart the server if you don't see this message.")
     # Use Flask's built-in debug mode
     # We enable the reloader so code changes take effect immediately
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, use_reloader=True, host="0.0.0.0", port=port) 
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port) 
