@@ -97,7 +97,7 @@ def textract_route():
             session['textract_error'] = "No file selected."
             return redirect(url_for('home') + '#textract')
 
-        # Save file temporarily for processing
+        # Save file temporarily
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
 
@@ -107,21 +107,18 @@ def textract_route():
 
             tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
             generate_tex_file(result_text, tex_file_path)
-        finally:
-            # Clean up uploaded file after processing
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    print(f"DEBUG: Cleaned up temporary file: {file_path}")
-                except Exception as e:
-                    print(f"WARNING: Failed to delete temporary file {file_path}: {e}")
 
-        # ---------------------------------------------------------
-        # Store in session
-        session['recognized_textract'] = result_text
-        session['tex_file'] = True
-        session['show_textract_result'] = True
-        # ---------------------------------------------------------
+            # ---------------------------------------------------------
+            # Store in session
+            session['recognized_textract'] = result_text
+            session['tex_file'] = True
+            session['show_textract_result'] = True
+            # ---------------------------------------------------------
+        finally:
+            # Auto delete uploaded file after processing
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"DEBUG: Auto-deleted file: {file_path}")
         
         return redirect(url_for('home') + '#textract')
 
@@ -132,10 +129,82 @@ def download_tex():
     tex_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
     return send_file(tex_path, as_attachment=True)
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        remember = request.form.get('remember')
+        
+        # TODO: Add actual authentication logic here
+        # For now, just redirect to home
+        print(f"DEBUG: Login attempt - Email: {email}")
+        
+        # Example: You would validate credentials here
+        # if validate_user(email, password):
+        #     session['user'] = email
+        #     return redirect(url_for('home'))
+        # else:
+        #     return render_template('login.html', error="Invalid credentials")
+        
+        return redirect(url_for('home'))
+    
+    return render_template('login.html')
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        fullname = request.form.get('fullname')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        terms = request.form.get('terms')
+        
+        # TODO: Add actual registration logic here
+        print(f"DEBUG: Signup attempt - Name: {fullname}, Email: {email}")
+        
+        # Basic validation
+        if password != confirm_password:
+            return render_template('signup.html', error="Passwords do not match")
+        
+        if not terms:
+            return render_template('signup.html', error="You must agree to the terms")
+        
+        # Example: You would create user account here
+        # if create_user(fullname, email, password):
+        #     return render_template('signup.html', success="Account created! Please login.")
+        # else:
+        #     return render_template('signup.html', error="Email already exists")
+        
+        return render_template('signup.html', success="Account created successfully! Please login.")
+    
+    return render_template('signup.html')
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        
+        # TODO: Add actual password reset logic here
+        print(f"DEBUG: Password reset request - Email: {email}")
+        
+        # Example: You would send reset email here
+        # if send_password_reset_email(email):
+        #     return render_template('forgot_password.html', success="Password reset link sent to your email!")
+        # else:
+        #     return render_template('forgot_password.html', error="Email not found")
+        
+        return render_template('forgot_password.html', success="If an account exists with that email, you will receive a password reset link.")
+    
+    return render_template('forgot_password.html')
+
+@app.route('/index')
+def index():
+    return redirect(url_for('home'))
 
 if __name__ == "__main__":
     print("Server starting... PRG pattern active. Please restart the server if you don't see this message.")
     # Use Flask's built-in debug mode
     # We enable the reloader so code changes take effect immediately
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port) 
+    app.run(debug=True, host="0.0.0.0", port=port) 
