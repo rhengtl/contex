@@ -97,17 +97,24 @@ def textract_route():
             session['textract_error'] = "No file selected."
             return redirect(url_for('home') + '#textract')
 
-        # Save file (commented out - no longer saving uploads)
-        # file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        # file.save(file_path)
+        # Save file temporarily for processing
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
 
-        # Process file directly from memory
-        file.seek(0)  # Reset file pointer
-        result_text = extract_text_from_file(file)
-        print(f"DEBUG: Textract result: {result_text}")
+        try:
+            result_text = extract_text_from_file(file_path)
+            print(f"DEBUG: Textract result: {result_text}")
 
-        tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
-        generate_tex_file(result_text, tex_file_path)
+            tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
+            generate_tex_file(result_text, tex_file_path)
+        finally:
+            # Clean up uploaded file after processing
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"DEBUG: Cleaned up temporary file: {file_path}")
+                except Exception as e:
+                    print(f"WARNING: Failed to delete temporary file {file_path}: {e}")
 
         # ---------------------------------------------------------
         # Store in session
