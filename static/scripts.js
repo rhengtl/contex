@@ -98,6 +98,17 @@ function openDrawModal() {
     document.getElementById('draw-modal').style.display = 'flex';
     const canvas = document.getElementById('draw-canvas');
     const ctx = canvas.getContext('2d');
+    
+    // Set responsive canvas size based on viewport and orientation
+    const isLandscape = window.innerWidth > window.innerHeight;
+    const maxWidth = Math.min(window.innerWidth * 0.85, 1000);
+    const maxHeight = isLandscape 
+        ? Math.min(window.innerHeight * 0.7, 500)  // More height for landscape
+        : Math.min(window.innerHeight * 0.6, 500);
+    
+    canvas.width = maxWidth;
+    canvas.height = maxHeight;
+    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
@@ -142,6 +153,7 @@ const setupDrawing = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
+    // Mouse events
     canvas.onmousedown = function(e) {
         isDrawing = true;
         [lastX, lastY] = [e.offsetX, e.offsetY];
@@ -163,34 +175,75 @@ const setupDrawing = () => {
         ctx.stroke();
         [lastX, lastY] = [e.offsetX, e.offsetY];
     };
-    // Touch support
-    canvas.ontouchstart = function(e) {
-        if (e.touches.length === 1) {
-            isDrawing = true;
-            const rect = canvas.getBoundingClientRect();
-            lastX = e.touches[0].clientX - rect.left;
-            lastY = e.touches[0].clientY - rect.top;
+
+    // --- IMPROVED MOBILE TOUCH SUPPORT ---
+    let isTouching = false;
+
+    // Helper function to get correct touch position
+    function getTouchPos(canvasDom, touchEvent) {
+        var rect = canvasDom.getBoundingClientRect();
+        return {
+            x: (touchEvent.touches[0].clientX - rect.left) * (canvasDom.width / rect.width),
+            y: (touchEvent.touches[0].clientY - rect.top) * (canvasDom.height / rect.height)
+        };
+    }
+
+    // Touch Start
+    canvas.addEventListener("touchstart", function (e) {
+        if (e.target == canvas) {
+            e.preventDefault(); // Prevent scrolling
         }
-    };
-    canvas.ontouchend = function() {
-        isDrawing = false;
-    };
-    canvas.ontouchmove = function(e) {
-        if (!isDrawing || e.touches.length !== 1) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = e.touches[0].clientX - rect.left;
-        const y = e.touches[0].clientY - rect.top;
-        ctx.strokeStyle = "#111827";
-        ctx.lineWidth = 3;
-        ctx.lineCap = "round";
+        var mousePos = getTouchPos(canvas, e);
+        var touch = e.touches[0];
+        
+        // Dispatch mouse event for compatibility
+        var mouseEvent = new MouseEvent("mousedown", {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+        
+        // Manual drawing fallback
+        isTouching = true;
+        lastX = mousePos.x;
+        lastY = mousePos.y;
         ctx.beginPath();
         ctx.moveTo(lastX, lastY);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        lastX = x;
-        lastY = y;
-        e.preventDefault();
-    };
+    }, { passive: false });
+
+    // Touch Move
+    canvas.addEventListener("touchmove", function (e) {
+        if (e.target == canvas) {
+            e.preventDefault(); // Prevent scrolling
+        }
+        var touch = e.touches[0];
+        
+        // Dispatch mouse event
+        var mouseEvent = new MouseEvent("mousemove", {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+
+        // Manual drawing fallback
+        if (isTouching) {
+            var pos = getTouchPos(canvas, e);
+            ctx.strokeStyle = "#111827";
+            ctx.lineWidth = 3;
+            ctx.lineCap = "round";
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+    }, { passive: false });
+
+    // Touch End
+    canvas.addEventListener("touchend", function (e) {
+        var mouseEvent = new MouseEvent("mouseup", {});
+        canvas.dispatchEvent(mouseEvent);
+        isTouching = false;
+    }, { passive: false });
 };
 
 window.addEventListener('DOMContentLoaded', setupDrawing);
@@ -211,5 +264,142 @@ function copyDisplay() {
     }, function(err) {
         alert('Failed to copy text: ' + err);
     });
+}
+
+// Auto-scroll to results when page loads with results
+window.addEventListener('DOMContentLoaded', function() {
+    console.log('Page loaded, checking for results...');
+    console.log('Page data available:', window.pageData);
+    
+    // Use the flags passed from the template
+    if (window.pageData) {
+        if (window.pageData.showEquationResult || window.pageData.hasEquationResult) {
+            console.log('Has equation result, scrolling to #equation');
+            setTimeout(() => {
+                const section = document.getElementById('equation');
+                if (section) {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+            return;
+        }
+        
+        if (window.pageData.showTextractResult || window.pageData.hasTextractResult) {
+            console.log('Has textract result, scrolling to #textract');
+            setTimeout(() => {
+                const section = document.getElementById('textract');
+                if (section) {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+            return;
+        }
+    }
+    
+    console.log('No results found');
+});
+
+// Textract Drag and Drop functionality
+function setupTextractDragDrop() {
+    const dropArea = document.getElementById('textract-drop-area');
+    const fileInput = document.getElementById('textract-file');
+    const fileDisplay = document.getElementById('textract-file-display');
+    const fileName = document.getElementById('textract-file-name');
+
+    if (!dropArea || !fileInput) return;
+
+    // Click to upload
+    dropArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleTextractFiles(e.target.files);
+        }
+    });
+
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    // Highlight drop area when dragging over
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, () => {
+            dropArea.classList.add('border-forest-700', 'bg-forest-100/50');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, () => {
+            dropArea.classList.remove('border-forest-700', 'bg-forest-100/50');
+        }, false);
+    });
+
+    // Handle dropped files
+    dropArea.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleTextractFiles(files);
+    }, false);
+
+    function handleTextractFiles(files) {
+        if (files.length > 0) {
+            const file = files[0];
+            const validTypes = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.pdf'];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+            
+            if (validTypes.includes(fileExt)) {
+                // Create a new DataTransfer to set the file
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+                
+                // Show file name
+                fileName.textContent = file.name;
+                fileDisplay.classList.remove('hidden');
+            } else {
+                alert('Please upload a valid file type: ' + validTypes.join(', '));
+            }
+        }
+    }
+}
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function clearTextractFile() {
+    const fileInput = document.getElementById('textract-file');
+    const fileDisplay = document.getElementById('textract-file-display');
+    
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    if (fileDisplay) {
+        fileDisplay.classList.add('hidden');
+    }
+}
+
+// Initialize textract drag and drop when DOM is loaded
+window.addEventListener('DOMContentLoaded', setupTextractDragDrop);
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('mobile-sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    
+    if (sidebar.classList.contains('translate-x-full')) {
+        // Open sidebar
+        sidebar.classList.remove('translate-x-full');
+        overlay.classList.remove('hidden');
+    } else {
+        // Close sidebar
+        sidebar.classList.add('translate-x-full');
+        overlay.classList.add('hidden');
+    }
 }
 

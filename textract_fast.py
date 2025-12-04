@@ -1,31 +1,25 @@
-# ocr_utils.py
-
-import easyocr
+# textract_fast.py
+import pytesseract
+from PIL import Image
 import os
 import numpy as np
-from PIL import Image
 
-# Attempt to import pdf2image and set a flag
+# Attempt to import pdf2image
 try:
     from pdf2image import convert_from_path
     PDF2IMAGE_AVAILABLE = True
 except ImportError:
     PDF2IMAGE_AVAILABLE = False
 
-available_languages = ['en', 'es']  # Default OCR languages
+# Set the path to the tesseract executable if it's not in your PATH
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-
-def extract_text_from_file(file_path, languages=available_languages):
+def extract_text_from_file(file_path, languages='eng'):
     """
-    Processes the given image or PDF file and returns the extracted text as a string.
+    Processes the given image or PDF file and returns the extracted text using Tesseract.
     """
     if not os.path.exists(file_path):
         return f"Error: File not found at '{file_path}'"
-
-    try:
-        reader = easyocr.Reader(languages)
-    except Exception as e:
-        return f"Error initializing EasyOCR Reader: {e}"
 
     file_extension = os.path.splitext(file_path)[1].lower()
     image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff']
@@ -34,12 +28,9 @@ def extract_text_from_file(file_path, languages=available_languages):
 
     try:
         if file_extension in image_extensions:
-            results = reader.readtext(file_path)
-            if results:
-                combined_text = ' '.join([text_item[1] for text_item in results])
-                extracted_text.append(combined_text)
-            else:
-                extracted_text.append("No text detected in the image.")
+            image = Image.open(file_path)
+            text = pytesseract.image_to_string(image, lang=languages)
+            extracted_text.append(text)
 
         elif file_extension == '.pdf':
             if not PDF2IMAGE_AVAILABLE:
@@ -53,22 +44,21 @@ def extract_text_from_file(file_path, languages=available_languages):
                 return f"Error converting PDF to images: {e_pdf}"
 
             for i, pil_page_image in enumerate(images_from_pdf):
-                image_np = np.array(pil_page_image)
-                page_results = reader.readtext(image_np)
-                if page_results:
-                    combined_text_page = ' '.join([text_item[1] for text_item in page_results])
-                    extracted_text.append(f"{combined_text_page}")
-                else:
-                    extracted_text.append(f"[Page {i+1}] No text detected.")
+                # Tesseract works directly with PIL images
+                text = pytesseract.image_to_string(pil_page_image, lang=languages)
+                extracted_text.append(text)
 
         else:
             return f"Unsupported file type: '{file_extension}'"
 
     except Exception as e:
+        if "tesseract is not installed" in str(e).lower():
+             return "Error: Tesseract is not installed or not in PATH. Please install it from https://github.com/UB-Mannheim/tesseract/wiki"
         return f"Unexpected error during OCR: {e}"
-    return '\n'.join(extracted_text) 
+    
+    return '\n'.join(extracted_text)
 
-def generate_tex_file(text, output = "output.tex"):
+def generate_tex_file(text, output="output.tex"):
     tex_content = f"""\\documentclass{{article}}
 \\usepackage[utf8]{{inputenc}}
 \\begin{{document}}
@@ -77,7 +67,6 @@ def generate_tex_file(text, output = "output.tex"):
 
 \\end{{document}}
 """
-    
     try:
         with open(output, 'w', encoding='utf-8') as tex_file:
             tex_file.write(tex_content)

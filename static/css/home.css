@@ -3,18 +3,22 @@
     margin: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-    display: flex;
-    flex-direction: column;
-    justify-content: center; /* center horizontally */
-    align-items: center;     /* center vertically */
-    height: 50vh;           /* full height of the viewport */
+    /* display: flex; */
+    /* flex-direction: column;
+    justify-content: center;
+    align-items: center; */
+    /* height: 50vh;          */
     margin: 0;
-    gap: 3em;
+    /* gap: 3em; */
     font-family:'poppins', sans-serif
 }
 
-h1 {
+/* h1 {
     padding-top: 10rem;
 }
 
@@ -27,4 +31,4 @@ button {
     border-radius: 10px;
     box-shadow: 10px 5px 15px rgba(0,0,0,0.5);
     font-size: 1em;
-}
+} */
