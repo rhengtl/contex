@@ -5,15 +5,35 @@ from PIL import Image
 from transformers import TrOCRProcessor
 from optimum.onnxruntime import ORTModelForVision2Seq
 import io
+from dotenv import load_dotenv
 from textract_fast import extract_text_from_file, generate_tex_file
 from equation import is_model_loaded, process_image
- # Initialize Flask apps
+import firebase_config
+from functools import wraps
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Initialize Flask app
 app = Flask(__name__)
 # ---------------------------------------------------------
-app.secret_key = 'supersecretkey' # Required for session
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')  # Required for session
 # ---------------------------------------------------------
-app.config['UPLOAD_FOLDER'] = 'uploads' # Optional: if you want to save uploads
+app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')  # Optional: if you want to save uploads
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder if it doesn't exist
+
+# ===========================
+# Authentication Decorator
+# ===========================
+def login_required(f):
+    """Decorator to require login for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 @app.route('/', methods=['GET'])
 def home():
@@ -131,28 +151,72 @@ def download_tex():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # If user is already logged in, redirect to home
+    if 'user' in session:
+        return redirect(url_for('home'))
+    
     if request.method == 'POST':
+        # Check if this is a Firebase ID token login (from Google/Facebook)
+        id_token = request.form.get('idToken')
+        
+        if id_token:
+            # Verify Firebase ID token
+            decoded_token = firebase_config.verify_id_token(id_token)
+            if decoded_token:
+                uid = decoded_token['uid']
+                user = firebase_config.get_user_by_uid(uid)
+                
+                if user:
+                    session['user'] = {
+                        'uid': user['uid'],
+                        'email': user['email'],
+                        'displayName': user['displayName']
+                    }
+                    session.permanent = True
+                    print(f"DEBUG: Google login successful - UID: {uid}")
+                    return redirect(url_for('home'))
+            
+            return render_template('auth/login.html', error="Authentication failed")
+        
+        # Regular email/password login
         email = request.form.get('email')
         password = request.form.get('password')
         remember = request.form.get('remember')
         
-        # TODO: Add actual authentication logic here
-        # For now, just redirect to home
-        print(f"DEBUG: Login attempt - Email: {email}")
+        if not email or not password:
+            return render_template('auth/login.html', error="Please provide email and password")
         
-        # Example: You would validate credentials here
-        # if validate_user(email, password):
-        #     session['user'] = email
-        #     return redirect(url_for('home'))
-        # else:
-        #     return render_template('login.html', error="Invalid credentials")
+        # Verify user with Firebase
+        result = firebase_config.verify_user(email, password)
         
-        return redirect(url_for('home'))
+        if result['success']:
+            user = result['user']
+            # Store user info in session
+            session['user'] = {
+                'uid': user.uid,
+                'email': user.email,
+                'displayName': user.display_name
+            }
+            session.permanent = bool(remember)
+            print(f"DEBUG: Login successful - UID: {user.uid}")
+            return redirect(url_for('home'))
+        else:
+            return render_template('auth/login.html', error=result.get('error', 'Invalid credentials'))
     
-    return render_template('login.html')
+    # Pass Firebase config to template
+    firebase_config_data = {
+        'apiKey': os.getenv('FIREBASE_API_KEY'),
+        'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN'),
+        'projectId': os.getenv('FIREBASE_PROJECT_ID')
+    }
+    return render_template('auth/login.html', firebase_config=firebase_config_data)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
+    # If user is already logged in, redirect to home
+    if 'user' in session:
+        return redirect(url_for('home'))
+    
     if request.method == 'POST':
         fullname = request.form.get('fullname')
         email = request.form.get('email')
@@ -160,43 +224,58 @@ def signup():
         confirm_password = request.form.get('confirm_password')
         terms = request.form.get('terms')
         
-        # TODO: Add actual registration logic here
-        print(f"DEBUG: Signup attempt - Name: {fullname}, Email: {email}")
-        
         # Basic validation
+        if not all([fullname, email, password, confirm_password]):
+            return render_template('auth/signup.html', error="All fields are required")
+        
         if password != confirm_password:
-            return render_template('signup.html', error="Passwords do not match")
+            return render_template('auth/signup.html', error="Passwords do not match")
+        
+        if len(password) < 6:
+            return render_template('auth/signup.html', error="Password must be at least 6 characters")
         
         if not terms:
-            return render_template('signup.html', error="You must agree to the terms")
+            return render_template('auth/signup.html', error="You must agree to the terms and conditions")
         
-        # Example: You would create user account here
-        # if create_user(fullname, email, password):
-        #     return render_template('signup.html', success="Account created! Please login.")
-        # else:
-        #     return render_template('signup.html', error="Email already exists")
+        # Create user in Firebase
+        result = firebase_config.create_user(email, password, fullname)
         
-        return render_template('signup.html', success="Account created successfully! Please login.")
+        if result['success']:
+            print(f"DEBUG: User created - UID: {result['uid']}")
+            return render_template('auth/signup.html', success="Account created successfully! Please login.")
+        else:
+            return render_template('auth/signup.html', error=result.get('error', 'Failed to create account'))
     
-    return render_template('signup.html')
+    return render_template('auth/signup.html')
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
         email = request.form.get('email')
         
-        # TODO: Add actual password reset logic here
-        print(f"DEBUG: Password reset request - Email: {email}")
+        if not email:
+            return render_template('auth/forgot_password.html', error="Please provide your email address")
         
-        # Example: You would send reset email here
-        # if send_password_reset_email(email):
-        #     return render_template('forgot_password.html', success="Password reset link sent to your email!")
-        # else:
-        #     return render_template('forgot_password.html', error="Email not found")
+        # Send password reset email via Firebase
+        result = firebase_config.send_password_reset(email)
         
-        return render_template('forgot_password.html', success="If an account exists with that email, you will receive a password reset link.")
+        if result['success']:
+            print(f"DEBUG: Password reset link sent to: {email}")
+            # For security, always show success message
+            return render_template('auth/forgot_password.html', 
+                                 success="If an account exists with that email, you will receive a password reset link.")
+        else:
+            return render_template('auth/forgot_password.html', 
+                                 error=result.get('error', 'An error occurred'))
     
-    return render_template('forgot_password.html')
+    return render_template('auth/forgot_password.html')
+
+@app.route('/logout')
+def logout():
+    """Logout user and clear session"""
+    session.clear()
+    return redirect(url_for('login'))
+
 
 @app.route('/index')
 def index():
@@ -206,5 +285,6 @@ if __name__ == "__main__":
     print("Server starting... PRG pattern active. Please restart the server if you don't see this message.")
     # Use Flask's built-in debug mode
     # We enable the reloader so code changes take effect immediately
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host="0.0.0.0", port=port) 
+    port = int(os.getenv("PORT", 5000))
+    debug_mode = os.getenv("FLASK_DEBUG", "True").lower() == "true"
+    app.run(debug=debug_mode, host="0.0.0.0", port=port) 

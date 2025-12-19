@@ -59,7 +59,12 @@
                 <li><a href="#textract" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Textract</a></li>
                 <li><a href="#equation" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Equation</a></li>
                 <li><a href="#about" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">About</a></li>
-                <li><a href="{{ url_for('login') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Login</a></li>
+                {% if session.get('user') %}
+                    <li><span class="px-4 py-2 text-cream-100 font-medium">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span></li>
+                    <li><a href="{{ url_for('logout') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Logout</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('login') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Login</a></li>
+                {% endif %}
             </ul>
         </nav>
 
@@ -86,7 +91,12 @@
             <a href="#textract" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Textract</a>
             <a href="#equation" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Equation</a>
             <a href="#about" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">About</a>
-            <a href="{{ url_for('login') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Login</a>
+            {% if session.get('user') %}
+                <span class="text-cream-100 text-lg">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span>
+                <a href="{{ url_for('logout') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Logout</a>
+            {% else %}
+                <a href="{{ url_for('login') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Login</a>
+            {% endif %}
         </nav>
     </div>
     
