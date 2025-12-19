@@ -7,7 +7,7 @@ from optimum.onnxruntime import ORTModelForVision2Seq
 import io
 from textract_fast import extract_text_from_file, generate_tex_file
 from equation import is_model_loaded, process_image
- # Initialize Flask app
+ # Initialize Flask apps
 app = Flask(__name__)
 # ---------------------------------------------------------
 app.secret_key = 'supersecretkey' # Required for session
