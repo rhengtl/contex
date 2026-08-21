@@ -1,0 +1,7 @@
+# generated benchmark data - regenerate with the gen_*.py scripts
+img/
+img_hard/
+img_math/
+img_deskewed/
+manifest*.json
+results_*.json
