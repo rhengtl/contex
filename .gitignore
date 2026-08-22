@@ -5,6 +5,9 @@
 *.json
 !package.json
 !tsconfig.json
+# Firebase project config (safe to commit - contains no secrets)
+!firebase.json
+!firestore.indexes.json
 
 # Python
 __pycache__/

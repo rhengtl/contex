@@ -2,6 +2,7 @@
 import pytesseract
 from PIL import Image
 import os
+import shutil
 import numpy as np
 
 # Attempt to import pdf2image
@@ -11,11 +12,35 @@ try:
 except ImportError:
     PDF2IMAGE_AVAILABLE = False
 
-# Set the path to the tesseract executable if it's not in your PATH
-# For local Windows development
-if os.name == 'nt':  # Windows
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-# On Linux (Render), tesseract should be in PATH automatically
+# Resolve the tesseract executable.
+# Order: TESSERACT_CMD env var -> whatever is already on PATH -> common install locations.
+# On Linux (Render) tesseract is on PATH automatically, so which() covers it.
+def _resolve_tesseract_cmd():
+    explicit = os.getenv('TESSERACT_CMD')
+    if explicit and os.path.exists(explicit):
+        return explicit
+
+    on_path = shutil.which('tesseract')
+    if on_path:
+        return on_path
+
+    if os.name == 'nt':  # Windows fallbacks
+        for candidate in (
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+            r'D:\Apps\Tesseract-OCR\tesseract.exe',
+        ):
+            if os.path.exists(candidate):
+                return candidate
+    return None
+
+
+_TESSERACT_CMD = _resolve_tesseract_cmd()
+if _TESSERACT_CMD:
+    pytesseract.pytesseract.tesseract_cmd = _TESSERACT_CMD
+else:
+    print("WARNING: Tesseract executable not found. Set TESSERACT_CMD in your .env, "
+          "or install it from https://github.com/UB-Mannheim/tesseract/wiki")
 
 def extract_text_from_file(file_path, languages='eng'):
     """

@@ -59,6 +59,7 @@
                 <li><a href="#textract" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Textract</a></li>
                 <li><a href="#equation" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Equation</a></li>
                 <li><a href="#about" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">About</a></li>
+                <li><a href="#history" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">History</a></li>
                 {% if session.get('user') %}
                     <li><span class="px-4 py-2 text-cream-100 font-medium">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span></li>
                     <li><a href="{{ url_for('logout') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Logout</a></li>
@@ -91,6 +92,7 @@
             <a href="#textract" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Textract</a>
             <a href="#equation" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Equation</a>
             <a href="#about" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">About</a>
+            <a href="#history" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">History</a>
             {% if session.get('user') %}
                 <span class="text-cream-100 text-lg">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span>
                 <a href="{{ url_for('logout') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Logout</a>
@@ -324,14 +326,91 @@
             </div>
         </section>
 
+        <!-- =====================================================
+             History
+             Signed in : rendered from Firestore, persists forever.
+             Guest     : rendered by scripts.js from sessionStorage,
+                         wiped on refresh and when the tab closes.
+             ===================================================== -->
+        <section id="history" class="flex flex-col justify-center items-center bg-transparent w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
+            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-[95%] md:w-full p-4 md:p-8">
+                <h2 class="text-2xl font-bold text-forest-800 mb-1">History</h2>
+
+                {% if is_authenticated %}
+                    <p class="text-sm text-forest-600 mb-4">
+                        Saved to your account &mdash; available whenever you log back in.
+                    </p>
+
+                    {% if history %}
+                        <ul class="space-y-3">
+                            {% for item in history %}
+                                <li class="border border-gray-300 rounded-lg p-3 bg-white">
+                                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                                        <span class="text-xs font-semibold uppercase px-2 py-1 rounded
+                                            {% if item.ocrType == 'equation' %}bg-burgundy-600 text-cream-100{% else %}bg-forest-600 text-cream-100{% endif %}">
+                                            {{ item.ocrType }}
+                                        </span>
+                                        <span class="text-sm text-forest-700 truncate">{{ item.fileName }}</span>
+                                        <span class="text-xs text-forest-500">
+                                            {% if item.timestamp %}{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+                                        </span>
+                                    </div>
+                                    <pre class="mt-2 bg-forest-100 p-3 rounded text-xs whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">{{ item.result }}</pre>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p id="auth-history-empty" class="text-forest-600">
+                            No saved results yet. Run Textract or Equation and it will appear here.
+                        </p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-sm text-forest-600 mb-4">
+                        You are browsing as a guest. Results stay in this tab only and are cleared
+                        when you refresh or close it.
+                        <a href="{{ url_for('login') }}" class="text-burgundy-600 hover:text-burgundy-500 font-medium">Log in</a>
+                        to save them to your account.
+                    </p>
+
+                    <ul id="guest-history-list" class="space-y-3"></ul>
+                    <p id="guest-history-empty" class="text-forest-600">
+                        Nothing yet in this session.
+                    </p>
+                    <button type="button" id="guest-history-clear"
+                            class="hidden mt-4 px-4 py-2 bg-forest-800 text-cream-100 rounded-lg hover:bg-forest-700 transition-colors">
+                        Clear session history
+                    </button>
+                {% endif %}
+            </div>
+        </section>
+
     </main>
-    
+
     <script>
         window.pageData = {
             hasEquationResult: {{ 'true' if recognized_equation else 'false' }},
             hasTextractResult: {{ 'true' if recognized_textract else 'false' }},
             showEquationResult: {{ 'true' if show_equation_result else 'false' }},
-            showTextractResult: {{ 'true' if show_textract_result else 'false' }}
+            showTextractResult: {{ 'true' if show_textract_result else 'false' }},
+
+            // History wiring (see scripts.js)
+            isAuthenticated: {{ 'true' if is_authenticated else 'false' }},
+            // True only on the redirect that immediately follows an OCR POST.
+            // False on a refresh or a fresh visit, which is what wipes guest history.
+            keepGuestHistory: {{ 'true' if keep_guest_history else 'false' }},
+            // The result to append to guest history on this load, if any.
+            latestEntry:
+                {% if not is_authenticated and recognized_equation %}
+                    { ocrType: 'equation',
+                      fileName: {{ (uploaded_image_name or 'image') | tojson }},
+                      result: {{ recognized_equation | tojson }} }
+                {% elif not is_authenticated and recognized_textract %}
+                    { ocrType: 'textract',
+                      fileName: 'document',
+                      result: {{ recognized_textract | tojson }} }
+                {% else %}
+                    null
+                {% endif %}
         };
     </script>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>

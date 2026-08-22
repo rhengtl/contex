@@ -26,13 +26,45 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder i
 # Authentication Decorator
 # ===========================
 def login_required(f):
-    """Decorator to require login for routes"""
+    """
+    Decorator to require login for routes.
+
+    NOTE: deliberately NOT applied to the OCR routes. Every core feature of
+    this app (/, /equation, /textract, /download-tex) is usable by guests.
+    Logging in only adds persistent history.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+def current_user_uid():
+    """
+    Return the signed-in user's Firebase UID, or None for a guest.
+
+    The UID always comes from the server-side session (set only after Firebase
+    verified a password or an ID token). It is never read from the request, so
+    a client cannot target another user's history by forging a uid field.
+    """
+    user = session.get('user')
+    return user.get('uid') if isinstance(user, dict) else None
+
+
+def record_history(file_name, ocr_type, result):
+    """
+    Persist one OCR result for signed-in users only.
+
+    Guests are intentionally skipped here: their history is kept client-side
+    in sessionStorage so it disappears with the tab and never touches
+    Firestore. Returns True if the record was written.
+    """
+    uid = current_user_uid()
+    if not uid:
+        return False
+    return firebase_config.save_ocr_history(uid, file_name, ocr_type, result)
 
 
 @app.route('/', methods=['GET'])
@@ -54,7 +86,21 @@ def home():
     show_textract_result = session.pop('show_textract_result', False)
     textract_error = session.pop('textract_error', None)
 
-    return render_template('home.html', 
+    # ---------------------------------------------------------
+    # History
+    # Signed in  -> read the persistent list back from Firestore.
+    # Guest      -> nothing server-side; the browser holds it in sessionStorage.
+    # ---------------------------------------------------------
+    uid = current_user_uid()
+    history = firebase_config.get_user_ocr_history(uid, limit=20) if uid else []
+
+    # One-shot flag set by an OCR POST. It survives exactly one redirect, so we
+    # can tell the Post/Redirect/Get landing apart from a real page refresh:
+    # on the PRG landing we keep the guest's session history, on a refresh or a
+    # fresh visit we tell the browser to wipe it.
+    keep_guest_history = session.pop('just_processed', False)
+
+    return render_template('home.html',
                            recognized_equation=recognized_equation,
                            uploaded_image_name=uploaded_image_name,
                            show_equation_result=show_equation_result,
@@ -62,7 +108,10 @@ def home():
                            recognized_textract=recognized_textract,
                            tex_file=tex_file,
                            show_textract_result=show_textract_result,
-                           error=textract_error)
+                           error=textract_error,
+                           history=history,
+                           is_authenticated=bool(uid),
+                           keep_guest_history=keep_guest_history)
 
 
 @app.route('/equation', methods=['GET', 'POST'])
@@ -92,8 +141,12 @@ def upload_and_process():
             session['recognized_equation'] = final_text
             session['uploaded_image_name'] = file.filename
             session['show_equation_result'] = True
+            session['just_processed'] = True
             # ---------------------------------------------------------
-            
+
+            # Signed-in users get this saved to Firestore; guests do not.
+            record_history(file.filename, 'equation', final_text)
+
             return redirect(url_for('home') + '#equation')
             #edit
         except Exception as e:
@@ -133,7 +186,11 @@ def textract_route():
             session['recognized_textract'] = result_text
             session['tex_file'] = True
             session['show_textract_result'] = True
+            session['just_processed'] = True
             # ---------------------------------------------------------
+
+            # Signed-in users get this saved to Firestore; guests do not.
+            record_history(file.filename, 'textract', result_text)
         finally:
             # Auto delete uploaded file after processing
             if os.path.exists(file_path):
@@ -167,6 +224,11 @@ def login():
                 user = firebase_config.get_user_by_uid(uid)
                 
                 if user:
+                    # Federated users skip create_user(), so make sure they
+                    # still have a users/ profile document.
+                    firebase_config.upsert_user_profile(
+                        user['uid'], user['email'], user['displayName'])
+
                     session['user'] = {
                         'uid': user['uid'],
                         'email': user['email'],

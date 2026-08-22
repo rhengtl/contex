@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// SCOPE OF THESE RULES
+// --------------------
+// The Flask server reaches Firestore through the Firebase Admin SDK
+// (firebase_config.py), which authenticates with a service account and
+// BYPASSES these rules entirely. The browser currently uses Firebase Auth
+// only and never touches Firestore directly.
+//
+// These rules are therefore defence-in-depth: they define the ownership model
+// that must hold for any direct client access, so a leaked Web API key can
+// never be used to read or tamper with another user's data. Server-side
+// enforcement is what actually protects the app today -- every uid comes from
+// the signed session cookie (app.py: current_user_uid), never from a request
+// field, so a client cannot target another user's history by forging a uid.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A user's own profile document. The document id IS the uid.
+    match /users/{uid} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // Persistent OCR history. Every document carries its owner's uid.
+    match /ocr_history/{docId} {
+      // Read only your own records.
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.uid;
+
+      // Create only records stamped with your own uid, so a client cannot
+      // write history into someone else's account.
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+
+      // Update only your own records, and never reassign ownership.
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.uid
+                    && request.resource.data.uid == resource.data.uid;
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.uid;
+    }
+
+    // Anything else: denied. Guests (request.auth == null) match nothing above,
+    // so they have no read or write access to any persistent data.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

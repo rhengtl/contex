@@ -403,3 +403,116 @@ function toggleSidebar() {
     }
 }
 
+
+
+/* =======================================================================
+   Guest session history
+   -----------------------------------------------------------------------
+   Guests get a temporary history held in sessionStorage:
+     - it survives the Post/Redirect/Get hop after an OCR run,
+     - it is wiped on a page refresh or a fresh visit,
+     - the browser drops it entirely when the tab closes.
+   Signed-in users never use this path; their history comes from Firestore,
+   rendered server-side.
+   ======================================================================= */
+(function () {
+    var KEY = 'contex_guest_history';
+    var MAX_ITEMS = 20;
+    var data = window.pageData || {};
+
+    function read() {
+        try {
+            return JSON.parse(sessionStorage.getItem(KEY) || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function write(items) {
+        try {
+            sessionStorage.setItem(KEY, JSON.stringify(items));
+        } catch (e) {
+            /* private mode / storage disabled - history is simply not kept */
+        }
+    }
+
+    function clear() {
+        try {
+            sessionStorage.removeItem(KEY);
+        } catch (e) { /* nothing to do */ }
+    }
+
+    // A signed-in user must never see leftovers from an earlier guest session
+    // in the same tab.
+    if (data.isAuthenticated) {
+        clear();
+        return;
+    }
+
+    var list = document.getElementById('guest-history-list');
+    var empty = document.getElementById('guest-history-empty');
+    var clearBtn = document.getElementById('guest-history-clear');
+    if (!list) { return; }
+
+    // keepGuestHistory is true only on the redirect right after an OCR POST.
+    // Anything else - F5, a typed URL, a fresh tab - starts empty.
+    var items = data.keepGuestHistory ? read() : [];
+    if (!data.keepGuestHistory) { clear(); }
+
+    if (data.latestEntry && data.latestEntry.result) {
+        items.unshift({
+            ocrType: data.latestEntry.ocrType,
+            fileName: data.latestEntry.fileName,
+            result: data.latestEntry.result,
+            at: new Date().toLocaleString()
+        });
+        items = items.slice(0, MAX_ITEMS);
+        write(items);
+    }
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function render() {
+        list.innerHTML = '';
+        if (!items.length) {
+            if (empty) { empty.classList.remove('hidden'); }
+            if (clearBtn) { clearBtn.classList.add('hidden'); }
+            return;
+        }
+        if (empty) { empty.classList.add('hidden'); }
+        if (clearBtn) { clearBtn.classList.remove('hidden'); }
+
+        items.forEach(function (it) {
+            var badge = it.ocrType === 'equation'
+                ? 'bg-burgundy-600 text-cream-100'
+                : 'bg-forest-600 text-cream-100';
+            var li = document.createElement('li');
+            li.className = 'border border-gray-300 rounded-lg p-3 bg-white';
+            li.innerHTML =
+                '<div class="flex items-center justify-between gap-2 flex-wrap">' +
+                    '<span class="text-xs font-semibold uppercase px-2 py-1 rounded ' + badge + '">' +
+                        escapeHtml(it.ocrType) +
+                    '</span>' +
+                    '<span class="text-sm text-forest-700 truncate">' + escapeHtml(it.fileName) + '</span>' +
+                    '<span class="text-xs text-forest-500">' + escapeHtml(it.at) + '</span>' +
+                '</div>' +
+                '<pre class="mt-2 bg-forest-100 p-3 rounded text-xs whitespace-pre-wrap font-mono ' +
+                    'max-h-40 overflow-y-auto">' + escapeHtml(it.result) + '</pre>';
+            list.appendChild(li);
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            items = [];
+            clear();
+            render();
+        });
+    }
+
+    render();
+})();
