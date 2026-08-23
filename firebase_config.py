@@ -318,48 +318,6 @@ def upsert_user_profile(uid, email, display_name):
         return False
 
 
-def save_user_data(uid, data):
-    """
-    Save additional user data to Firestore
-    
-    Args:
-        uid (str): User's unique ID
-        data (dict): Data to save
-    
-    Returns:
-        bool: Success status
-    """
-    try:
-        if db:
-            db.collection('users').document(uid).update(data)
-            return True
-        return False
-    except Exception as e:
-        print(f"Error saving user data: {e}")
-        return False
-
-
-def get_user_data(uid):
-    """
-    Get user data from Firestore
-    
-    Args:
-        uid (str): User's unique ID
-    
-    Returns:
-        dict: User data or None
-    """
-    try:
-        if db:
-            doc = db.collection('users').document(uid).get()
-            if doc.exists:
-                return doc.to_dict()
-        return None
-    except Exception as e:
-        print(f"Error getting user data: {e}")
-        return None
-
-
 def save_ocr_history(uid, file_name, ocr_type, result):
     """
     Save OCR processing history to Firestore

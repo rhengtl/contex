@@ -10,9 +10,9 @@ pip install -r requirements.txt
 ### 2. Configure Firebase
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project (contex-55562)
+2. Select your project
 3. Go to Project Settings > Service Accounts
-4. Click "Generate New Private Key" (you already have this: `contex-55562-firebase-adminsdk-fbsvc-d081c3fda2.json`)
+4. Click "Generate New Private Key"
 5. Save the JSON file in your project root
 
 ### 3. Update .env File
@@ -20,8 +20,8 @@ pip install -r requirements.txt
 Copy `.env.example` to `.env` and update the values:
 
 ```env
-FIREBASE_SERVICE_ACCOUNT_PATH=contex-55562-firebase-adminsdk-fbsvc-d081c3fda2.json
-FIREBASE_DATABASE_URL=https://contex-55562.firebaseio.com
+FIREBASE_SERVICE_ACCOUNT_PATH=your-project-firebase-adminsdk-xxxxx.json
+FIREBASE_DATABASE_URL=https://your-project-id.firebaseio.com
 ```
 
 ### 4. Enable Authentication in Firebase Console
@@ -91,8 +91,7 @@ get_user_by_uid(uid)
 verify_id_token(id_token)
 
 # Firestore
-save_user_data(uid, data)
-get_user_data(uid)
+upsert_user_profile(uid, email, display_name)
 save_ocr_history(uid, file_name, ocr_type, result)
 get_user_ocr_history(uid, limit=10)
 ```

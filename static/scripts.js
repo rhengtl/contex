@@ -15,26 +15,6 @@ function displayFileName(input) {
     }
 }
 
-function showCameraPreview(input) {
-    const preview = document.getElementById('camera-preview');
-    // Reset file name if a photo is taken
-    const fileNameDisplay = document.getElementById('file-name');
-    if (fileNameDisplay) {
-        fileNameDisplay.textContent = 'No file chosen';
-    }
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.src = e.target.result;
-            preview.style.display = 'block';
-        };
-        reader.readAsDataURL(input.files[0]);
-    } else {
-        preview.src = '';
-        preview.style.display = 'none';
-    }
-}
-
 let cameraStream = null;
 
 function openCameraModal() {
@@ -248,24 +228,6 @@ const setupDrawing = () => {
 
 window.addEventListener('DOMContentLoaded', setupDrawing);
 
-function copyInline() {
-    const text = "$ " + document.getElementById('recognized-text').innerText + " $";
-    navigator.clipboard.writeText(text).then(function() {
-        alert('Recognized text copied to clipboard!');
-    }, function(err) {
-        alert('Failed to copy text: ' + err);
-    });
-}
-
-function copyDisplay() {
-    const text = "\\[\n" + document.getElementById('recognized-text').innerText + "\n\\]";
-    navigator.clipboard.writeText(text).then(function() {
-        alert('Recognized text copied to clipboard!');
-    }, function(err) {
-        alert('Failed to copy text: ' + err);
-    });
-}
-
 // Auto-scroll to results when page loads with results
 window.addEventListener('DOMContentLoaded', function() {
     console.log('Page loaded, checking for results...');
@@ -300,6 +262,31 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 
 // Textract Drag and Drop functionality
+/* Both pipelines make an API call after the converter runs, so a submit can
+   take some seconds. Show that rather than leaving a dead-looking button. */
+function markBusy(form, button, label) {
+    if (!form || !button) { return; }
+    form.addEventListener('submit', function () {
+        if (form.querySelector('input[type=file]') &&
+            !form.querySelector('input[type=file][name=file]')) { return; }
+        button.disabled = true;
+        button.textContent = label;
+        var notice = document.createElement('p');
+        notice.className = 'mt-3 text-sm text-forest-700';
+        notice.textContent = 'Converting, then checking the result against your document…';
+        button.parentNode.appendChild(notice);
+    });
+}
+
+window.addEventListener('DOMContentLoaded', function () {
+    var textractForm = document.getElementById('textract-form');
+    markBusy(textractForm, textractForm && textractForm.querySelector('button[type=submit]'),
+             'Processing…');
+    var equationForm = document.getElementById('equation-form');
+    markBusy(equationForm, equationForm && equationForm.querySelector('button[type=submit]'),
+             'Processing…');
+});
+
 function setupTextractDragDrop() {
     const dropArea = document.getElementById('textract-drop-area');
     const fileInput = document.getElementById('textract-file');
@@ -387,6 +374,18 @@ function clearTextractFile() {
 
 // Initialize textract drag and drop when DOM is loaded
 window.addEventListener('DOMContentLoaded', setupTextractDragDrop);
+
+
+/* Copy any rendered LaTeX block to the clipboard. */
+function copyTex(elementId) {
+    var block = document.getElementById(elementId);
+    if (!block) { return; }
+    navigator.clipboard.writeText(block.innerText).then(function () {
+        alert('LaTeX source copied to clipboard!');
+    }, function (err) {
+        alert('Failed to copy: ' + err);
+    });
+}
 
 function toggleSidebar() {
     const sidebar = document.getElementById('mobile-sidebar');

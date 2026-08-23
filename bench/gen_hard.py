@@ -1,6 +1,6 @@
 """Harder, more realistic degradations: phone photos, poor scans, low DPI."""
-import os, json, math, random
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import os, json, random
+from PIL import Image, ImageFilter
 import numpy as np
 
 OUT = os.path.dirname(os.path.abspath(__file__))

@@ -1,15 +1,17 @@
 # app.py
 import os
-from flask import Flask, request, render_template, redirect, url_for, send_file, session
-from PIL import Image
-from transformers import TrOCRProcessor
-from optimum.onnxruntime import ORTModelForVision2Seq
 import io
+import uuid
+from flask import (Flask, request, render_template, redirect, url_for,
+                   send_file, session)
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from textract_fast import extract_text_from_file, generate_tex_file
-from equation import is_model_loaded, process_image
+from textract_fast import extract_text_from_file, generate_tex_source
+from equation import is_model_loaded, process_image_list
+import ai_qa
+import latex_tools
+import tex_store
 import firebase_config
-from functools import wraps
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,23 +24,22 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')  # Required for
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')  # Optional: if you want to save uploads
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder if it doesn't exist
 
-# ===========================
-# Authentication Decorator
-# ===========================
-def login_required(f):
-    """
-    Decorator to require login for routes.
+# Hard ceiling on request size. This stops an oversized body from being
+# buffered at all, before any converter or reviewer sees it.
+_MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', '32'))
+app.config['MAX_CONTENT_LENGTH'] = _MAX_UPLOAD_MB * 1024 * 1024
 
-    NOTE: deliberately NOT applied to the OCR routes. Every core feature of
-    this app (/, /equation, /textract, /download-tex) is usable by guests.
-    Logging in only adds persistent history.
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
+
+@app.errorhandler(413)
+def upload_too_large(_error):
+    """Turn Werkzeug's 413 into the same in-page error the routes use."""
+    session['textract_error'] = (f"That file is too large. The limit is "
+                                 f"{_MAX_UPLOAD_MB} MB.")
+    return redirect(url_for('home') + '#textract'), 302
+
+# NOTE: none of the OCR routes require a login. Every core feature of this app
+# (/, /equation, /textract and the downloads) is usable by guests; signing in
+# only adds persistent history.
 
 
 def current_user_uid():
@@ -64,27 +65,73 @@ def record_history(file_name, ocr_type, result):
     uid = current_user_uid()
     if not uid:
         return False
+    # A whole .tex document can be long; keep history rows a sane size.
+    if result and len(result) > HISTORY_RESULT_LIMIT:
+        result = result[:HISTORY_RESULT_LIMIT] + '\n... [truncated]'
     return firebase_config.save_ocr_history(uid, file_name, ocr_type, result)
+
+
+# Longest result text stored in a history record.
+HISTORY_RESULT_LIMIT = 60000
+
+
+# How many generated results one session can hold at once (one per pipeline,
+# plus a little slack). Older ones are deleted as new ones arrive.
+_MAX_SESSION_TEX = 4
+
+
+def remember_tex(payload):
+    """
+    Store a generated .tex result and bind it to THIS session.
+
+    Returns the token. Only tokens listed in the caller's own session can be
+    downloaded later, so one visitor can never fetch another's document.
+    """
+    token = tex_store.save(payload)
+    tokens = list(session.get('tex_tokens', [])) + [token]
+    for expired in tokens[:-_MAX_SESSION_TEX]:
+        tex_store.discard(expired)
+    session['tex_tokens'] = tokens[-_MAX_SESSION_TEX:]
+    return token
+
+
+def owns_token(token):
+    """True when the current session generated this result."""
+    return bool(token) and token in session.get('tex_tokens', [])
+
+
+def owned_tex(token):
+    """Return a stored result only if the current session owns that token."""
+    if not owns_token(token):
+        return None
+    return tex_store.read(token)
 
 
 @app.route('/', methods=['GET'])
 def home():
     # ---------------------------------------------------------
     # Retrieve and clear session data (Post/Redirect/Get pattern)
-    # This ensures data is shown once, and cleared on reload
+    # This ensures data is shown once, and cleared on reload.
+    #
+    # Both converters store their result server-side and keep only the token
+    # in the session: a page of OCR text - let alone a whole .tex document
+    # plus its QA report - does not fit in a 4KB session cookie.
     # ---------------------------------------------------------
-    
+
     # Equation data
-    recognized_equation = session.pop('recognized_equation', None)
+    equation_token = session.pop('equation_token', None)
     uploaded_image_name = session.pop('uploaded_image_name', None)
     show_equation_result = session.pop('show_equation_result', False)
     equation_error = session.pop('equation_error', None)
-    
+    equation_result = owned_tex(equation_token) if equation_token else None
+
     # Textract data
-    recognized_textract = session.pop('recognized_textract', None)
-    tex_file = session.pop('tex_file', False)
+    textract_token = session.pop('textract_job_token', None)
     show_textract_result = session.pop('show_textract_result', False)
     textract_error = session.pop('textract_error', None)
+    textract_result = owned_tex(textract_token) if textract_token else None
+    recognized_textract = textract_result['text'] if textract_result else None
+    tex_file = textract_token if textract_result else None
 
     # ---------------------------------------------------------
     # History
@@ -101,110 +148,204 @@ def home():
     keep_guest_history = session.pop('just_processed', False)
 
     return render_template('home.html',
-                           recognized_equation=recognized_equation,
+                           equation_result=equation_result,
+                           equation_token=equation_token if equation_result else None,
                            uploaded_image_name=uploaded_image_name,
                            show_equation_result=show_equation_result,
                            error_message=equation_error,
                            recognized_textract=recognized_textract,
+                           textract_result=textract_result,
                            tex_file=tex_file,
                            show_textract_result=show_textract_result,
                            error=textract_error,
                            history=history,
                            is_authenticated=bool(uid),
-                           keep_guest_history=keep_guest_history)
+                           keep_guest_history=keep_guest_history,
+                           qa=ai_qa.provider_info(),
+                           latex_engine=latex_tools.engine_name(
+                               latex_tools.find_engine()))
 
 
 @app.route('/equation', methods=['GET', 'POST'])
 def upload_and_process():
+    """
+    Equation converter, then AI QA.
+
+        image -> pix2text-mfr -> [eq 1, eq 2, ...] -> AI review -> .tex
+
+    The converter lists every equation it finds separately, in reading order.
+    It deliberately does not try to work out how they relate or how they should
+    be laid out - that judgement needs the original image, and it is what the
+    review stage is for. If the review is unavailable the equations are still
+    returned, one displayed equation each.
+    """
     if not is_model_loaded():
-        #edit
         session['equation_error'] = "Error: OCR Model not loaded. Please check server logs."
         return redirect(url_for('home') + '#equation')
 
-    if request.method == 'POST':
-        print("DEBUG: Equation POST request received")
-        print(f"DEBUG: Files in request: {list(request.files.keys())}")
-        file = request.files.get('file')
-        print(f"DEBUG: File object: {file}, filename: {file.filename if file else 'None'}")
-        if not file or file.filename == '':
-            print("DEBUG: No file or empty filename, redirecting")
-            #edit
-            return redirect(url_for('home') + '#equation')
+    if request.method != 'POST':
+        return redirect(url_for('home'))
 
-        try:
-            image_bytes = file.read()
-            final_text = process_image(image_bytes)
-            print(f"DEBUG: Equation result: {final_text}")
-            #edit
-            # ---------------------------------------------------------
-            # Store in session
-            session['recognized_equation'] = final_text
-            session['uploaded_image_name'] = file.filename
-            session['show_equation_result'] = True
-            session['just_processed'] = True
-            # ---------------------------------------------------------
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        session['equation_error'] = "No file selected."
+        return redirect(url_for('home') + '#equation')
 
-            # Signed-in users get this saved to Firestore; guests do not.
-            record_history(file.filename, 'equation', final_text)
+    try:
+        image_bytes = file.read()
+        equations = process_image_list(image_bytes)
+    except Exception as e:
+        print(f"Error during equation recognition: {e}")
+        session['equation_error'] = f"An error occurred: {e}"
+        return redirect(url_for('home') + '#equation')
 
-            return redirect(url_for('home') + '#equation')
-            #edit
-        except Exception as e:
-            print(f"Error during OCR processing: {e}")
-            #edit
-            session['equation_error'] = f"An error occurred: {e}"
-            return redirect(url_for('home') + '#equation')
+    # QA never blocks the result: any failure returns the converter's own
+    # list, laid out without the AI's help.
+    review = ai_qa.review_equations(image_bytes, file.filename, equations)
 
-    return redirect(url_for('home'))
-            #edit
+    token = remember_tex({
+        'tex': review['tex'],
+        'text': review['tex'],
+        'file_name': file.filename,
+        'source': 'equation',
+        'detected': equations,
+        'qa': _qa_payload(review),
+    })
+
+    session['equation_token'] = token
+    session['uploaded_image_name'] = file.filename
+    session['show_equation_result'] = True
+    session['just_processed'] = True
+
+    # Signed-in users get this saved to Firestore; guests do not.
+    record_history(file.filename, 'equation', review['tex'])
+
+    return redirect(url_for('home') + '#equation')
+
+
 @app.route('/textract', methods=['GET', 'POST'])
 def textract_route():
-    if request.method == 'POST':
-        print("DEBUG: Textract POST request received")
-        print(f"DEBUG: Files in request: {list(request.files.keys())}")
-        file = request.files.get('file')
-        print(f"DEBUG: File object: {file}, filename: {file.filename if file else 'None'}")
-        if not file or file.filename == '':
-            print("DEBUG: No file or empty filename")
-            #edit
-            session['textract_error'] = "No file selected."
-            return redirect(url_for('home') + '#textract')
+    """
+    Textract converter, then AI QA.
 
-        # Save file temporarily
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
+        image/PDF -> Tesseract -> .tex -> AI review -> .tex
 
-        try:
-            result_text = extract_text_from_file(file_path)
-            print(f"DEBUG: Textract result: {result_text}")
+    Tesseract remains the OCR engine. The reviewer sees the original upload
+    beside the generated LaTeX and corrects what the image proves is wrong.
+    """
+    if request.method != 'POST':
+        return redirect(url_for('home'))
 
-            tex_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
-            generate_tex_file(result_text, tex_file_path)
-
-            # ---------------------------------------------------------
-            # Store in session
-            session['recognized_textract'] = result_text
-            session['tex_file'] = True
-            session['show_textract_result'] = True
-            session['just_processed'] = True
-            # ---------------------------------------------------------
-
-            # Signed-in users get this saved to Firestore; guests do not.
-            record_history(file.filename, 'textract', result_text)
-        finally:
-            # Auto delete uploaded file after processing
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                print(f"DEBUG: Auto-deleted file: {file_path}")
-        
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        session['textract_error'] = "No file selected."
         return redirect(url_for('home') + '#textract')
 
-    return redirect(url_for('home'))
+    file_bytes = file.read()
+
+    # Save the upload under a name we generate. Using the browser-supplied
+    # filename directly let a crafted name escape the upload folder.
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'],
+                             unique_upload_name(file.filename))
+    with open(file_path, 'wb') as handle:
+        handle.write(file_bytes)
+
+    try:
+        result_text = extract_text_from_file(file_path)
+    finally:
+        # Auto delete uploaded file after processing
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+    draft_tex = generate_tex_source(result_text)
+
+    # QA never blocks the result: any failure returns Tesseract's own .tex.
+    review = ai_qa.review_document(file_bytes, file.filename, draft_tex)
+
+    token = remember_tex({
+        'tex': review['tex'],
+        'text': result_text,
+        'draft_tex': draft_tex,
+        'file_name': file.filename,
+        'source': 'textract',
+        'qa': _qa_payload(review),
+    })
+
+    session['textract_job_token'] = token
+    session['show_textract_result'] = True
+    session['just_processed'] = True
+
+    # Signed-in users get this saved to Firestore; guests do not.
+    record_history(file.filename, 'textract', result_text)
+
+    return redirect(url_for('home') + '#textract')
+
+
+def _qa_payload(review):
+    """The parts of a QA result the page needs (no credentials, no bulk)."""
+    return {
+        'status': review['status'],
+        'message': review['message'],
+        'findings': review['findings'],
+        'equations': review['equations'],
+        'summary': review['summary'],
+        'compile': review['compile'],
+        'model': review['model'],
+        'provider': review['provider'],
+        'usage': review['usage'],
+    }
+
+
+def unique_upload_name(filename):
+    """A collision-free, traversal-free name for a temporarily saved upload."""
+    safe = secure_filename(filename or '') or 'upload'
+    return f"{uuid.uuid4().hex}_{safe}"
+
+
+def send_tex(token, fallback_name):
+    """
+    Serve a stored .tex file, but only to the session that generated it.
+
+    The file is streamed from memory so no extra copy is left in the upload
+    folder, and an unknown or expired token is a 404 rather than someone
+    else's document.
+    """
+    job = owned_tex(token)
+    if not job:
+        return ("That download link has expired or does not belong to this "
+                "session. Please run the conversion again."), 404
+
+    name = job.get('file_name') or fallback_name
+    base = os.path.splitext(secure_filename(name) or fallback_name)[0] or 'document'
+    return send_file(
+        io.BytesIO(job['tex'].encode('utf-8')),
+        mimetype='application/x-tex',
+        as_attachment=True,
+        download_name=f'{base}.tex')
+
 
 @app.route('/download-tex')
 def download_tex():
-    tex_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.tex')
-    return send_file(tex_path, as_attachment=True)
+    """Download the Textract-generated .tex for this session."""
+    token = request.args.get('token') or _latest_token('textract')
+    return send_tex(token, 'textract-output')
+
+
+@app.route('/download-equation-tex')
+def download_equation_tex():
+    """Download the reviewed equation .tex for this session."""
+    token = request.args.get('token') or _latest_token('equation')
+    return send_tex(token, 'equations')
+
+
+def _latest_token(source):
+    """Most recent token in this session that came from the given pipeline."""
+    for token in reversed(session.get('tex_tokens', [])):
+        stored = tex_store.read(token)
+        if stored and stored.get('source') == source:
+            return token
+    return None
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -235,7 +376,6 @@ def login():
                         'displayName': user['displayName']
                     }
                     session.permanent = True
-                    print(f"DEBUG: Google login successful - UID: {uid}")
                     return redirect(url_for('home'))
             
             return render_template('auth/login.html', error="Authentication failed")
@@ -260,7 +400,6 @@ def login():
                 'displayName': user.display_name
             }
             session.permanent = bool(remember)
-            print(f"DEBUG: Login successful - UID: {user.uid}")
             return redirect(url_for('home'))
         else:
             return render_template('auth/login.html', error=result.get('error', 'Invalid credentials'))
@@ -303,7 +442,6 @@ def signup():
         result = firebase_config.create_user(email, password, fullname)
         
         if result['success']:
-            print(f"DEBUG: User created - UID: {result['uid']}")
             return render_template('auth/signup.html', success="Account created successfully! Please login.")
         else:
             return render_template('auth/signup.html', error=result.get('error', 'Failed to create account'))
@@ -322,7 +460,6 @@ def forgot_password():
         result = firebase_config.send_password_reset(email)
         
         if result['success']:
-            print(f"DEBUG: Password reset link sent to: {email}")
             # For security, always show success message
             return render_template('auth/forgot_password.html', 
                                  success="If an account exists with that email, you will receive a password reset link.")
@@ -344,9 +481,6 @@ def index():
     return redirect(url_for('home'))
 
 if __name__ == "__main__":
-    print("Server starting... PRG pattern active. Please restart the server if you don't see this message.")
-    # Use Flask's built-in debug mode
-    # We enable the reloader so code changes take effect immediately
     port = int(os.getenv("PORT", 5000))
     debug_mode = os.getenv("FLASK_DEBUG", "True").lower() == "true"
     app.run(debug=debug_mode, host="0.0.0.0", port=port) 

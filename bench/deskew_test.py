@@ -1,5 +1,5 @@
 """Does a projection-profile deskew recover the skew failures?"""
-import os, json, subprocess, re
+import os, json, subprocess
 import numpy as np
 from PIL import Image
 from score_text import lev, norm, tesseract_path  # reuse metrics + binary lookup

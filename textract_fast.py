@@ -3,7 +3,8 @@ import pytesseract
 from PIL import Image
 import os
 import shutil
-import numpy as np
+
+import preprocess
 
 # Attempt to import pdf2image
 try:
@@ -57,6 +58,11 @@ def extract_text_from_file(file_path, languages='eng'):
     try:
         if file_extension in image_extensions:
             image = Image.open(file_path)
+            # Condition the page first. The benchmark in bench/ measured a
+            # rotated page dropping Tesseract to 28% char accuracy - and at the
+            # default PSM it returns an empty string, so the user saw a blank
+            # result with no error at all.
+            image, _notes = preprocess.prepare_image(image)
             text = pytesseract.image_to_string(image, lang=languages)
             extracted_text.append(text)
 
@@ -72,6 +78,9 @@ def extract_text_from_file(file_path, languages='eng'):
                 return f"Error converting PDF to images: {e_pdf}"
 
             for i, pil_page_image in enumerate(images_from_pdf):
+                # Rasterised PDF pages get the same conditioning as a photo:
+                # a scanned-in page can be just as skewed.
+                pil_page_image, _notes = preprocess.prepare_image(pil_page_image)
                 # Tesseract works directly with PIL images
                 text = pytesseract.image_to_string(pil_page_image, lang=languages)
                 extracted_text.append(text)
@@ -86,18 +95,88 @@ def extract_text_from_file(file_path, languages='eng'):
     
     return '\n'.join(extracted_text)
 
-def generate_tex_file(text, output="output.tex"):
-    tex_content = f"""\\documentclass{{article}}
+# Characters that are syntax in LaTeX and must be escaped before raw OCR text
+# can be dropped into a document. Without this, any page containing a '%' or a
+# '&' produced a .tex file that silently lost content or failed to compile.
+_TEX_ESCAPES = {
+    '\\': r'\textbackslash{}',
+    '&': r'\&',
+    '%': r'\%',
+    '$': r'\$',
+    '#': r'\#',
+    '_': r'\_',
+    '{': r'\{',
+    '}': r'\}',
+    '~': r'\textasciitilde{}',
+    '^': r'\textasciicircum{}',
+}
+
+
+# Symbols Tesseract emits as Unicode that LaTeX cannot typeset as literal text.
+# Without these a single misread glyph - a stray guillemet, a maths sign picked
+# up from an equation - makes the whole generated .tex fail to compile.
+_TEX_UNICODE = {
+    '≤': r'$\le$', '≥': r'$\ge$', '≠': r'$\neq$',
+    '×': r'$\times$', '÷': r'$\div$', '±': r'$\pm$',
+    '√': r'$\sqrt{\ }$', '∞': r'$\infty$', '∑': r'$\sum$',
+    '∫': r'$\int$', '∂': r'$\partial$', '→': r'$\rightarrow$',
+    '←': r'$\leftarrow$', '⇒': r'$\Rightarrow$',
+    '≈': r'$\approx$', '≡': r'$\equiv$', '−': '-',
+    '·': r'$\cdot$', '′': r"$'$", '°': r'$^{\circ}$',
+    '—': '---', '–': '--', '…': r'\ldots{}',
+    '“': '``', '”': "''", '‘': '`', '’': "'",
+    ' ': ' ',
+}
+
+# Greek letters arrive whenever a formula bleeds into the text layer.
+_GREEK = ('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu '
+          'nu xi omicron pi rho sigmaf sigma tau upsilon phi chi psi omega')
+for _index, _name in enumerate(_GREEK.split()):
+    if _name != 'omicron' and _name != 'sigmaf':
+        _TEX_UNICODE.setdefault(chr(0x3B1 + _index), f'$\\{_name}$')
+
+
+def escape_tex(text):
+    """
+    Make plain OCR text safe to drop into a LaTeX document.
+
+    Escapes the ten special characters, maps the Unicode symbols OCR commonly
+    emits onto LaTeX equivalents, and replaces anything left that LaTeX cannot
+    render with '?'. Losing one unrecognisable glyph is far better than losing
+    the whole file to a fatal compile error.
+    """
+    out = []
+    for ch in text or '':
+        if ch in _TEX_ESCAPES:
+            out.append(_TEX_ESCAPES[ch])
+        elif ch in _TEX_UNICODE:
+            out.append(_TEX_UNICODE[ch])
+        elif ch in '\n\r\t' or ord(ch) < 127:
+            out.append(ch)
+        elif ord(ch) <= 0xFF:
+            # Latin-1: typeset correctly once T1 font encoding is loaded.
+            out.append(ch)
+        else:
+            out.append('?')
+    return ''.join(out)
+
+
+def generate_tex_source(text):
+    """
+    Wrap plain extracted text in a minimal LaTeX document and return the source.
+
+    This is the fixed-format output of the Tesseract pipeline: it preserves the
+    words, not the structure of the page. Recovering headings, equations and
+    tables is the job of the review stage in ai_qa.py.
+    """
+    # T1 font encoding is what makes accented and Latin-1 characters typeset
+    # instead of aborting the compile.
+    return f"""\\documentclass{{article}}
 \\usepackage[utf8]{{inputenc}}
+\\usepackage[T1]{{fontenc}}
 \\begin{{document}}
 
-{text}
+{escape_tex(text)}
 
 \\end{{document}}
 """
-    try:
-        with open(output, 'w', encoding='utf-8') as tex_file:
-            tex_file.write(tex_content)
-        return output
-    except Exception as e:
-        return f"Error writing .tex file: {e}"

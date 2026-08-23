@@ -4,31 +4,11 @@
 }
 
 html {
-  scroll-behavior: smooth;
+    /* the nav anchors (#textract, #equation, ...) rely on this */
+    scroll-behavior: smooth;
 }
 
 body {
-    /* display: flex; */
-    /* flex-direction: column;
-    justify-content: center;
-    align-items: center; */
-    /* height: 50vh;          */
     margin: 0;
-    /* gap: 3em; */
-    font-family:'poppins', sans-serif
+    font-family: 'poppins', sans-serif;
 }
-
-/* h1 {
-    padding-top: 10rem;
-}
-
-p {
-    font-size: 2em;
-}
-button {
-    padding: 15px 50px 15px 50px;
-    border: 2px solid rgba(0,0,0,0.05);
-    border-radius: 10px;
-    box-shadow: 10px 5px 15px rgba(0,0,0,0.5);
-    font-size: 1em;
-} */

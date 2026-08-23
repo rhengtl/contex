@@ -11,7 +11,6 @@ coloredlogs==15.0.1
 datasets==3.6.0
 Deprecated==1.2.18
 dill==0.3.8
-easyocr==1.7.2
 pytesseract
 evaluate==0.4.3
 firebase-admin==6.5.0
@@ -24,11 +23,8 @@ fsspec==2025.3.0
 huggingface-hub==0.32.0
 humanfriendly==10.0
 idna==3.10
-imageio==2.37.0
-img2pdf==0.6.1
 itsdangerous==2.2.0
 Jinja2==3.1.6
-lazy_loader==0.4
 lxml==5.4.0
 MarkupSafe==3.0.2
 mpmath==1.3.0
@@ -39,7 +35,6 @@ ninja==1.11.1.4
 numpy==2.2.6
 onnx==1.18.0
 onnxruntime==1.22.0
-opencv-python-headless==4.11.0.86
 optimum==1.17.1
 packaging==25.0
 pandas==2.2.3
@@ -48,23 +43,18 @@ pillow==10.2.0
 propcache==0.3.1
 protobuf==6.31.0
 pyarrow==20.0.0
-pyclipper==1.3.0.post6
 pyreadline3==3.5.4
-python-bidi==0.6.6
 python-dateutil==2.9.0.post0
 pytz==2025.2
 PyYAML==6.0.2
 regex==2024.11.6
 requests==2.32.3
 safetensors==0.5.3
-scikit-image==0.25.2
 scipy==1.15.3
 sentencepiece==0.2.0
 setuptools==80.8.0
-shapely==2.1.1
 six==1.17.0
 sympy==1.14.0
-tifffile==2025.5.26
 tokenizers==0.15.2
 torch==2.7.0
 torchvision==0.22.0
@@ -79,3 +69,6 @@ xxhash==3.5.0
 yarl==1.20.0
 gunicorn==21.2.0
 pdf2image==1.17.0
+# AI OCR -> LaTeX: default provider (Gemini) and the opt-in Claude backend
+google-genai>=2.0.0
+anthropic>=1.0.0

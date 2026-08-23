@@ -4,7 +4,6 @@ from collections import defaultdict
 
 BENCH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(BENCH))  # the app package lives one level up
-import equation  # the app's actual model wrapper
 
 
 def lev(a, b):
@@ -45,6 +44,7 @@ def main():
 
     for k, m in enumerate(manifest, 1):
         with open(os.path.join(BENCH, "img_math", m["file"]), "rb") as fh:
+            import equation  # the app's actual model wrapper
             pred = equation.process_image(fh.read())
         g, p = normalize(m["gt"]), normalize(pred)
         gt_tok, p_tok = tokens(g), tokens(p)

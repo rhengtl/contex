@@ -1,0 +1,34 @@
+{# ---------------------------------------------------------------------------
+   Shown ABOVE the upload control on both converters, deliberately.
+
+   The OCR itself runs on this server. The QA step, when it is configured,
+   sends the uploaded document to an external API - and on Gemini's free tier
+   that document is used to train Google's models. The user has to know that
+   before they choose a file, not after.
+   --------------------------------------------------------------------------- #}
+{% if not qa.configured %}
+    <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
+        AI quality checking is not configured on this server
+        (<code>GEMINI_API_KEY</code> is missing), so results come straight from the
+        converter without review. Everything else works normally.
+    </div>
+{% elif not qa.enabled %}
+    <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
+        AI quality checking is switched off on this server
+        (<code>AI_QA_ENABLED=false</code>). Results come straight from the converter.
+    </div>
+{% elif qa.trains_on_input %}
+    <div class="mb-4 bg-yellow-50 text-yellow-900 border border-yellow-400 p-3 rounded text-sm text-left">
+        <p class="font-semibold mb-1">Before you upload</p>
+        <p>
+            The OCR runs on this server, but the quality check sends your document to
+            Google's Gemini API on its <strong>free tier</strong>, and Google uses
+            free-tier input to train its models. Please do not upload anything
+            confidential, personal or sensitive.
+        </p>
+        <p class="mt-1">
+            You can turn the review off server-side with <code>AI_QA_ENABLED=false</code>;
+            the converters keep working on their own.
+        </p>
+    </div>
+{% endif %}

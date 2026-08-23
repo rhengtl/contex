@@ -1,0 +1,58 @@
+{# ---------------------------------------------------------------------------
+   AI QA report, shared by both converters.
+
+   Expects `report` in the context: the qa payload stored with the result.
+   Renders nothing when there is no report at all.
+   --------------------------------------------------------------------------- #}
+{% if report %}
+<div class="mt-4 border border-gray-300 rounded-lg bg-white p-3 text-left">
+    <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-semibold uppercase px-2 py-1 rounded
+            {% if report.status == 'clean' %}bg-forest-600 text-cream-100
+            {% elif report.status == 'corrected' %}bg-burgundy-600 text-cream-100
+            {% elif report.status in ['skipped', 'partial'] %}bg-gray-500 text-white
+            {% else %}bg-red-600 text-white{% endif %}">
+            {{ report.status }}
+        </span>
+        <span class="text-sm font-medium text-forest-800">AI quality check</span>
+        {% if report.model %}
+            <span class="text-xs text-forest-500">{{ report.model }}</span>
+        {% endif %}
+    </div>
+
+    {% if report.message %}
+        <p class="mt-2 text-sm text-forest-700">{{ report.message }}</p>
+    {% endif %}
+
+    {% if report.findings %}
+        <ul class="mt-2 text-sm text-forest-700 list-disc list-inside space-y-1">
+            {% for finding in report.findings %}
+                <li>{{ finding }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    {% if report.status == 'clean' and not report.findings %}
+        <p class="mt-2 text-sm text-forest-700">
+            The reviewer compared the output against your document and found
+            nothing to change.
+        </p>
+    {% endif %}
+
+    <p class="mt-2 text-xs text-forest-500">
+        {% if report.compile and report.compile.attempted %}
+            {% if report.compile.ok %}
+                Compiles with {{ report.compile.engine }}.
+            {% else %}
+                Does not compile with {{ report.compile.engine }} &mdash; the text is
+                still correct, but you may need to adjust the LaTeX.
+            {% endif %}
+        {% elif latex_engine %}
+            Not compiled (LaTeX engine available: {{ latex_engine }}).
+        {% else %}
+            No LaTeX engine on this server, so the document was not compiled.
+        {% endif %}
+        This result is kept for one hour and only for your session.
+    </p>
+</div>
+{% endif %}
