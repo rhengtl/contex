@@ -28,6 +28,45 @@ import re
 import time
 
 # ---------------------------------------------------------------------------
+# Pipeline roles
+# ---------------------------------------------------------------------------
+
+# The two pipelines ask for different things, so they are allowed different
+# models and different amounts of reasoning.
+#
+#   document   Reading-dominant. A whole page in, a whole document out. The way
+#              this fails is by not noticing a dropped line, which is a reading
+#              failure - so it wants the model with the best *measured*
+#              full-page reading, and it runs on the larger payload.
+#   equations  Reasoning-dominant. A short list in, a short list out. The way
+#              this fails is by "correcting" unusual-but-valid mathematics, or
+#              by missing that one equation follows from another - so it wants
+#              the strongest reasoner, and the payload is small enough that the
+#              pricier model costs little.
+ROLE_DOCUMENT = 'document'
+ROLE_EQUATIONS = 'equations'
+ROLES = (ROLE_DOCUMENT, ROLE_EQUATIONS)
+
+
+def _role_env(prefix, role, default=None):
+    """
+    Resolve a per-role setting from the environment.
+
+    `AI_QA_MODEL_EQUATIONS` beats `AI_QA_MODEL`, which beats the built-in
+    default. That way one variable still overrides both pipelines - which is
+    what most deployments want - without preventing the split.
+    """
+    if role:
+        specific = os.getenv(f'{prefix}_{role.upper()}')
+        if specific and specific.strip():
+            return specific.strip()
+    shared = os.getenv(prefix)
+    if shared and shared.strip():
+        return shared.strip()
+    return default
+
+
+# ---------------------------------------------------------------------------
 # Neutral content parts
 # ---------------------------------------------------------------------------
 
@@ -66,8 +105,61 @@ def _brief(message, limit=200):
     return (single_line[:limit] + '...') if len(single_line) > limit else single_line
 
 
+class LlmModelError(LlmError):
+    """
+    One specific model is unusable - unknown id, or no access on this key.
+
+    Distinct from LlmError because the response is different: a bad API key
+    dooms every model and should fail immediately, whereas a model this key
+    cannot reach should simply be skipped in favour of the next candidate.
+    """
+
+
 class LlmQuotaError(LlmError):
-    """Rate limited or out of daily quota - the caller may want to retry later."""
+    """
+    Rate limited or out of daily quota - the caller may want to retry later.
+
+    Carries whatever the provider itself said about when to come back:
+    `retry_after` in seconds and `scope` naming the kind of limit ('minute' or
+    'day'). Both are None unless the provider stated them. The app surfaces a
+    recovery estimate to users only from these fields, so nothing here may ever
+    be filled in with an assumption.
+    """
+
+    def __init__(self, message, retry_after=None, scope=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.scope = scope
+
+
+# google.rpc.RetryInfo, as Gemini serialises it into the error body, plus the
+# quota id that says which limit was hit.
+_RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
+
+
+def parse_retry(raw_error):
+    """
+    Read a retry delay and a limit scope out of a provider error.
+
+    Returns (seconds|None, scope|None), both straight from the response text.
+    Nothing here estimates: a caller that gets (None, None) must report that no
+    recovery time is available rather than inventing one.
+    """
+    text = str(raw_error or '')
+    seconds = None
+    match = _RETRY_DELAY.search(text)
+    if match:
+        try:
+            seconds = float(match.group(1))
+        except ValueError:
+            seconds = None
+    scope = None
+    lowered = text.lower()
+    if 'perday' in lowered:
+        scope = 'day'
+    elif 'perminute' in lowered:
+        scope = 'minute'
+    return seconds, scope
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +179,11 @@ def _retry(operation, attempts=None, base_delay=2.0):
 
     This matters much more on a free tier than a paid one: an unpublished
     daily limit means a 429 is a normal operating condition, not an anomaly.
+    Upstream 5xx are just as ordinary - a benchmark run over three pages lost
+    two of them to transient server errors before this default was raised - so
+    three attempts, not two.
     """
-    attempts = attempts or _int_env('AI_QA_RETRY_ATTEMPTS', 2)
+    attempts = attempts or _int_env('AI_QA_RETRY_ATTEMPTS', 3)
     last = None
     for attempt in range(attempts):
         try:
@@ -119,10 +214,18 @@ class Conversation:
     in history so later turns can still see the original document.
     """
 
-    def __init__(self, provider, model, system):
+    def __init__(self, provider, model, system, thinking=None, attempts=None):
         self.provider = provider
         self.model = model
         self.system = system
+        # How many times a transient failure is retried on THIS model. The
+        # rotation layer sets it to 1 for a model it already believes is out of
+        # quota, so confirming that costs one quick call instead of three plus
+        # backoff on every conversion.
+        self.attempts = attempts
+        # How hard the model should think, as a neutral level: low, medium,
+        # high, or 'off'. Each provider maps this onto its own vocabulary.
+        self.thinking = (thinking or 'high').strip().lower()
         self.calls = 0
         self.usage = {'input': 0, 'output': 0, 'cache_read': 0, 'cache_write': 0}
 
@@ -138,11 +241,60 @@ class Provider:
     name = None
     env_key = None
 
+    #: Human-readable service name, for status messages shown to users.
+    label = 'the AI service'
+
+    #: Built-in reasoning effort per role. Document review is a reading job and
+    #: gains little from long deliberation; equation review is where the
+    #: judgement calls live, so it gets the budget.
+    THINKING = {ROLE_DOCUMENT: 'low', ROLE_EQUATIONS: 'high'}
+
     def is_configured(self):
         return bool(os.getenv(self.env_key))
 
-    def default_model(self):
-        raise NotImplementedError
+    #: Ordered fallback candidates per role. The first entry is the model the
+    #: role was chosen for; the rest exist so that one model running out of
+    #: free-tier quota does not take the whole AI path down with it.
+    MODEL_CHAIN = {}
+
+    def default_model(self, role=None):
+        return self.model_chain(role)[0]
+
+    def model_chain(self, role=None):
+        """
+        Every model this role may use, best first.
+
+        An operator can set AI_QA_MODEL_DOCUMENT (or AI_QA_MODEL) to a single
+        model or to a comma-separated list. Whatever they name goes first, and
+        the built-in chain is appended behind it - so pinning a model changes
+        the preference without silently removing the safety net. Order is
+        preserved and duplicates are dropped.
+        """
+        chain = []
+        override = _role_env('AI_QA_MODEL', role)
+        if override:
+            chain += [part.strip() for part in override.split(',') if part.strip()]
+        chain += self.MODEL_CHAIN.get(role) or self.MODEL_CHAIN.get(
+            ROLE_DOCUMENT) or []
+
+        seen, ordered = set(), []
+        for model in chain:
+            if model and model not in seen:
+                seen.add(model)
+                ordered.append(model)
+        return ordered
+
+    def default_thinking(self, role=None):
+        return _role_env('AI_QA_THINKING', role,
+                         self.THINKING.get(role, 'high'))
+
+    def models(self):
+        """The model each pipeline prefers, for display."""
+        return {role: self.default_model(role) for role in ROLES}
+
+    def chains(self):
+        """Every candidate per role, for display and for availability checks."""
+        return {role: self.model_chain(role) for role in ROLES}
 
     def trains_on_free_input(self):
         """
@@ -151,7 +303,8 @@ class Provider:
         """
         return False
 
-    def start(self, system, model=None):
+    def start(self, system, model=None, role=None, thinking=None,
+              attempts=None):
         raise NotImplementedError
 
 
@@ -161,8 +314,9 @@ class Provider:
 
 class _GeminiConversation(Conversation):
 
-    def __init__(self, provider, model, system, client, types):
-        super().__init__(provider, model, system)
+    def __init__(self, provider, model, system, client, types, thinking=None,
+                 attempts=None):
+        super().__init__(provider, model, system, thinking, attempts)
         self._client = client
         self._types = types
         self._history = []
@@ -188,8 +342,11 @@ class _GeminiConversation(Conversation):
             'automatic_function_calling': self._types.AutomaticFunctionCallingConfig(
                 disable=True),
         }
-        level = os.getenv('AI_QA_THINKING', 'high')
-        if self._thinking_ok and level and level.lower() != 'off':
+        # Not every model accepts every level - gemini-3.7-flash dropped
+        # 'minimal', for instance - and a model that rejects the field at all
+        # is handled by the retry in ask().
+        level = self.thinking
+        if self._thinking_ok and level and level != 'off':
             kwargs['thinking_config'] = self._types.ThinkingConfig(
                 thinking_level=level.upper())
         return self._types.GenerateContentConfig(**kwargs)
@@ -211,9 +368,21 @@ class _GeminiConversation(Conversation):
                 status = getattr(exc, 'code', None)
                 message = str(exc)
                 if status == 429 or 'RESOURCE_EXHAUSTED' in message:
+                    # Gemini returns 429 for both the per-minute and the daily
+                    # limit, and the free tier's per-minute ceiling is low
+                    # enough that a few conversions in a row will reach it.
+                    # Don't claim it is the daily one; a minute's wait usually
+                    # clears it.
+                    delay, scope = parse_retry(message)
+                    detail = ''
+                    if scope == 'day':
+                        detail = (" This key's daily allowance for this model "
+                                  "is used up.")
                     raise LlmQuotaError(
-                        "The free Gemini quota is exhausted or rate limited. "
-                        "Free-tier limits reset daily; please try again later."
+                        "The Gemini free tier is rate limited right now. Wait "
+                        "a minute and try again - free-tier limits are per "
+                        "minute as well as per day." + detail,
+                        retry_after=delay, scope=scope,
                     ) from exc
                 # An invalid key comes back as 400 INVALID_ARGUMENT, not 401,
                 # so match on the reason rather than the status code.
@@ -223,13 +392,13 @@ class _GeminiConversation(Conversation):
                         "The server's Gemini API key was rejected. Check "
                         "GEMINI_API_KEY.") from exc
                 if 'PERMISSION_DENIED' in message:
-                    raise LlmError(
-                        "The server's Gemini API key does not have access to "
-                        "this model.") from exc
+                    raise LlmModelError(
+                        f"This key does not have access to {self.model!r}."
+                    ) from exc
                 if 'NOT_FOUND' in message or 'is not found' in message:
-                    raise LlmError(
+                    raise LlmModelError(
                         f"The model {self.model!r} is not available to this "
-                        "API key. Check AI_QA_MODEL.") from exc
+                        "API key.") from exc
                 if 'thinking' in message.lower() and self._thinking_ok:
                     # This model does not accept a thinking level; drop it once
                     # and let the retry go through without.
@@ -245,7 +414,7 @@ class _GeminiConversation(Conversation):
             except Exception as exc:
                 raise LlmError(f"Gemini request failed: {exc}") from exc
 
-        response = _retry(call)
+        response = _retry(call, attempts=self.attempts)
 
         usage = getattr(response, 'usage_metadata', None)
         if usage:
@@ -283,19 +452,61 @@ class _GeminiConversation(Conversation):
 class GeminiProvider(Provider):
     name = 'gemini'
     env_key = 'GEMINI_API_KEY'
+    label = 'Google Gemini'
+
+    # Both are free-tier eligible, so the split costs nothing to run.
+    #
+    #   gemini-3.1-flash-lite  Document review. Chosen on measured evidence
+    #       rather than recency: on socOCRbench (an independent full-page
+    #       benchmark scoring edit similarity, chrF and table structure) it
+    #       scores 0.6214, statistically tied with the best free-tier model and
+    #       ahead of gemini-3.5-flash - while being the cheapest of them if
+    #       billing is ever enabled.
+    #   gemini-3.6-flash       Equation review. A full Flash model, so it
+    #       brings the reasoning the two-check discipline and the
+    #       relationship/ordering analysis need - and it has the best measured
+    #       free-tier reading of any of them (socOCRbench 0.6225), which
+    #       matters because checking a transcription against the image *is* an
+    #       act of reading.
+    #
+    # Not gemini-3.7-flash, despite being newer and the stronger reasoner on
+    # paper: its free-tier daily quota ran out after about a dozen calls in
+    # testing, which would leave most equation conversions unreviewed. 3.6
+    # sustained 11 consecutive calls, and on the same test page it recovered a
+    # formula pix2text had mangled into prose where 3.7 merely reported it
+    # missing. Both cost the same on the paid tier, so this is not a downgrade.
+    # Each role's preference is simply the first entry of its chain - there is
+    # no separate "the model" setting, because two sources of truth for which
+    # model a role uses is how the two drift apart.
+    #
+    # Fallback order, best first. These are the four models this project has
+    # actually evaluated; nothing speculative is listed, because rotating onto
+    # a model id that does not exist would turn one exhausted quota into a run
+    # of confusing errors.
+    #
+    # Each role leads with the model it was chosen for and then borrows the
+    # other role's, since a role's second choice is still far better than
+    # dropping to Tesseract. gemini-3.7-flash is last everywhere: it is the
+    # strongest reasoner on paper but its free daily quota ran out after about
+    # a dozen calls in testing, so it makes a poor primary and a fine last
+    # resort.
+    MODEL_CHAIN = {
+        ROLE_DOCUMENT: ['gemini-3.1-flash-lite', 'gemini-3.6-flash',
+                        'gemini-3.5-flash', 'gemini-3.7-flash'],
+        ROLE_EQUATIONS: ['gemini-3.6-flash', 'gemini-3.1-flash-lite',
+                         'gemini-3.5-flash', 'gemini-3.7-flash'],
+    }
 
     def is_configured(self):
         return bool(os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY'))
-
-    def default_model(self):
-        return os.getenv('AI_QA_MODEL', 'gemini-3.1-flash-lite')
 
     def trains_on_free_input(self):
         # Google's free tier uses submitted content to improve its models;
         # this is what drives the disclosure shown above the upload button.
         return os.getenv('GEMINI_PAID_TIER', 'false').lower() != 'true'
 
-    def start(self, system, model=None):
+    def start(self, system, model=None, role=None, thinking=None,
+              attempts=None):
         try:
             from google import genai
             from google.genai import types
@@ -311,8 +522,10 @@ class GeminiProvider(Provider):
 
         api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
         client = genai.Client(api_key=api_key)
-        return _GeminiConversation(self, model or self.default_model(),
-                                   system, client, types)
+        return _GeminiConversation(self, model or self.default_model(role),
+                                   system, client, types,
+                                   thinking or self.default_thinking(role),
+                                   attempts)
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +541,9 @@ _fallbacks_available = os.getenv('AI_QA_ENABLE_FALLBACKS', 'true').lower() != 'f
 
 class _AnthropicConversation(Conversation):
 
-    def __init__(self, provider, model, system, client):
-        super().__init__(provider, model, system)
+    def __init__(self, provider, model, system, client, thinking=None,
+                 attempts=None):
+        super().__init__(provider, model, system, thinking, attempts)
         self._client = client
         self._messages = []
 
@@ -366,12 +580,15 @@ class _AnthropicConversation(Conversation):
             'max_tokens': _int_env('AI_QA_MAX_TOKENS', 32000),
             'system': self.system,
             'messages': self._messages,
-            'thinking': {'type': 'adaptive'},
-            'output_config': {'effort': os.getenv('AI_QA_EFFORT', 'high')},
             # Extends the cached prefix to the end of each turn, so the growing
             # transcript is also read from cache rather than re-billed.
             'cache_control': {'type': 'ephemeral'},
         }
+        # 'off' means no extended thinking at all; anything else is an effort
+        # level. Claude has no 'off' effort, so the key is dropped instead.
+        if self.thinking != 'off':
+            kwargs['thinking'] = {'type': 'adaptive'}
+            kwargs['output_config'] = {'effort': self.thinking}
 
         def call():
             global _fallbacks_available
@@ -392,9 +609,19 @@ class _AnthropicConversation(Conversation):
                 with self._client.messages.stream(**kwargs) as stream:
                     return stream.get_final_message()
             except anthropic.RateLimitError as exc:
+                # Anthropic states the wait in a retry-after header; use that
+                # rather than guessing when the service comes back.
+                after = None
+                try:
+                    raw = (getattr(exc, 'response', None)
+                           and exc.response.headers.get('retry-after'))
+                    after = float(raw) if raw else None
+                except (TypeError, ValueError, AttributeError):
+                    after = None
                 raise LlmQuotaError(
                     "The AI service is rate limited right now. Please try "
-                    "again shortly.") from exc
+                    "again shortly.", retry_after=after,
+                    scope='minute' if after else None) from exc
             except anthropic.AuthenticationError as exc:
                 raise LlmError(
                     "The server's Anthropic API key was rejected. Check "
@@ -420,7 +647,7 @@ class _AnthropicConversation(Conversation):
             except Exception as exc:
                 raise LlmError(f"AI request failed: {exc}") from exc
 
-        response = _retry(call)
+        response = _retry(call, attempts=self.attempts)
 
         usage = response.usage
         self._count(
@@ -450,15 +677,33 @@ def _b64(data):
 class AnthropicProvider(Provider):
     name = 'anthropic'
     env_key = 'ANTHROPIC_API_KEY'
+    label = 'Anthropic Claude'
+
+    # One model for both roles. Sonnet 5 rather than Opus 5: this is
+    # proofreading, and Opus costs 2.5x for it. Sonnet 5 still brings vision, a
+    # 1M-token context, and - the reason to offer this provider at all -
+    # Anthropic does not train on API input, so it is the path for documents
+    # that must not go to a free tier.
+    # One model, deliberately no rotation. Anthropic has no free tier, so its
+    # 429s are short per-minute rate limits that clear on their own rather than
+    # a daily allowance that is gone for the day - retrying the same model is
+    # the right response. Rotating to Opus on a rate limit would quietly raise
+    # the bill 2.5x to solve a problem that waiting solves for nothing.
+    MODEL_CHAIN = {
+        ROLE_DOCUMENT: ['claude-sonnet-5'],
+        ROLE_EQUATIONS: ['claude-sonnet-5'],
+    }
 
     def is_configured(self):
         return bool(os.getenv('ANTHROPIC_API_KEY')
                     or os.getenv('ANTHROPIC_AUTH_TOKEN'))
 
-    def default_model(self):
-        return os.getenv('AI_QA_MODEL', 'claude-opus-5')
+    def default_thinking(self, role=None):
+        # AI_QA_EFFORT predates the per-role split; honour it if it is set.
+        return os.getenv('AI_QA_EFFORT') or super().default_thinking(role)
 
-    def start(self, system, model=None):
+    def start(self, system, model=None, role=None, thinking=None,
+              attempts=None):
         try:
             import anthropic
         except ImportError as exc:
@@ -470,8 +715,10 @@ class AnthropicProvider(Provider):
             raise LlmError(
                 "AI LaTeX conversion is not configured on this server "
                 "(ANTHROPIC_API_KEY is not set).")
-        return _AnthropicConversation(self, model or self.default_model(),
-                                      system, anthropic.Anthropic())
+        return _AnthropicConversation(self, model or self.default_model(role),
+                                      system, anthropic.Anthropic(),
+                                      thinking or self.default_thinking(role),
+                                      attempts)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,44 @@
+{# ---------------------------------------------------------------------------
+   The agreement gate.
+
+   Rendered above the upload controls, which are disabled until it is ticked.
+   The checkbox is only the visible half: convert_route() checks the session
+   again on every POST, so disabling a fieldset is a courtesy to the user
+   rather than the enforcement.
+
+   Signed-in users who have already accepted are not asked again (the answer is
+   on their Firestore profile); guests are asked once per session.
+   --------------------------------------------------------------------------- #}
+<div id="terms-gate" class="mb-4 text-left {% if has_accepted_terms %}hidden{% endif %}">
+    <div class="border-2 border-forest-600 bg-forest-100/60 rounded-lg p-4">
+        <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" id="terms-checkbox" class="mt-1 h-5 w-5 accent-forest-800 flex-shrink-0"
+                   data-version="{{ terms_version }}">
+            <span class="text-sm text-forest-900">
+                I agree to the
+                <button type="button" class="underline font-medium text-burgundy-600 hover:text-burgundy-500"
+                        onclick="openLegal('terms')">Terms of Service</button>
+                and the
+                <button type="button" class="underline font-medium text-burgundy-600 hover:text-burgundy-500"
+                        onclick="openLegal('privacy')">Privacy Policy</button>,
+                and I understand that my document may be sent to a third-party AI
+                service for conversion.
+            </span>
+        </label>
+        <p id="terms-error" class="hidden mt-2 text-sm text-red-700"></p>
+        <p class="mt-2 text-xs text-forest-600">
+            You need to accept this once before uploading, capturing or drawing
+            anything.
+        </p>
+    </div>
+</div>
+
+{% if has_accepted_terms %}
+    <p class="mb-4 text-xs text-forest-500 text-left">
+        You accepted the
+        <button type="button" class="underline hover:text-forest-800" onclick="openLegal('terms')">Terms of Service</button>
+        and
+        <button type="button" class="underline hover:text-forest-800" onclick="openLegal('privacy')">Privacy Policy</button>
+        (version {{ terms_version }}).
+    </p>
+{% endif %}

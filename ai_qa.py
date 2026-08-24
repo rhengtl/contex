@@ -29,10 +29,12 @@ import re
 
 from PIL import Image
 
+import ai_status
 import latex_tools
 import llm_providers
 import preprocess
-from llm_providers import LlmError, media_part, text_part
+from llm_providers import (LlmError, LlmModelError, LlmQuotaError,
+                           media_part, text_part)
 
 # Vision pipelines downscale images to a long edge of roughly this size, so
 # anything larger costs upload bandwidth without adding any detail.
@@ -70,9 +72,12 @@ def enabled():
 def provider_info():
     """Describe the active provider for the UI (never includes credentials)."""
     provider = llm_providers.get_provider()
+    models = provider.models()
     return {
         'name': provider.name,
-        'model': provider.default_model(),
+        # Per-pipeline models; 'model' stays for callers that want just one.
+        'models': models,
+        'model': models.get(llm_providers.ROLE_DOCUMENT),
         'configured': provider.is_configured(),
         'enabled': enabled(),
         'available': llm_providers.available(),
@@ -164,10 +169,27 @@ Priorities, in order:
    lists as lists, tables as tables, paragraphs kept whole.
 3. Valid, compilable LaTeX.
 
+Know your converter's blind spot: it is a plain text engine with no
+mathematical model at all. Where the page has a formula, it does not report a
+formula - it reports whatever letters the glyphs looked like, so an equation
+arrives as mangled prose. Treat any stretch of nonsense that sits where the
+image shows mathematics as a *formula the converter could not read*, never as
+prose to be smoothed out. Repairing it into a fluent sentence is the single
+worst thing you can do here: the result reads well and says something the page
+never said.
+
+When you find one:
+- If you can read the formula in the image, typeset it as mathematics.
+- If you cannot read it confidently, replace the garbled run with
+  `% QA: unreadable formula` and nothing else.
+- Never invent prose to bridge the gap, and never leave the mangled letters in
+  place as if they were words.
+
 Rules:
 - Keep the document complete: \\documentclass, preamble, \\begin{document} ...
   \\end{document}.
 - Load only packages the content needs; an unused \\usepackage is a defect.
+  Load amsmath if, and only if, you typeset mathematics.
 - Never use \\includegraphics for artwork on the page - the file will not exist.
 - Escape LaTeX special characters in ordinary prose (% & _ # $).
 - If a word is genuinely illegible, give your best reading and mark it with a
@@ -185,6 +207,8 @@ Compare it against the attached original and check:
 - Is any content missing, duplicated, garbled, or invented?
 - Does the LaTeX structure match the page (headings, paragraphs, lists, tables)?
 - Are there obvious formatting or structural problems?
+- Does the page contain mathematics, and if so, what did the text-only
+  converter turn it into?
 
 OCR tools mangle characters in predictable ways - l/1, O/0, rn/m, joined or
 split words, dropped accents, a heading flattened into a paragraph. Fix what the
@@ -284,6 +308,116 @@ Layout rules for the final document:
 - A simultaneous system or a case split: cases, or align inside braces.
 - Drop entries whose status is duplicate or not_an_equation.
 - Number equations only if the source image numbers them.
+"""
+
+_UNIFIED_SYSTEM = """\
+You review a LaTeX document assembled from a scanned page by two separate
+converters, with the original page in front of you.
+
+  A text engine read the prose. It has NO mathematical model, so wherever the
+  page holds a formula it produced nonsense - and the assembler removed that
+  nonsense and put a formula there instead. It is also a *printed* text engine:
+  on handwriting it is close to useless, mangling words or returning nothing at
+  all for a line.
+
+  A formula model transcribed each equation region on its own. It knows
+  mathematics and nothing else: it cannot read prose, and anything it was
+  handed that was not really an equation came back as garbage. It reads
+  handwritten and printed mathematics about equally well.
+
+The page may hold handwriting, print, or both, in prose and in mathematics.
+Where a line is handwritten, YOU are the only stage that can read it properly -
+read it off the image and write what it actually says.
+
+The two were merged by position on the page, so an equation should already sit
+roughly where it belongs. Your job is to check that merge against the image.
+
+Priorities, in order:
+1. Fidelity to the original page. Everything on the page is present, correct,
+   and in the same reading order. Nothing invented, nothing duplicated.
+2. Structure that matches the page - headings as headings, lists as lists,
+   tables as tables, paragraphs kept whole.
+3. Valid, compilable LaTeX.
+
+Two checks on every mathematical expression, in this order:
+
+1. SOURCE FIDELITY - does the transcription match what the image shows? The
+   image is the evidence, and this outranks everything else.
+2. MATHEMATICAL SANITY - is it coherent, or does it show the signature of a
+   recognition failure: a stray operator with nothing to operate on,
+   unbalanced delimiters, digits fused into a variable, \\cdot where the image
+   shows a decimal point?
+
+Critically: **unusual is not wrong.** Mathematics is full of valid expressions
+that look strange. Never "fix" one merely because it is unconventional,
+non-standard, dimensionally odd, or unfamiliar. Change it only when the image
+supports a different reading. If an expression looks odd but the image really
+does show it that way, keep it exactly as it is.
+
+Faults specific to this merge, which you are the only stage that can catch:
+- An equation placed in the wrong position, or out of order.
+- The same content appearing twice - once as mangled prose and once as a
+  formula - because the assembler failed to remove the text engine's attempt.
+- Leftover garbled letters where a formula should be.
+- A region that is not an equation at all - a heading, a caption, a table rule,
+  a figure - transcribed as one. Delete it and restore what the page shows.
+- An equation visible on the page that neither converter reported.
+- Prose and a formula that belong to one sentence split apart, or an inline
+  expression turned into a displayed one when the page has it mid-sentence.
+- Handwritten prose mangled into near-words ("phigsics" for "physics"), or a
+  handwritten line missing entirely because no engine could read it.
+
+Do not mark handwriting up as different from print. A handwritten sentence and
+a printed one both become ordinary LaTeX prose; a handwritten formula and a
+printed one both become ordinary LaTeX mathematics. What the page was written
+with changes how carefully you must read it, not how it is typeset.
+
+Rules:
+- Keep the document complete: \\documentclass, preamble, \\begin{document} ...
+  \\end{document}.
+- Load only packages the content needs; an unused \\usepackage is a defect.
+- Never use \\includegraphics for artwork on the page - the file will not exist.
+- Escape LaTeX special characters in ordinary prose (% & _ # $).
+- If something is genuinely illegible, give your best reading and mark it with
+  a % comment rather than dropping it.
+"""
+
+_UNIFIED_PROMPT = """\
+Below is the assembled LaTeX. The text engine's prose and {count} separately
+recognised expression(s) have been merged by their position on the page.
+
+{listing}{uncertain}
+Compare the document against the attached original and check:
+- Does the text say what the page says, in the same reading order?
+- Is any content missing, duplicated, garbled, or invented?
+- Does each equation match what the image shows at that spot?
+- Is each expression coherent mathematics, or does it look like a misread?
+- Is every equation in the right place relative to the surrounding text, and
+  are related equations in the right order?
+- Do any of them belong together in one environment (align, cases, a system)
+  rather than standing separately?
+- Was anything transcribed as an equation that is not one?
+- Does the LaTeX structure match the page (headings, paragraphs, lists,
+  tables)?
+
+Text engines mangle characters predictably - l/1, O/0, rn/m, joined or split
+words, a heading flattened into a paragraph. Fix what the image shows to be
+wrong. Do not rewrite wording that is merely awkward if that is what the page
+says.
+
+If the document already represents the page correctly, reply with exactly:
+
+LATEX_OK
+
+Otherwise reply with a short list of what you found and fixed, then the full
+corrected document in a single fenced block:
+
+```latex
+...corrected document...
+```
+
+--- ASSEMBLED DOCUMENT ---
+{tex}
 """
 
 _REPAIR_PROMPT = """\
@@ -439,6 +573,140 @@ def _validate_and_repair(convo, tex, calls_left, report):
     return tex, compile_result
 
 
+class Rotation:
+    """
+    One conversion's journey through a role's model chain.
+
+    A *round* is one conversion, however many pages it has. The round opens on
+    the role's preferred model and stays there; when that model reports itself
+    out of quota the round advances to the next candidate and stays there for
+    the remaining pages, rather than re-probing an exhausted model once per
+    page. When the chain runs out the round is `exhausted`, and the caller
+    stops asking and finishes the document locally.
+
+    The next conversion builds a new Rotation, so it opens on the preferred
+    model again. That is deliberate: free-tier quota comes back without warning
+    and nothing should keep a user on the fourth-choice model because the first
+    was busy an hour ago. The one exception is a model the provider explicitly
+    told us to stay away from until a stated time - see ai_status.hard_blocked.
+    """
+
+    def __init__(self, role=None):
+        self.role = role or llm_providers.ROLE_DOCUMENT
+        self.provider = llm_providers.get_provider()
+        self.chain = self.provider.model_chain(self.role)
+        self.cursor = 0
+        self.exhausted = not self.chain
+        #: Set when a failure no model can get around ends the round early.
+        self.fatal = None
+
+    @property
+    def active(self):
+        """The model this round is currently using, or None once spent."""
+        if self.exhausted or self.cursor >= len(self.chain):
+            return None
+        return self.chain[self.cursor]
+
+    def _advance(self):
+        self.cursor += 1
+        if self.cursor >= len(self.chain):
+            self.exhausted = True
+
+    def ask(self, system, parts):
+        """
+        Send `parts`, advancing through the chain until one model answers.
+
+        Returns (conversation, reply). Raises LlmError when the round has no
+        models left, or at once for a failure that rotating cannot fix.
+        """
+        if self.fatal is not None:
+            raise self.fatal
+
+        last = None
+        while not self.exhausted:
+            model = self.active
+
+            # The provider named a time to come back; honour it rather than
+            # spending a round trip to be told the same thing again.
+            if ai_status.hard_blocked(model):
+                record = ai_status.record_for(model) or {}
+                last = LlmQuotaError(record.get('message')
+                                     or f'{model} is rate limited.')
+                self._advance()
+                self._announce(model, last)
+                continue
+
+            # A model already believed to be out gets one quick confirmation
+            # instead of three attempts with backoff.
+            attempts = 1 if ai_status.record_for(model) else None
+
+            try:
+                convo = self.provider.start(system, model=model, role=self.role,
+                                            attempts=attempts)
+                reply = convo.ask(parts)
+            except LlmQuotaError as exc:
+                ai_status.record_model_outage(
+                    model, str(exc), retry_after=exc.retry_after,
+                    scope=exc.scope, provider=self.provider.name)
+                last = exc
+                self._advance()
+                self._announce(model, exc)
+            except LlmModelError as exc:
+                ai_status.record_model_outage(
+                    model, str(exc),
+                    retry_after=ai_status._MODEL_ERROR_SECONDS, scope='model',
+                    provider=self.provider.name, from_provider=False)
+                last = exc
+                self._advance()
+                self._announce(model, exc)
+            except LlmError as exc:
+                # A rejected key or an unreachable network dooms every model,
+                # so rotating would repeat the same failure three more times.
+                ai_status.record_outage(str(exc), provider=self.provider.name)
+                self.exhausted = True
+                self.fatal = exc
+                raise
+            else:
+                # This model answered, so it is not exhausted and neither is
+                # the service. Not clearing here is what would strand the app
+                # on the fallback path after the service came back.
+                ai_status.clear_model(model)
+                return convo, reply
+
+        raise last or LlmError('No usable model is configured for this server.')
+
+    def _announce(self, model, error):
+        nxt = self.active
+        if nxt:
+            print(f'Notice: {model} is unavailable ({error}); trying {nxt}.')
+        else:
+            print(f'Notice: {model} is unavailable ({error}); '
+                  'no models left this round.')
+
+
+def first_usable_model(role):
+    """The best model for this role that is not currently known to be out."""
+    provider = llm_providers.get_provider()
+    chain = provider.model_chain(role)
+    usable = ai_status.usable_models(chain)
+    return (usable or chain or [None])[0]
+
+
+def ask_first_usable(system, role, parts, rotation=None):
+    """
+    Send `parts` on the first model that answers, rotating as needed.
+
+    A convenience wrapper for the single-call review paths, which are each
+    their own round. Multi-page conversions build one Rotation and reuse it, so
+    the model chosen on page one carries to page ten.
+
+    Returns (conversation, reply, provider).
+    """
+    rotation = rotation or Rotation(role)
+    convo, reply = rotation.ask(system, parts)
+    return convo, reply, rotation.provider
+
+
 def _blank_result(tex, status, message, equations=None, summary=None):
     return {
         'tex': tex,
@@ -452,6 +720,333 @@ def _blank_result(tex, status, message, equations=None, summary=None):
         'usage': {'input': 0, 'output': 0, 'cache_read': 0, 'cache_write': 0},
         'model': None,
         'provider': None,
+    }
+
+
+_DIRECT_SYSTEM = """\
+You convert a scanned or photographed page into LaTeX. You are reading the page
+yourself - there is no OCR draft to check.
+
+Priorities, in order:
+1. Fidelity to the page. Every piece of content present, correct, and in the
+   same reading order. Nothing invented, nothing omitted, nothing duplicated.
+2. Structure that matches the page - headings as headings, lists as lists,
+   tables as tables, paragraphs kept whole, displayed mathematics displayed and
+   inline mathematics inline.
+3. Valid, compilable LaTeX.
+
+The page may be handwritten, printed, or both, in prose and in mathematics.
+Typeset all of it the same way: a handwritten sentence and a printed one both
+become ordinary LaTeX prose, a handwritten formula and a printed one both
+become ordinary LaTeX mathematics. What it was written with changes how
+carefully you must read, not how it is typeset.
+
+On mathematics, **unusual is not wrong.** Transcribe what the page shows. Never
+normalise an expression into a more familiar one because the one written looks
+strange, unconventional or dimensionally odd. If the page shows it that way,
+write it that way.
+
+Rules:
+- Emit a complete document: \\documentclass, preamble, \\begin{document} ...
+  \\end{document}.
+- Load only packages the content needs; an unused \\usepackage is a defect.
+- Never use \\includegraphics - the file will not exist.
+- Escape LaTeX special characters in ordinary prose (% & _ # $).
+- If something is genuinely illegible, give your best reading and mark it with
+  a % comment rather than dropping it.
+
+Reply with the document in a single fenced block and nothing else:
+
+```latex
+...document...
+```
+"""
+
+_DIRECT_PROMPT = """\
+Convert the attached page to LaTeX, following your instructions exactly.
+"""
+
+_DOCX_SYSTEM = """\
+You turn the extracted contents of a Microsoft Word document into LaTeX.
+
+Nothing here was recognised from an image, so the words, numbers and table
+cells are already exactly right. Do not "correct" them. Your job is the LaTeX
+form: choosing the environment that suits each structure and typesetting the
+mathematics properly.
+
+The extraction marks structure with tags you must translate, not reproduce:
+
+    [TITLE] ...              the document title
+    [HEADING n] ...          a heading at level n
+    [LIST n] - ...           a bullet at indent level n
+    [LIST n] # ...           a numbered item at indent level n
+    [DISPLAY EQUATION] ...   mathematics that stood alone on its own line
+    [MATH]...[/MATH]         mathematics inside a sentence
+    [TABLE] ... [/TABLE]     rows of cells separated by |
+
+Word stores equations in a format that is not LaTeX, so what reaches you
+inside the maths markers is the symbols in reading order with their layout
+lost: superscripts, subscripts, fractions, roots and limits are flattened.
+Rebuild them into correct LaTeX using the surrounding sentence to judge what
+was meant - "E=mc2" in a passage about relativity is E = mc^{2}. Where the
+intent is genuinely ambiguous, choose the reading the context supports and
+mark it with a % comment.
+
+Rules:
+- Emit a complete document: \\documentclass, preamble, \\begin{document} ...
+  \\end{document}.
+- Keep every block, in the order given. Nothing invented, nothing dropped.
+- Load only packages the content needs.
+- Never use \\includegraphics - the file will not exist.
+- Escape LaTeX special characters in ordinary prose (% & _ # $).
+
+Reply with the document in a single fenced block and nothing else:
+
+```latex
+...document...
+```
+"""
+
+_DOCX_PROMPT = """\
+Convert this extracted Word document to LaTeX, following your instructions
+exactly.
+
+{outline}
+"""
+
+_FIX_SYSTEM = """\
+You repair LaTeX documents that do not compile.
+
+You are working on the source alone - the original document is not in front of
+you, so you cannot verify the content and must not try to. Change only what is
+structurally broken: unbalanced braces, unclosed environments, mismatched maths
+delimiters, a missing package for a command that is used. Leave every word,
+number and expression exactly as it is.
+
+Reply with the full corrected document in a single fenced block and nothing
+else.
+"""
+
+
+def convert_page(file_bytes, filename, validate=True, outline=None,
+                 rotation=None):
+    """
+    Transcribe one unit of a document to LaTeX with the model alone.
+
+    A "unit" is one page of a PDF, one image, or - when `outline` is given
+    instead of file bytes - the extracted contents of a Word document. There is
+    no converter draft in either case: the model is doing the reading.
+
+    `rotation` carries one conversion's model state across its pages: the
+    round opens on the preferred model and, if that runs out of quota, stays on
+    whichever model took over instead of re-probing the exhausted one for every
+    remaining page. Omit it and the call is its own round.
+
+    `validate` is off when the caller is converting several pages and will
+    validate the merged document once at the end. Validating per page would
+    multiply the compile and repair budget by the page count while checking
+    fragments that were never meant to stand alone.
+
+    Returns the same shape as review_page(), so callers do not have to care
+    which path produced the document. On failure it returns an empty document
+    with a status; unlike the review path there is no converter output to fall
+    back on here, which is the central trade-off of going AI-first.
+    """
+    if not enabled():
+        return _blank_result('', 'skipped',
+                             'AI conversion is not configured on this server.')
+
+    if outline is not None:
+        system, ask = _DOCX_SYSTEM, [text_part(
+            _DOCX_PROMPT.format(outline=outline))]
+    else:
+        part = source_part(file_bytes, filename)
+        if part is None:
+            return _blank_result('', 'skipped',
+                                 'The document could not be shown to the model.')
+        system, ask = _DIRECT_SYSTEM, [part, text_part(_DIRECT_PROMPT)]
+
+    try:
+        convo, reply, provider = ask_first_usable(
+            system, llm_providers.ROLE_DOCUMENT, ask, rotation=rotation)
+    except LlmError as exc:
+        return _blank_result('', 'failed', str(exc))
+    except Exception as exc:
+        print(f"ERROR: unexpected failure during direct conversion: {exc!r}")
+        return _blank_result('', 'failed', 'The conversion could not be completed.')
+
+    tex = fenced_latex(reply) or reply.strip()
+    if not tex:
+        return _blank_result('', 'failed', 'The model returned no document.')
+
+    report = []
+    compile_result = {'attempted': False, 'ok': False, 'engine': None,
+                      'errors': '', 'missing_packages': [], 'reason': None}
+    if validate:
+        budget = _int_env('AI_QA_MAX_API_CALLS', 3) - convo.calls
+        tex, compile_result = _validate_and_repair(convo, tex, budget, report)
+
+    return {
+        'tex': tex, 'status': 'corrected', 'message': '',
+        'findings': report, 'equations': [], 'summary': {},
+        'compile': compile_result, 'usage': convo.usage,
+        'model': convo.model, 'provider': provider.name,
+    }
+
+
+def finalise_document(tex):
+    """
+    Validate an assembled document and repair it once if it will not build.
+
+    Used after several pages have been merged, where no single conversation
+    holds the whole document. The repair conversation is opened fresh and
+    without the original attached, so it is told plainly that it is fixing
+    structure and must not touch content.
+
+    Returns (tex, compile_result, findings). Never raises: a document that
+    cannot be repaired is still the user's document.
+    """
+    findings = []
+    if not (tex or '').strip():
+        return tex, {'attempted': False, 'ok': False, 'engine': None,
+                     'errors': '', 'missing_packages': [], 'reason': None}, findings
+
+    if not enabled():
+        problems = latex_tools.static_validate(tex)
+        compile_result = {'attempted': False, 'ok': False, 'engine': None,
+                          'errors': '', 'missing_packages': [],
+                          'reason': None}
+        if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
+            compile_result = latex_tools.compile_tex(tex)
+        return tex, compile_result, findings
+
+    provider = llm_providers.get_provider()
+    try:
+        # No call is made here - _validate_and_repair only asks if the document
+        # is actually broken - so there is nothing to rotate on. Just avoid
+        # opening on a model already known to be out of quota.
+        convo = provider.start(
+            _FIX_SYSTEM, role=llm_providers.ROLE_DOCUMENT,
+            model=first_usable_model(llm_providers.ROLE_DOCUMENT))
+    except LlmError:
+        convo = None
+
+    if convo is None:
+        problems = latex_tools.static_validate(tex)
+        compile_result = {'attempted': False, 'ok': False, 'engine': None,
+                          'errors': '', 'missing_packages': [], 'reason': None}
+        if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
+            compile_result = latex_tools.compile_tex(tex)
+        return tex, compile_result, findings
+
+    try:
+        tex, compile_result = _validate_and_repair(convo, tex, 1, findings)
+    except LlmError as exc:
+        return tex, {'attempted': False, 'ok': False, 'engine': None,
+                     'errors': '', 'missing_packages': [],
+                     'reason': str(exc)}, findings
+    return tex, compile_result, findings
+
+
+def blank_review(tex, status, message):
+    """Public constructor for a no-review result (used by convert.py)."""
+    return _blank_result(tex, status, message)
+
+
+def review_page(file_bytes, filename, tex, equations=None, uncertain=None):
+    """
+    QA the unified pipeline's assembled document.
+
+    One call, one document, the whole page in view. This is the only stage that
+    can check the *merge* - whether an equation landed in the right place,
+    whether content got duplicated between the two converters, whether
+    something that is not an equation was transcribed as one. Two separate
+    reviews structurally cannot see that, because neither has both halves.
+
+    Returns the same shape as review_document(), so callers and templates do
+    not have to care which review ran.
+    """
+    if not enabled():
+        return _blank_result(tex, 'skipped',
+                             'AI review is not configured on this server.')
+
+    part = source_part(file_bytes, filename)
+    if part is None:
+        return _blank_result(
+            tex, 'skipped',
+            'The original document could not be shown to the reviewer, so the '
+            'converted output was returned unchanged.')
+
+    equations = equations or []
+    if equations:
+        listing = ('The expressions the formula model reported, in reading '
+                   'order:\n'
+                   + '\n'.join(f"{item['index']}. {item['latex']}"
+                               for item in equations)
+                   + '\n')
+    else:
+        listing = ('The formula model reported no equations on this page. If '
+                   'the image shows mathematics, it was missed - add it.\n')
+
+    # Lines no engine could read - handwriting, almost always. Naming them
+    # tells the reviewer exactly where to spend its attention on the image,
+    # instead of hoping it notices.
+    if uncertain:
+        flagged = ('\nThese lines were NOT read reliably by any engine, and are '
+                   'very likely handwritten. Treat each as a guess and read it '
+                   'off the image yourself:\n'
+                   + '\n'.join(f'  - {text[:120]}' for text in uncertain[:20])
+                   + '\n')
+    else:
+        flagged = ''
+
+    try:
+        convo, reply, provider = ask_first_usable(
+            _UNIFIED_SYSTEM,
+            llm_providers.ROLE_EQUATIONS if equations
+            else llm_providers.ROLE_DOCUMENT,
+            [part, text_part(_UNIFIED_PROMPT.format(
+                count=len(equations), listing=listing, uncertain=flagged,
+                tex=tex))])
+    except LlmError as exc:
+        return _blank_result(tex, 'failed', str(exc))
+    except Exception as exc:
+        print(f"ERROR: unexpected failure during unified QA: {exc!r}")
+        return _blank_result(tex, 'failed',
+                             'The AI review could not be completed, so the '
+                             'converted output was returned unchanged.')
+
+    corrected = fenced_latex(reply)
+    report = []
+    compile_result = {'attempted': False, 'ok': False, 'engine': None,
+                      'errors': '', 'missing_packages': [], 'reason': None}
+
+    if corrected:
+        findings = reply.split('```')[0].strip()
+        report = [line.strip(' -*') for line in findings.splitlines()
+                  if line.strip()]
+        budget = _int_env('AI_QA_MAX_API_CALLS', 3) - convo.calls
+        final, compile_result = _validate_and_repair(convo, corrected, budget,
+                                                     report)
+        status = 'corrected'
+    else:
+        final = tex
+        status = 'clean'
+        report = ['The converted document already matches the source page.']
+        if _bool_env('AI_QA_ENABLE_COMPILE', True):
+            compile_result = latex_tools.compile_tex(final)
+
+    return {
+        'tex': final,
+        'status': status,
+        'message': '',
+        'findings': report,
+        'equations': [],
+        'summary': {},
+        'compile': compile_result,
+        'usage': convo.usage,
+        'model': convo.model,
+        'provider': provider.name,
     }
 
 
@@ -476,10 +1071,10 @@ def review_document(file_bytes, filename, tex):
             'The original document could not be shown to the reviewer, so the '
             'OCR output was returned unchanged.')
 
-    provider = llm_providers.get_provider()
     try:
-        convo = provider.start(_DOCUMENT_SYSTEM)
-        reply = convo.ask([part, text_part(_DOCUMENT_PROMPT.format(tex=tex))])
+        convo, reply, provider = ask_first_usable(
+            _DOCUMENT_SYSTEM, llm_providers.ROLE_DOCUMENT,
+            [part, text_part(_DOCUMENT_PROMPT.format(tex=tex))])
     except LlmError as exc:
         return _blank_result(tex, 'failed', str(exc))
     except Exception as exc:
@@ -549,10 +1144,10 @@ def review_equations(file_bytes, filename, equations):
                         for item in equations)
     prompt = _EQUATION_PROMPT.format(count=len(equations), listing=listing)
 
-    provider = llm_providers.get_provider()
     try:
-        convo = provider.start(_EQUATION_SYSTEM)
-        reply = convo.ask([part, text_part(prompt)])
+        convo, reply, provider = ask_first_usable(
+            _EQUATION_SYSTEM, llm_providers.ROLE_EQUATIONS,
+            [part, text_part(prompt)])
     except LlmError as exc:
         return _blank_result(fallback, 'failed', str(exc))
     except Exception as exc:

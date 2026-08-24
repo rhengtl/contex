@@ -1,0 +1,319 @@
+{# ---------------------------------------------------------------------------
+   Terms of Service.
+
+   Written against what the code actually does. Where this document states a
+   limit, a retention period or a behaviour, it was taken from the source and
+   must be kept in step with it:
+
+     32 MB upload limit        app.py  MAX_UPLOAD_MB
+     10 pages per PDF          .env    AI_QA_MAX_PDF_PAGES / UNIFIED_MAX_PDF_PAGES
+     1 hour result retention   tex_store.py  TTL_SECONDS
+     60,000 char history cap   app.py  HISTORY_RESULT_LIMIT
+     terms gate                app.py  terms_accepted() / convert_route()
+
+   NOT reviewed by a lawyer. See the notice at the top of the rendered page.
+   The operator is identified by project name only, which was a deliberate
+   choice - see the note in AI_QA_README.md about RA 10173 identification of
+   the Personal Information Controller.
+   --------------------------------------------------------------------------- #}
+<div class="legal-doc space-y-4 text-sm text-forest-800 text-left">
+
+    <div class="bg-yellow-50 border border-yellow-400 rounded p-3">
+        <p class="font-semibold text-yellow-900">Please read this first</p>
+        <p class="text-yellow-900">
+            These Terms describe accurately how ConTeX works and what happens to
+            the documents you give it. They have <strong>not been reviewed by a
+            lawyer</strong>, and nothing here should be taken as a statement
+            that ConTeX complies with any particular law. ConTeX is a personal,
+            non-commercial project, and it is offered on that basis.
+        </p>
+    </div>
+
+    <p class="text-xs text-forest-500">
+        Version {{ terms_version }} &middot; Effective on the date you accept it
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">1. Who provides ConTeX</h4>
+    <p>
+        ConTeX (&ldquo;ConTeX&rdquo;, &ldquo;the Service&rdquo;, &ldquo;we&rdquo;,
+        &ldquo;us&rdquo;) is a personal, non-commercial project operated by an
+        individual, not by a company. It is offered free of charge and is not
+        backed by an organisation, a support team or a service-level commitment.
+    </p>
+    <p>
+        Contact for any question about these Terms, about privacy, or to request
+        deletion of your data:
+        <a href="mailto:rheniergustilo06@gmail.com" class="underline text-burgundy-600 hover:text-burgundy-500">rheniergustilo06@gmail.com</a>.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">2. Accepting these Terms</h4>
+    <p>
+        You must tick the agreement box before you can upload, photograph, draw
+        or convert anything. Ticking it means you accept these Terms and the
+        <button type="button" class="underline text-burgundy-600 hover:text-burgundy-500" onclick="openLegal('privacy')">Privacy Policy</button>.
+        If you do not accept them, do not use ConTeX &mdash; the conversion
+        feature stays disabled until you do.
+    </p>
+    <p>
+        Each version of these Terms is numbered. If they change materially, the
+        version number changes and you will be asked to accept the new version
+        before converting again. If you have an account, your acceptance is
+        recorded against it so you are not asked repeatedly; if you use ConTeX
+        as a guest, you are asked once per browsing session.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">3. Who may use ConTeX</h4>
+    <p>
+        You must be <strong>at least 16 years old</strong> to use ConTeX. If you
+        are under 16, please do not use the Service or create an account. If we
+        learn that an account belongs to someone under 16, we will delete it and
+        its stored history.
+    </p>
+    <p>
+        You must also be legally able to enter into this agreement, and not
+        barred from using the Service under any applicable law.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">4. What ConTeX does</h4>
+    <p>
+        ConTeX converts a document you provide into LaTeX source
+        (a <code>.tex</code> file) and renders that source to a PDF preview. You
+        can provide a document as:
+    </p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>an image file (PNG, JPG, JPEG, BMP, TIFF, WebP or GIF);</li>
+        <li>a PDF file;</li>
+        <li>a Microsoft Word document (<code>.docx</code>);</li>
+        <li>a photograph taken with your device camera through the Service; or</li>
+        <li>handwriting or drawing you make on the in-app canvas.</li>
+    </ul>
+    <p>
+        Conversion normally works by sending your document to a third-party AI
+        service, which reads it and produces the LaTeX. Word documents are sent
+        as extracted text rather than as a file. Where that service is
+        unavailable, ConTeX can instead convert your document using software
+        running on its own server. <strong>Section 6 and the Privacy Policy
+        explain where your document goes in each case.</strong>
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">5. Accuracy is not guaranteed</h4>
+    <p class="bg-yellow-50 border border-yellow-300 rounded p-3">
+        <strong>Conversion is performed by optical character recognition and by
+        AI language models. Both make mistakes.</strong> Output may contain
+        incorrect words, incorrect mathematics, missing content, or content that
+        does not appear in your original at all. You must check every conversion
+        against your source document before relying on it. ConTeX is not
+        suitable as the sole record of anything that matters, and must not be
+        relied on for any purpose where an error would cause harm, loss, or an
+        incorrect decision.
+    </p>
+    <p>
+        When the AI service is unavailable and ConTeX falls back to the software
+        on its own server, results are measurably worse &mdash; particularly for
+        complex document structure and unclear handwriting. ConTeX tells you
+        before this happens and lets you cancel instead. If it happens part way
+        through a multi-page document, ConTeX keeps the pages already converted,
+        converts the rest locally, and tells you where the change occurred.
+    </p>
+    <p>
+        No representation is made that any conversion will be accurate, complete
+        or fit for any purpose.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">6. Your content</h4>
+    <p>
+        <strong>You keep all rights in the documents you provide and in the
+        LaTeX produced from them.</strong> ConTeX claims no ownership of either.
+        We do not use your documents to train anything of our own, and we do not
+        publish, sell or share them.
+    </p>
+    <p>
+        You may only give ConTeX content that you have the right to process. Do
+        not upload material belonging to someone else without their permission,
+        and do not upload anything you are contractually or legally required to
+        keep confidential.
+    </p>
+    <p class="bg-yellow-50 border border-yellow-300 rounded p-3">
+        <strong>Where your document goes.</strong> By default, your document is
+        transmitted to a third-party AI provider (currently Google, through the
+        Gemini API) for conversion. If ConTeX is running on that provider's free
+        tier &mdash; which the Service tells you, in a notice above the upload
+        control &mdash; <strong>the provider may use your document to train its
+        models.</strong> Please do not upload confidential, personal or sensitive
+        material while that notice is shown. The Privacy Policy sets out the full
+        detail.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">7. Acceptable use</h4>
+    <p>You agree not to use ConTeX to:</p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>process content that is unlawful, or that you have no right to process;</li>
+        <li>process material you know to be confidential to someone else;</li>
+        <li>attempt to obtain credentials, API keys, server files, or another
+            user's documents or history;</li>
+        <li>probe, scan, overload, disrupt or reverse-engineer the Service or the
+            third-party services it depends on;</li>
+        <li>circumvent the limits described in Section 9, automate bulk
+            submission, or use the Service in a way that exhausts the shared
+            third-party quota it runs on; or</li>
+        <li>infringe anyone's intellectual property, privacy or other rights.</li>
+    </ul>
+    <p>
+        You are also bound by the terms of the third-party services ConTeX uses
+        on your behalf, including Google's terms for the Gemini API and Firebase.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">8. Accounts</h4>
+    <p>
+        You can use ConTeX without an account. Signing in adds saved history that
+        persists between visits. Accounts are provided through Firebase
+        Authentication, using either an email address and password or a Google
+        sign-in.
+    </p>
+    <p>
+        You are responsible for keeping your sign-in credentials secure and for
+        activity that takes place under your account. Tell us at the address in
+        Section 1 if you believe your account has been accessed by someone else.
+    </p>
+    <p>
+        You may ask us to delete your account and everything stored with it at
+        any time; see Section 11 and the Privacy Policy.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">9. Limits, availability and changes</h4>
+    <ul class="list-disc list-inside space-y-1">
+        <li>Uploads are limited to <strong>32 MB</strong> per file.</li>
+        <li>At most <strong>10 pages</strong> of a PDF are converted.</li>
+        <li>A generated <code>.tex</code> file and its PDF preview are kept for
+            <strong>one hour</strong> and then deleted automatically. They are
+            available only to the browsing session that created them.</li>
+        <li>Saved history entries are truncated at <strong>60,000
+            characters</strong>; a longer document is stored in shortened form
+            and cannot be re-rendered from history.</li>
+    </ul>
+    <p>
+        <strong>ConTeX is not a storage service.</strong> Download anything you
+        want to keep. The Service is provided as-is and may be slow,
+        unavailable, changed, limited or withdrawn at any time and without
+        notice, including because a third-party service it depends on has
+        stopped working or has exhausted its quota.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">10. No warranty</h4>
+    <p>
+        To the fullest extent permitted by applicable law, ConTeX is provided
+        <strong>&ldquo;as is&rdquo; and &ldquo;as available&rdquo;, without
+        warranty of any kind</strong>, whether express, implied or statutory,
+        including any implied warranty of merchantability, fitness for a
+        particular purpose, accuracy, or non-infringement.
+    </p>
+    <p>
+        We do not warrant that the Service will be available, uninterrupted,
+        secure or error-free, that conversions will be accurate or complete, or
+        that any defect will be corrected.
+    </p>
+    <p class="text-xs text-forest-600">
+        Some jurisdictions do not allow the exclusion of certain warranties. Where
+        that is so, this section applies only to the extent permitted, and you may
+        have rights that this section does not affect &mdash; including, for
+        consumers in the Philippines, rights under the Consumer Act of the
+        Philippines (Republic Act No. 7394).
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">11. Limitation of liability</h4>
+    <p>
+        To the fullest extent permitted by applicable law, and except as stated
+        in the paragraph below, we will not be liable for any indirect,
+        incidental, special, consequential or punitive damages, or for any loss
+        of data, profits, revenue, goodwill or academic or business opportunity,
+        arising out of or in connection with your use of ConTeX &mdash; including
+        any loss caused by an inaccurate, incomplete or fabricated conversion,
+        by a conversion being unavailable, or by a generated file expiring.
+    </p>
+    <p>
+        Because ConTeX is provided free of charge, our total aggregate liability
+        to you for all claims relating to the Service is limited to
+        <strong>PHP 1,000</strong> or the amount you have paid us for the Service
+        (which is nothing), whichever is greater.
+    </p>
+    <p class="text-xs text-forest-600">
+        Nothing in these Terms excludes or limits liability that cannot lawfully
+        be excluded or limited. Under Philippine law this includes liability for
+        fraud (<em>dolo</em>) and, to the extent Articles 1170 and 2176 of the
+        Civil Code so provide, for gross negligence &mdash; and it includes
+        liability for death or personal injury caused by negligence.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">12. Your responsibility for your use</h4>
+    <p>
+        You are responsible for your own use of ConTeX and for the content you
+        submit to it. If a third party brings a claim against us because of
+        content you submitted, or because you used the Service in breach of
+        Section 7, you agree to be responsible for that claim to the extent it
+        arises from your own act or omission, and to the extent permitted by
+        applicable law.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">13. Suspension and ending your use</h4>
+    <p>
+        You may stop using ConTeX at any time, and may ask us to delete your
+        account and stored history at any time by writing to the address in
+        Section 1. We will action such a request within <strong>30 days</strong>.
+    </p>
+    <p>
+        We may suspend or stop providing the Service to anyone who breaches these
+        Terms, or where continuing would put the Service, its users or the
+        third-party services it relies on at risk. Where it is reasonable and
+        lawful to do so, we will say why.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">14. Changes to these Terms</h4>
+    <p>
+        We may update these Terms. When we do, the version number changes and you
+        are asked to accept the new version before converting again. Continuing
+        to use the conversion feature after accepting a new version means you
+        agree to it. If you do not agree, stop using the Service and ask us to
+        delete your data.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">15. Governing law and disputes</h4>
+    <p>
+        These Terms and any dispute arising out of them or out of your use of
+        ConTeX are governed by the <strong>laws of the Republic of the
+        Philippines</strong>, without regard to its conflict-of-laws rules.
+    </p>
+    <p>
+        Before starting any formal proceedings, please contact us at the address
+        in Section 1 so we can try to resolve the matter directly. If that does
+        not resolve it, the courts of the Republic of the Philippines have
+        jurisdiction.
+    </p>
+    <p class="text-xs text-forest-600">
+        If you are a consumer resident in a country whose law gives you the right
+        to bring proceedings in your local courts, or entitles you to the
+        protection of mandatory provisions of your local law, this section does
+        not take those rights away.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">16. General</h4>
+    <ul class="list-disc list-inside space-y-1">
+        <li><strong>Severability.</strong> If any provision is held
+            unenforceable, the rest remains in force and the unenforceable part
+            is applied to the maximum extent permitted.</li>
+        <li><strong>No waiver.</strong> Not enforcing a provision on one occasion
+            is not a waiver of it.</li>
+        <li><strong>Entire agreement.</strong> These Terms and the Privacy Policy
+            are the whole agreement between you and us about ConTeX.</li>
+        <li><strong>Assignment.</strong> You may not transfer your rights under
+            these Terms. We may transfer ours if ConTeX changes hands, in which
+            case we will say so before it takes effect.</li>
+        <li><strong>Language.</strong> These Terms are written in English, and
+            the English text governs.</li>
+    </ul>
+
+    <h4 class="font-bold text-forest-900 text-base">17. Contact</h4>
+    <p>
+        Questions, complaints, deletion requests and legal notices:
+        <a href="mailto:rheniergustilo06@gmail.com" class="underline text-burgundy-600 hover:text-burgundy-500">rheniergustilo06@gmail.com</a>.
+    </p>
+</div>

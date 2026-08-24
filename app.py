@@ -1,17 +1,33 @@
 # app.py
-import os
+"""
+ConTeX - one document in, one .tex out.
+
+There is a single conversion feature. Which engine reads a page is an
+implementation detail the user is never asked about; the only choice they are
+ever given is the one that actually costs them something, which is whether to
+proceed on the local fallback when the AI is unavailable.
+
+    accept terms -> provide input -> convert -> .tex -> preview / download / copy
+
+Every input method (image, PDF, .docx, camera, canvas) posts the same `file`
+field to /convert.
+"""
+
+import hashlib
 import io
-import uuid
-from flask import (Flask, request, render_template, redirect, url_for,
-                   send_file, session)
+import os
+
+from flask import (Flask, jsonify, request, render_template, redirect,
+                   url_for, send_file, session)
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from textract_fast import extract_text_from_file, generate_tex_source
-from equation import is_model_loaded, process_image_list
+
 import ai_qa
+import ai_status
+import convert
+import firebase_config
 import latex_tools
 import tex_store
-import firebase_config
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,17 +45,26 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder i
 _MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', '32'))
 app.config['MAX_CONTENT_LENGTH'] = _MAX_UPLOAD_MB * 1024 * 1024
 
+# Bump this whenever the terms or privacy policy change materially. Everyone -
+# including users who already accepted an older version - is then asked again.
+# It is deliberately not a date alone: the version is what was agreed to.
+TERMS_VERSION = os.getenv('TERMS_VERSION', '1.0-2026-08-24')
+
+# Extensions the upload control accepts, in one place so the route, the drop
+# area and the file picker cannot drift apart.
+ACCEPTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif',
+                       '.webp', '.gif', '.pdf', '.docx']
+
 
 @app.errorhandler(413)
 def upload_too_large(_error):
-    """Turn Werkzeug's 413 into the same in-page error the routes use."""
-    session['textract_error'] = (f"That file is too large. The limit is "
-                                 f"{_MAX_UPLOAD_MB} MB.")
-    return redirect(url_for('home') + '#textract'), 302
+    """Turn Werkzeug's 413 into the same in-page error the route uses."""
+    session['convert_error'] = (f"That file is too large. The limit is "
+                                f"{_MAX_UPLOAD_MB} MB.")
+    return redirect(url_for('home') + '#convert'), 302
 
-# NOTE: none of the OCR routes require a login. Every core feature of this app
-# (/, /equation, /textract and the downloads) is usable by guests; signing in
-# only adds persistent history.
+# NOTE: conversion does not require a login. Every core feature of this app is
+# usable by guests; signing in only adds persistent history.
 
 
 def current_user_uid():
@@ -54,30 +79,103 @@ def current_user_uid():
     return user.get('uid') if isinstance(user, dict) else None
 
 
-def record_history(file_name, ocr_type, result):
-    """
-    Persist one OCR result for signed-in users only.
+# ---------------------------------------------------------------------------
+# Terms of Service / Privacy Policy gate
+# ---------------------------------------------------------------------------
 
-    Guests are intentionally skipped here: their history is kept client-side
-    in sessionStorage so it disappears with the tab and never touches
-    Firestore. Returns True if the record was written.
+def terms_accepted():
     """
+    True when this visitor has accepted the current terms.
+
+    Two stores, because the two kinds of visitor are different. A guest has
+    nowhere durable to keep the answer, so it lives in their session and they
+    are asked again next time. A signed-in user's acceptance is on their
+    profile, so it survives signing out - being asked to re-accept on every
+    login would be noise, not consent.
+    """
+    if session.get('terms_version') == TERMS_VERSION:
+        return True
     uid = current_user_uid()
-    if not uid:
-        return False
-    # A whole .tex document can be long; keep history rows a sane size.
-    if result and len(result) > HISTORY_RESULT_LIMIT:
-        result = result[:HISTORY_RESULT_LIMIT] + '\n... [truncated]'
-    return firebase_config.save_ocr_history(uid, file_name, ocr_type, result)
+    if uid and firebase_config.get_terms_accepted(uid) == TERMS_VERSION:
+        # Cache it in the session so the next request does not hit Firestore.
+        session['terms_version'] = TERMS_VERSION
+        return True
+    return False
 
+
+@app.route('/accept-terms', methods=['POST'])
+def accept_terms():
+    """Record acceptance of the current terms for this visitor."""
+    version = request.form.get('version')
+    if version is None and request.is_json:
+        version = (request.get_json(silent=True) or {}).get('version')
+    if version != TERMS_VERSION:
+        return jsonify({'ok': False,
+                        'error': 'Those terms are out of date. '
+                                 'Please reload the page.'}), 409
+
+    session['terms_version'] = TERMS_VERSION
+    uid = current_user_uid()
+    if uid:
+        firebase_config.set_terms_accepted(uid, TERMS_VERSION)
+    return jsonify({'ok': True, 'version': TERMS_VERSION})
+
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
 
 # Longest result text stored in a history record.
 HISTORY_RESULT_LIMIT = 60000
 
+_TRUNCATION_MARK = '\n... [truncated]'
 
-# How many generated results one session can hold at once (one per pipeline,
-# plus a little slack). Older ones are deleted as new ones arrive.
-_MAX_SESSION_TEX = 4
+
+def record_history(file_name, result):
+    """
+    Persist one conversion for signed-in users only.
+
+    Guests are intentionally skipped here: their history is kept client-side
+    in sessionStorage so it disappears with the tab and never touches
+    Firestore. Returns the document id, or None.
+    """
+    uid = current_user_uid()
+    if not uid:
+        return None
+    # A whole .tex document can be long; keep history rows a sane size.
+    if result and len(result) > HISTORY_RESULT_LIMIT:
+        result = result[:HISTORY_RESULT_LIMIT] + _TRUNCATION_MARK
+    return firebase_config.save_ocr_history(uid, file_name, 'convert', result)
+
+
+def _history_item(doc_id):
+    """One history record belonging to the signed-in user, or None."""
+    uid = current_user_uid()
+    if not uid:
+        return None
+    return firebase_config.get_ocr_history_item(uid, doc_id)
+
+
+def _history_pdf_token(doc_id):
+    """
+    A stable cache key for a history item's compiled preview.
+
+    Derived from the document id so the same item reuses its PDF instead of
+    recompiling on every visit. It is only ever used *after* the route has
+    confirmed the item belongs to the signed-in user, so it grants no access of
+    its own.
+    """
+    return hashlib.sha256(f'history:{doc_id}'.encode()).hexdigest()[:48]
+
+
+# ---------------------------------------------------------------------------
+# Generated results
+# ---------------------------------------------------------------------------
+
+# How many generated results one session can hold at once. Matched to the
+# length of the guest history list, so that every entry a guest can still see
+# is an entry they can still preview and download.
+_MAX_SESSION_TEX = 20
 
 
 def remember_tex(payload):
@@ -107,31 +205,25 @@ def owned_tex(token):
     return tex_store.read(token)
 
 
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
 @app.route('/', methods=['GET'])
 def home():
     # ---------------------------------------------------------
     # Retrieve and clear session data (Post/Redirect/Get pattern)
     # This ensures data is shown once, and cleared on reload.
     #
-    # Both converters store their result server-side and keep only the token
-    # in the session: a page of OCR text - let alone a whole .tex document
-    # plus its QA report - does not fit in a 4KB session cookie.
+    # The result is stored server-side and only its token is kept in the
+    # session: a whole .tex document plus its QA report does not fit in a 4KB
+    # session cookie.
     # ---------------------------------------------------------
-
-    # Equation data
-    equation_token = session.pop('equation_token', None)
-    uploaded_image_name = session.pop('uploaded_image_name', None)
-    show_equation_result = session.pop('show_equation_result', False)
-    equation_error = session.pop('equation_error', None)
-    equation_result = owned_tex(equation_token) if equation_token else None
-
-    # Textract data
-    textract_token = session.pop('textract_job_token', None)
-    show_textract_result = session.pop('show_textract_result', False)
-    textract_error = session.pop('textract_error', None)
-    textract_result = owned_tex(textract_token) if textract_token else None
-    recognized_textract = textract_result['text'] if textract_result else None
-    tex_file = textract_token if textract_result else None
+    convert_token = session.pop('convert_token', None)
+    show_convert_result = session.pop('show_convert_result', False)
+    convert_error = session.pop('convert_error', None)
+    convert_blocked = session.pop('convert_blocked', None)
+    convert_result = owned_tex(convert_token) if convert_token else None
 
     # ---------------------------------------------------------
     # History
@@ -140,145 +232,135 @@ def home():
     # ---------------------------------------------------------
     uid = current_user_uid()
     history = firebase_config.get_user_ocr_history(uid, limit=20) if uid else []
+    for item in history:
+        item['truncated'] = _TRUNCATION_MARK in (item.get('result') or '')
 
-    # One-shot flag set by an OCR POST. It survives exactly one redirect, so we
-    # can tell the Post/Redirect/Get landing apart from a real page refresh:
-    # on the PRG landing we keep the guest's session history, on a refresh or a
-    # fresh visit we tell the browser to wipe it.
+    # One-shot flag set by a conversion POST. It survives exactly one redirect,
+    # so we can tell the Post/Redirect/Get landing apart from a real page
+    # refresh: on the PRG landing we keep the guest's session history, on a
+    # refresh or a fresh visit we tell the browser to wipe it.
     keep_guest_history = session.pop('just_processed', False)
 
     return render_template('home.html',
-                           equation_result=equation_result,
-                           equation_token=equation_token if equation_result else None,
-                           uploaded_image_name=uploaded_image_name,
-                           show_equation_result=show_equation_result,
-                           error_message=equation_error,
-                           recognized_textract=recognized_textract,
-                           textract_result=textract_result,
-                           tex_file=tex_file,
-                           show_textract_result=show_textract_result,
-                           error=textract_error,
+                           convert_result=convert_result,
+                           convert_token=convert_token if convert_result else None,
+                           show_convert_result=show_convert_result,
+                           convert_error=convert_error,
+                           convert_blocked=convert_blocked,
                            history=history,
                            is_authenticated=bool(uid),
                            keep_guest_history=keep_guest_history,
+                           accepted_extensions=ACCEPTED_EXTENSIONS,
+                           terms_version=TERMS_VERSION,
+                           has_accepted_terms=terms_accepted(),
+                           ai=ai_status.check(),
                            qa=ai_qa.provider_info(),
                            latex_engine=latex_tools.engine_name(
                                latex_tools.find_engine()))
 
 
-@app.route('/equation', methods=['GET', 'POST'])
-def upload_and_process():
+@app.route('/legal/<document>')
+def legal(document):
     """
-    Equation converter, then AI QA.
+    Serve one legal document as a fragment for the in-app modal.
 
-        image -> pix2text-mfr -> [eq 1, eq 2, ...] -> AI review -> .tex
-
-    The converter lists every equation it finds separately, in reading order.
-    It deliberately does not try to work out how they relate or how they should
-    be laid out - that judgement needs the original image, and it is what the
-    review stage is for. If the review is unavailable the equations are still
-    returned, one displayed equation each.
+    A fragment rather than a page: the requirement is that a user can read the
+    terms without leaving what they were doing, so the modal fetches this and
+    drops it in.
     """
-    if not is_model_loaded():
-        session['equation_error'] = "Error: OCR Model not loaded. Please check server logs."
-        return redirect(url_for('home') + '#equation')
-
-    if request.method != 'POST':
-        return redirect(url_for('home'))
-
-    file = request.files.get('file')
-    if not file or file.filename == '':
-        session['equation_error'] = "No file selected."
-        return redirect(url_for('home') + '#equation')
-
-    try:
-        image_bytes = file.read()
-        equations = process_image_list(image_bytes)
-    except Exception as e:
-        print(f"Error during equation recognition: {e}")
-        session['equation_error'] = f"An error occurred: {e}"
-        return redirect(url_for('home') + '#equation')
-
-    # QA never blocks the result: any failure returns the converter's own
-    # list, laid out without the AI's help.
-    review = ai_qa.review_equations(image_bytes, file.filename, equations)
-
-    token = remember_tex({
-        'tex': review['tex'],
-        'text': review['tex'],
-        'file_name': file.filename,
-        'source': 'equation',
-        'detected': equations,
-        'qa': _qa_payload(review),
-    })
-
-    session['equation_token'] = token
-    session['uploaded_image_name'] = file.filename
-    session['show_equation_result'] = True
-    session['just_processed'] = True
-
-    # Signed-in users get this saved to Firestore; guests do not.
-    record_history(file.filename, 'equation', review['tex'])
-
-    return redirect(url_for('home') + '#equation')
+    if document not in ('terms', 'privacy'):
+        return 'Unknown document', 404
+    return render_template(f'legal/{document}.html', terms_version=TERMS_VERSION)
 
 
-@app.route('/textract', methods=['GET', 'POST'])
-def textract_route():
+# ---------------------------------------------------------------------------
+# AI availability
+# ---------------------------------------------------------------------------
+
+@app.route('/api/ai-status')
+def ai_status_route():
     """
-    Textract converter, then AI QA.
+    Whether the AI conversion path is usable right now.
 
-        image/PDF -> Tesseract -> .tex -> AI review -> .tex
+    Polled by the page before a conversion starts, and again when the user asks
+    to re-check from the outage warning - so a warning cannot outlive the
+    outage that caused it.
+    """
+    return jsonify(ai_status.check())
 
-    Tesseract remains the OCR engine. The reviewer sees the original upload
-    beside the generated LaTeX and corrects what the image proves is wrong.
+
+# ---------------------------------------------------------------------------
+# Conversion
+# ---------------------------------------------------------------------------
+
+@app.route('/convert', methods=['GET', 'POST'])
+def convert_route():
+    """
+    The one conversion route.
+
+    All five input methods land here: file picker, PDF, .docx, camera capture
+    and canvas drawing all arrive as the same `file` field.
     """
     if request.method != 'POST':
         return redirect(url_for('home'))
 
+    if not terms_accepted():
+        session['convert_error'] = (
+            'Please accept the Terms of Service and Privacy Policy before '
+            'converting a document.')
+        return redirect(url_for('home') + '#convert')
+
     file = request.files.get('file')
     if not file or file.filename == '':
-        session['textract_error'] = "No file selected."
-        return redirect(url_for('home') + '#textract')
+        session['convert_error'] = "No file selected."
+        return redirect(url_for('home') + '#convert')
 
     file_bytes = file.read()
+    if not file_bytes:
+        session['convert_error'] = "That file was empty."
+        return redirect(url_for('home') + '#convert')
 
-    # Save the upload under a name we generate. Using the browser-supplied
-    # filename directly let a crafted name escape the upload folder.
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'],
-                             unique_upload_name(file.filename))
-    with open(file_path, 'wb') as handle:
-        handle.write(file_bytes)
+    # The user's answer to the outage warning, if they were shown one.
+    allow_fallback = request.form.get('allow_fallback') in ('1', 'true', 'on')
 
     try:
-        result_text = extract_text_from_file(file_path)
-    finally:
-        # Auto delete uploaded file after processing
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-    draft_tex = generate_tex_source(result_text)
-
-    # QA never blocks the result: any failure returns Tesseract's own .tex.
-    review = ai_qa.review_document(file_bytes, file.filename, draft_tex)
-
-    token = remember_tex({
-        'tex': review['tex'],
-        'text': result_text,
-        'draft_tex': draft_tex,
-        'file_name': file.filename,
-        'source': 'textract',
-        'qa': _qa_payload(review),
-    })
-
-    session['textract_job_token'] = token
-    session['show_textract_result'] = True
-    session['just_processed'] = True
+        result = convert.convert(file_bytes, file.filename,
+                                 allow_fallback=allow_fallback)
+    except convert.FallbackNotAuthorized as blocked:
+        # Never silently downgrade. Hand the status back so the page can say
+        # which service is unavailable and whether recovery time is known.
+        session['convert_blocked'] = blocked.status
+        return redirect(url_for('home') + '#convert')
+    except RuntimeError as exc:
+        session['convert_error'] = str(exc)
+        return redirect(url_for('home') + '#convert')
+    except Exception as exc:
+        print(f"ERROR: conversion failed: {exc!r}")
+        session['convert_error'] = (
+            "The conversion failed. Please try a different file.")
+        return redirect(url_for('home') + '#convert')
 
     # Signed-in users get this saved to Firestore; guests do not.
-    record_history(file.filename, 'textract', result_text)
+    history_id = record_history(file.filename, result['tex'])
 
-    return redirect(url_for('home') + '#textract')
+    token = remember_tex({
+        'tex': result['tex'],
+        'text': result['tex'],
+        'draft_tex': result['raw_tex'],
+        'file_name': file.filename,
+        'source': 'convert',
+        'history_id': history_id,
+        'detected': [{'index': item['index'], 'latex': item['latex']}
+                     for item in result['equations']],
+        'stats': result['summary'],
+        'qa': _qa_payload(result['qa']),
+    })
+
+    session['convert_token'] = token
+    session['show_convert_result'] = True
+    session['just_processed'] = True
+
+    return redirect(url_for('home') + '#convert')
 
 
 def _qa_payload(review):
@@ -296,46 +378,271 @@ def _qa_payload(review):
     }
 
 
-def unique_upload_name(filename):
-    """A collision-free, traversal-free name for a temporarily saved upload."""
-    safe = secure_filename(filename or '') or 'upload'
-    return f"{uuid.uuid4().hex}_{safe}"
+# ---------------------------------------------------------------------------
+# Output: download, copy (client-side) and PDF preview
+# ---------------------------------------------------------------------------
 
-
-def send_tex(token, fallback_name):
-    """
-    Serve a stored .tex file, but only to the session that generated it.
-
-    The file is streamed from memory so no extra copy is left in the upload
-    folder, and an unknown or expired token is a 404 rather than someone
-    else's document.
-    """
-    job = owned_tex(token)
-    if not job:
-        return ("That download link has expired or does not belong to this "
-                "session. Please run the conversion again."), 404
-
-    name = job.get('file_name') or fallback_name
-    base = os.path.splitext(secure_filename(name) or fallback_name)[0] or 'document'
+def _tex_download(tex, name, fallback_name):
+    base = os.path.splitext(secure_filename(name or '') or fallback_name)[0] \
+        or 'document'
     return send_file(
-        io.BytesIO(job['tex'].encode('utf-8')),
+        io.BytesIO((tex or '').encode('utf-8')),
         mimetype='application/x-tex',
         as_attachment=True,
         download_name=f'{base}.tex')
 
 
-@app.route('/download-tex')
-def download_tex():
-    """Download the Textract-generated .tex for this session."""
-    token = request.args.get('token') or _latest_token('textract')
-    return send_tex(token, 'textract-output')
+@app.route('/download-converted-tex')
+def download_converted_tex():
+    """
+    Download a generated .tex, but only for the session that generated it.
+
+    The file is streamed from memory so no extra copy is left in the upload
+    folder, and an unknown or expired token is a 404 rather than someone else's
+    document.
+    """
+    token = request.args.get('token') or _latest_token('convert')
+    job = owned_tex(token)
+    if not job:
+        return ("That download link has expired or does not belong to this "
+                "session. Please run the conversion again."), 404
+    return _tex_download(job['tex'], job.get('file_name'), 'converted')
 
 
-@app.route('/download-equation-tex')
-def download_equation_tex():
-    """Download the reviewed equation .tex for this session."""
-    token = request.args.get('token') or _latest_token('equation')
-    return send_tex(token, 'equations')
+def _wants_html():
+    """
+    True when the caller is a frame or a tab rather than a script.
+
+    The preview is shown by pointing an iframe straight at this route, because
+    a browser will not hand an application/pdf body to fetch(): Chromium
+    intercepts those responses for its own PDF viewer, and the script is left
+    with nothing to display. So the route is loaded as a document, and a
+    failure has to be something a document can render. Callers that ask for
+    JSON - the API, and the tests - still get JSON.
+    """
+    accept = request.accept_mimetypes
+    return accept['text/html'] > accept['application/json']
+
+
+def preview_failure(reason, status, errors='', missing=()):
+    """One preview failure, rendered for whoever asked for it."""
+    if _wants_html():
+        return render_template('preview_error.html', reason=reason,
+                               errors=errors or '',
+                               missing=list(missing or [])), status
+    return jsonify({'ok': False, 'reason': reason, 'errors': errors or '',
+                    'missing_packages': list(missing or [])}), status
+
+
+def _preview_pdf_bytes(tex, cache_token=None):
+    """
+    The compiled PDF for a preview: (pdf_bytes, failure).
+
+    `failure` is (reason, status, errors, missing) when there is nothing to
+    show. Compiling is the slow half of a preview, so the result is cached
+    against the same token that owns the document.
+    """
+    if cache_token:
+        cached = tex_store.read_pdf(cache_token)
+        if cached:
+            return cached, None
+
+    result = latex_tools.compile_tex(tex, want_pdf=True)
+    if result['ok'] and result.get('pdf'):
+        if cache_token:
+            tex_store.save_pdf(cache_token, result['pdf'])
+        return result['pdf'], None
+
+    if not result['attempted']:
+        return None, (
+            result.get('reason')
+            or 'No LaTeX engine is installed on this server, so a preview '
+               'cannot be produced. The .tex file is still correct and can be '
+               'downloaded.',
+            503, '', [])
+
+    return None, (
+        result.get('reason')
+        or f"{result['engine']} could not compile this document.",
+        422, result.get('errors') or '', result.get('missing_packages') or [])
+
+
+def _compiled_pdf(tex, cache_token=None):
+    """
+    Serve the compiled PDF itself, for opening or saving the real file.
+
+    This is not what the on-page preview uses - see preview_pages - because a
+    browser takes an application/pdf response away from the page before it can
+    be displayed. It stays because a user still wants the actual document.
+    """
+    pdf, failure = _preview_pdf_bytes(tex, cache_token)
+    if pdf:
+        return send_file(io.BytesIO(pdf), mimetype='application/pdf',
+                         download_name='preview.pdf')
+    reason, status, errors, missing = failure
+    return preview_failure(reason, status, errors=errors, missing=missing)
+
+
+@app.route('/preview.pdf')
+def preview_pdf():
+    """Render this session's generated .tex to a PDF for the in-page preview."""
+    token = request.args.get('token') or _latest_token('convert')
+    job = owned_tex(token)
+    if not job:
+        return preview_failure('That preview has expired or does not belong '
+                               'to this session. Please convert again.', 404)
+    return _compiled_pdf(job['tex'], cache_token=token)
+
+
+def _preview_target():
+    """
+    What a preview request is about: (tex, cache_token, failure).
+
+    Accepts either a result token owned by this session or a saved history id,
+    so a fresh conversion and a saved one share one pair of routes.
+    """
+    doc_id = request.args.get('doc')
+    if doc_id:
+        item = _history_item(doc_id)
+        if not item:
+            return None, None, ('That history item was not found.', 404)
+        tex = item.get('result') or ''
+        if _TRUNCATION_MARK in tex:
+            return None, None, (
+                'This saved document was too long to store in full, so it '
+                'cannot be compiled. Convert the original again to get a '
+                'complete .tex.', 422)
+        return tex, _history_pdf_token(doc_id), None
+
+    token = request.args.get('token') or _latest_token('convert')
+    job = owned_tex(token)
+    if not job:
+        return None, None, ('That preview has expired or does not belong to '
+                            'this session. Please convert again.', 404)
+    return job['tex'], token, None
+
+
+@app.route('/preview/pages')
+def preview_pages():
+    """
+    Render the document to page images and say how many there are.
+
+    This is what the on-page preview is built from. The images are then fetched
+    as ordinary <img> loads, which every browser displays - unlike a PDF, which
+    Chromium hands to its own viewer, and which a download manager extension
+    takes away from the page entirely. Always JSON, so nothing intercepts it.
+    """
+    tex, cache_token, failure = _preview_target()
+    if failure:
+        reason, status = failure
+        return jsonify({'ok': False, 'reason': reason, 'errors': '',
+                        'missing_packages': []}), status
+
+    cached = tex_store.count_pages(cache_token)
+    if cached:
+        return jsonify({'ok': True, 'pages': cached})
+
+    pdf, failure = _preview_pdf_bytes(tex, cache_token)
+    if failure:
+        reason, status, errors, missing = failure
+        return jsonify({'ok': False, 'reason': reason, 'errors': errors,
+                        'missing_packages': missing}), status
+
+    pages, error = latex_tools.render_pages(pdf)
+    if error:
+        return jsonify({'ok': False, 'reason': error, 'errors': '',
+                        'missing_packages': []}), 503
+
+    written = tex_store.save_pages(cache_token, pages)
+    if not written:
+        return jsonify({'ok': False,
+                        'reason': 'The rendered pages could not be stored on '
+                                  'this server, so the preview cannot be '
+                                  'shown. The .tex file is unaffected.',
+                        'errors': '', 'missing_packages': []}), 500
+    return jsonify({'ok': True, 'pages': written})
+
+
+# Deliberately a type nothing claims. An application/pdf response never
+# reaches the page that asked for it: the browser routes it to its own viewer,
+# and a download manager extension takes it and downloads it instead. Under
+# this type the bytes arrive intact, and the page labels them as a PDF itself.
+_OPAQUE_PDF = 'application/x-contex-pdf'
+
+
+@app.route('/preview/document')
+def preview_document():
+    """
+    The compiled PDF as plain bytes, for opening it in the browser's viewer.
+
+    Not a substitute for /preview.pdf, which still serves the real thing to
+    anyone who asks for it directly. This exists so the Open in a new tab
+    buttons can hand the browser a blob to display rather than a response
+    something else will intercept first.
+    """
+    tex, cache_token, failure = _preview_target()
+    if failure:
+        reason, status = failure
+        return jsonify({'ok': False, 'reason': reason, 'errors': '',
+                        'missing_packages': []}), status
+
+    pdf, failure = _preview_pdf_bytes(tex, cache_token)
+    if failure:
+        reason, status, errors, missing = failure
+        return jsonify({'ok': False, 'reason': reason, 'errors': errors,
+                        'missing_packages': missing}), status
+    return send_file(io.BytesIO(pdf), mimetype=_OPAQUE_PDF)
+
+
+@app.route('/preview/page.png')
+def preview_page():
+    """One rendered page, as a plain image."""
+    _tex, cache_token, failure = _preview_target()
+    if failure:
+        return '', 404
+    try:
+        number = int(request.args.get('n', '1'))
+    except (TypeError, ValueError):
+        return '', 404
+    data = tex_store.read_page(cache_token, number)
+    if not data:
+        return '', 404
+    return send_file(io.BytesIO(data), mimetype='image/png')
+
+
+@app.route('/history/<doc_id>/download')
+def history_download(doc_id):
+    """Download the .tex of one saved conversion."""
+    item = _history_item(doc_id)
+    if not item:
+        return "That history item was not found.", 404
+    return _tex_download(item.get('result'), item.get('fileName'), 'converted')
+
+
+@app.route('/history/<doc_id>/tex')
+def history_tex(doc_id):
+    """The LaTeX of one saved conversion, for the Copy button."""
+    item = _history_item(doc_id)
+    if not item:
+        return jsonify({'ok': False, 'error': 'Not found.'}), 404
+    return jsonify({'ok': True, 'tex': item.get('result') or '',
+                    'fileName': item.get('fileName') or 'document',
+                    'truncated': _TRUNCATION_MARK in (item.get('result') or '')})
+
+
+@app.route('/history/<doc_id>/preview.pdf')
+def history_preview(doc_id):
+    """Render one saved conversion to a PDF preview."""
+    item = _history_item(doc_id)
+    if not item:
+        return preview_failure('That history item was not found.', 404)
+    tex = item.get('result') or ''
+    if _TRUNCATION_MARK in tex:
+        return preview_failure(
+            'This saved document was too long to store in full, so it cannot '
+            'be compiled. Convert the original again to get a complete .tex.',
+            422)
+    return _compiled_pdf(tex, cache_token=_history_pdf_token(doc_id))
 
 
 def _latest_token(source):
@@ -347,23 +654,27 @@ def _latest_token(source):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     # If user is already logged in, redirect to home
     if 'user' in session:
         return redirect(url_for('home'))
-    
+
     if request.method == 'POST':
         # Check if this is a Firebase ID token login (from Google/Facebook)
         id_token = request.form.get('idToken')
-        
+
         if id_token:
             # Verify Firebase ID token
             decoded_token = firebase_config.verify_id_token(id_token)
             if decoded_token:
                 uid = decoded_token['uid']
                 user = firebase_config.get_user_by_uid(uid)
-                
+
                 if user:
                     # Federated users skip create_user(), so make sure they
                     # still have a users/ profile document.
@@ -377,20 +688,20 @@ def login():
                     }
                     session.permanent = True
                     return redirect(url_for('home'))
-            
+
             return render_template('auth/login.html', error="Authentication failed")
-        
+
         # Regular email/password login
         email = request.form.get('email')
         password = request.form.get('password')
         remember = request.form.get('remember')
-        
+
         if not email or not password:
             return render_template('auth/login.html', error="Please provide email and password")
-        
+
         # Verify user with Firebase
         result = firebase_config.verify_user(email, password)
-        
+
         if result['success']:
             user = result['user']
             # Store user info in session
@@ -403,7 +714,7 @@ def login():
             return redirect(url_for('home'))
         else:
             return render_template('auth/login.html', error=result.get('error', 'Invalid credentials'))
-    
+
     # Pass Firebase config to template
     firebase_config_data = {
         'apiKey': os.getenv('FIREBASE_API_KEY'),
@@ -412,62 +723,65 @@ def login():
     }
     return render_template('auth/login.html', firebase_config=firebase_config_data)
 
+
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     # If user is already logged in, redirect to home
     if 'user' in session:
         return redirect(url_for('home'))
-    
+
     if request.method == 'POST':
         fullname = request.form.get('fullname')
         email = request.form.get('email')
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
         terms = request.form.get('terms')
-        
+
         # Basic validation
         if not all([fullname, email, password, confirm_password]):
             return render_template('auth/signup.html', error="All fields are required")
-        
+
         if password != confirm_password:
             return render_template('auth/signup.html', error="Passwords do not match")
-        
+
         if len(password) < 6:
             return render_template('auth/signup.html', error="Password must be at least 6 characters")
-        
+
         if not terms:
             return render_template('auth/signup.html', error="You must agree to the terms and conditions")
-        
+
         # Create user in Firebase
         result = firebase_config.create_user(email, password, fullname)
-        
+
         if result['success']:
             return render_template('auth/signup.html', success="Account created successfully! Please login.")
         else:
             return render_template('auth/signup.html', error=result.get('error', 'Failed to create account'))
-    
+
     return render_template('auth/signup.html')
+
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
         email = request.form.get('email')
-        
+
         if not email:
             return render_template('auth/forgot_password.html', error="Please provide your email address")
-        
+
         # Send password reset email via Firebase
         result = firebase_config.send_password_reset(email)
-        
+
         if result['success']:
             # For security, always show success message
-            return render_template('auth/forgot_password.html', 
+            return render_template('auth/forgot_password.html',
                                  success="If an account exists with that email, you will receive a password reset link.")
         else:
-            return render_template('auth/forgot_password.html', 
+            return render_template('auth/forgot_password.html',
                                  error=result.get('error', 'An error occurred'))
-    
+
     return render_template('auth/forgot_password.html')
+
 
 @app.route('/logout')
 def logout():
@@ -480,7 +794,8 @@ def logout():
 def index():
     return redirect(url_for('home'))
 
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     debug_mode = os.getenv("FLASK_DEBUG", "True").lower() == "true"
-    app.run(debug=debug_mode, host="0.0.0.0", port=port) 
+    app.run(debug=debug_mode, host="0.0.0.0", port=port)

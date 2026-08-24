@@ -1,0 +1,400 @@
+{# ---------------------------------------------------------------------------
+   Privacy Policy.
+
+   Every factual statement below was written by reading the code, and must be
+   kept in step with it:
+
+     what is sent to the AI      ai_qa.py  source_part(), convert_page()
+     per-page PDF splitting      convert.py  _split_pdf(), _ai_units()
+     .docx sent as text          convert.py  _convert_docx()
+     local fallback              convert.py  _convert_pages(), layout.py
+     1 hour result retention     tex_store.py  TTL_SECONDS
+     guest history               static/scripts.js  contex_guest_history
+     signed-in history           firebase_config.py  save_ocr_history()
+     profile fields              firebase_config.py  create_user(),
+                                 upsert_user_profile(), set_terms_accepted()
+     session cookie contents     app.py  session[...] keys
+     third-party browser hosts   templates/home.html  <script>/<link> tags
+     outage record               ai_status.py  _write() - no user content
+
+   NOT reviewed by a lawyer, and no claim of compliance is made. See the notice
+   at the top of the rendered page.
+   --------------------------------------------------------------------------- #}
+<div class="legal-doc space-y-4 text-sm text-forest-800 text-left">
+
+    <div class="bg-yellow-50 border border-yellow-400 rounded p-3">
+        <p class="font-semibold text-yellow-900">Please read this first</p>
+        <p class="text-yellow-900">
+            This policy describes accurately what ConTeX does with your data
+            &mdash; it was written from the source code, not from a template. It
+            has <strong>not been reviewed by a lawyer</strong>, and nothing here
+            is a claim that ConTeX complies with the Data Privacy Act, the GDPR,
+            the CCPA or any other law.
+        </p>
+    </div>
+
+    <p class="text-xs text-forest-500">
+        Version {{ terms_version }} &middot; Effective on the date you accept it
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">1. Who is responsible for your data</h4>
+    <p>
+        ConTeX is a personal, non-commercial project operated by an individual.
+        For the purposes of the Data Privacy Act of 2012 (Republic Act No.
+        10173) it acts as the <strong>Personal Information Controller</strong>,
+        and for the purposes of the GDPR as the <strong>controller</strong>, for
+        the data described below.
+    </p>
+    <p>
+        All privacy questions, data-subject requests and deletion requests go to
+        <a href="mailto:rheniergustilo06@gmail.com" class="underline text-burgundy-600 hover:text-burgundy-500">rheniergustilo06@gmail.com</a>.
+        No Data Protection Officer has been appointed; requests are handled
+        personally by the operator.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">2. What ConTeX collects</h4>
+    <table class="w-full text-xs border border-gray-300">
+        <thead class="bg-forest-100">
+            <tr>
+                <th class="border border-gray-300 p-2 text-left">What</th>
+                <th class="border border-gray-300 p-2 text-left">Detail</th>
+                <th class="border border-gray-300 p-2 text-left">When</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="border border-gray-300 p-2">Documents you convert</td>
+                <td class="border border-gray-300 p-2">Images, PDFs, <code>.docx</code> files, camera photographs and canvas drawings, plus the file name. May contain personal data if your document does.</td>
+                <td class="border border-gray-300 p-2">Each conversion</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">The LaTeX produced</td>
+                <td class="border border-gray-300 p-2">The <code>.tex</code> output and its compiled PDF preview.</td>
+                <td class="border border-gray-300 p-2">Each conversion</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Account details</td>
+                <td class="border border-gray-300 p-2">Email address, display name, and a user ID issued by Firebase Authentication. Passwords are held by Firebase, never by ConTeX.</td>
+                <td class="border border-gray-300 p-2">If you sign up</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Account activity</td>
+                <td class="border border-gray-300 p-2">Account creation time, last sign-in time, and which version of the Terms you accepted and when.</td>
+                <td class="border border-gray-300 p-2">If you sign in</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Saved history</td>
+                <td class="border border-gray-300 p-2">For signed-in users: file name, the generated LaTeX (truncated at 60,000 characters) and a timestamp.</td>
+                <td class="border border-gray-300 p-2">If you sign in</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Session cookie</td>
+                <td class="border border-gray-300 p-2">A signed cookie holding your sign-in state, your Terms acceptance, and the identifiers of results you generated.</td>
+                <td class="border border-gray-300 p-2">Always</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Server request logs</td>
+                <td class="border border-gray-300 p-2">Depending on how the server is hosted, ordinary web-server logs may record your IP address, the time and the page requested. ConTeX itself writes no analytics.</td>
+                <td class="border border-gray-300 p-2">Always</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        ConTeX has <strong>no analytics, no advertising and no tracking
+        cookies</strong>, and does not build a profile of you or make automated
+        decisions that produce legal or similarly significant effects about you.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">3. Where your document goes</h4>
+    <p>Conversion has two paths, and they send your document to different places.</p>
+
+    <p class="font-semibold text-forest-900">The AI path (used by default)</p>
+    <p>
+        Your document is transmitted to a third-party AI provider &mdash;
+        currently <strong>Google, through the Gemini API</strong> &mdash; which
+        reads it and returns LaTeX. Specifically:
+    </p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>Images are conditioned and reduced to a long edge of about 1,568
+            pixels before being sent.</li>
+        <li>A PDF is split and sent <strong>one page at a time</strong>, up to
+            10 pages.</li>
+        <li>A Word document is <strong>not</strong> sent as a file. Its text,
+            headings, lists, tables and equations are extracted first and only
+            that extracted text is sent.</li>
+        <li>Canvas drawings and camera photographs are sent as images.</li>
+    </ul>
+    <p class="bg-yellow-50 border border-yellow-400 rounded p-3">
+        <strong>Free-tier training.</strong> If ConTeX is running on Google's
+        free API tier, <strong>Google may use documents sent to it to train its
+        models.</strong> The Service shows a warning above the upload control
+        whenever that is the case, before you choose a file. In that situation
+        Google acts on its own behalf and not merely on ours, and
+        <strong>we cannot undo, retract or limit that use once a document has
+        been sent</strong>. Please do not upload confidential, personal or
+        sensitive material while that warning is shown.
+    </p>
+
+    <p class="font-semibold text-forest-900">The local path (fallback)</p>
+    <p>
+        If the AI service is unavailable, ConTeX can convert your document using
+        software running on its own server (Tesseract and pix2text).
+        <strong>On this path nothing about your document leaves the
+        server.</strong> Results are of lower quality, so ConTeX warns you
+        before using it and lets you cancel instead. If the AI becomes
+        unavailable part way through a multi-page document, the remaining pages
+        take this path and you are told.
+    </p>
+    <p>
+        ConTeX keeps a small record of whether the AI service is currently
+        failing, so it can warn the next person. That record contains only a
+        status message and a timestamp &mdash; never any part of anyone's
+        document.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">4. Why we process it, and on what legal basis</h4>
+    <table class="w-full text-xs border border-gray-300">
+        <thead class="bg-forest-100">
+            <tr>
+                <th class="border border-gray-300 p-2 text-left">Purpose</th>
+                <th class="border border-gray-300 p-2 text-left">Basis (GDPR Art. 6)</th>
+                <th class="border border-gray-300 p-2 text-left">Basis (RA 10173 Sec. 12)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="border border-gray-300 p-2">Converting your document and giving you the result</td>
+                <td class="border border-gray-300 p-2">Art. 6(1)(b) &mdash; performance of a contract with you</td>
+                <td class="border border-gray-300 p-2">Sec. 12(b) &mdash; necessary to fulfil a contract with the data subject</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Running your account and saved history</td>
+                <td class="border border-gray-300 p-2">Art. 6(1)(b)</td>
+                <td class="border border-gray-300 p-2">Sec. 12(b)</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Recording that you accepted the Terms</td>
+                <td class="border border-gray-300 p-2">Art. 6(1)(f) &mdash; legitimate interest in keeping a record of acceptance</td>
+                <td class="border border-gray-300 p-2">Sec. 12(f) &mdash; legitimate interests of the controller</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Keeping the Service secure and preventing abuse</td>
+                <td class="border border-gray-300 p-2">Art. 6(1)(f)</td>
+                <td class="border border-gray-300 p-2">Sec. 12(f)</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        Where a legitimate interest is relied on, you may object &mdash; see
+        Section 8.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">5. Who else receives your data</h4>
+    <p><strong>Services ConTeX sends data to on the server side:</strong></p>
+    <ul class="list-disc list-inside space-y-1">
+        <li><strong>Google &mdash; Gemini API.</strong> Receives your document
+            (or, for Word files, its extracted text) to convert it. Subject to
+            the free-tier training note in Section 3.</li>
+        <li><strong>Google &mdash; Firebase Authentication.</strong> Handles
+            sign-up, sign-in, password reset and Google sign-in. Holds your
+            email address, display name and password credentials.</li>
+        <li><strong>Google &mdash; Cloud Firestore.</strong> Stores your profile
+            and your saved history.</li>
+    </ul>
+    <p><strong>Services your browser contacts directly when a ConTeX page loads:</strong></p>
+    <p>
+        These receive your <strong>IP address and browser user-agent</strong>
+        because your browser requests files from them &mdash; not because ConTeX
+        sends them anything about you. They never receive your documents.
+    </p>
+    <ul class="list-disc list-inside space-y-1">
+        <li><code>cdn.tailwindcss.com</code> &mdash; page styling.</li>
+        <li><code>fonts.googleapis.com</code> and <code>fonts.gstatic.com</code>
+            &mdash; the Poppins web font (Google Fonts).</li>
+        <li><code>www.gstatic.com</code> &mdash; the Firebase JavaScript library,
+            on the sign-in and sign-up pages.</li>
+    </ul>
+    <p class="text-xs text-forest-600">
+        Each of these providers processes what it receives under its own privacy
+        terms, which apply in addition to this policy. We do not sell your
+        personal information, and we do not share it for cross-context
+        behavioural advertising.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">6. International transfers</h4>
+    <p>
+        Google's services operate globally, so your document and your account
+        data may be processed on servers outside the Philippines and outside
+        your own country, including in the United States. Where personal data of
+        people in the European Economic Area or the United Kingdom is
+        transferred, Google states that it relies on the European Commission's
+        Standard Contractual Clauses and its own adequacy arrangements.
+    </p>
+    <p class="text-xs text-forest-600">
+        ConTeX is a personal project and has not itself entered into transfer
+        agreements with these providers beyond accepting their standard terms.
+        If that matters for your data, do not upload it &mdash; or ask the
+        operator to switch the Service to a provider that does not train on
+        input, which the Service supports.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">7. How long things are kept</h4>
+    <table class="w-full text-xs border border-gray-300">
+        <thead class="bg-forest-100">
+            <tr>
+                <th class="border border-gray-300 p-2 text-left">Data</th>
+                <th class="border border-gray-300 p-2 text-left">Kept for</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="border border-gray-300 p-2">Your uploaded file</td>
+                <td class="border border-gray-300 p-2">Held in memory for the conversion only. It is never written to disk on the server.</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">The generated <code>.tex</code> and PDF preview</td>
+                <td class="border border-gray-300 p-2"><strong>One hour</strong>, then deleted automatically. Reachable only by the browsing session that created them.</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Guest history</td>
+                <td class="border border-gray-300 p-2">Stored only in your own browser. Cleared when you refresh the page or close the tab. It never reaches the server.</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Signed-in history and profile</td>
+                <td class="border border-gray-300 p-2"><strong>Until you ask us to delete it</strong>, or until you delete your account. There is no automatic expiry.</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Session cookie</td>
+                <td class="border border-gray-300 p-2">Until you close your browser, or about 31 days if you chose &ldquo;remember me&rdquo;. Signing out clears it.</td>
+            </tr>
+            <tr>
+                <td class="border border-gray-300 p-2">Data held by Google</td>
+                <td class="border border-gray-300 p-2">Under Google's own retention terms, which we do not control. Free-tier training data cannot be recalled.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4 class="font-bold text-forest-900 text-base">8. Your rights</h4>
+    <p>
+        Depending on where you live, you have some or all of the rights below.
+        ConTeX applies them to everyone who asks, regardless of location.
+    </p>
+    <ul class="list-disc list-inside space-y-1">
+        <li><strong>Be informed</strong> about what is collected and why &mdash;
+            this policy.</li>
+        <li><strong>Access</strong> a copy of the personal data held about you.</li>
+        <li><strong>Correct</strong> data that is inaccurate or incomplete.</li>
+        <li><strong>Erase</strong> your account and saved history.</li>
+        <li><strong>Object</strong> to processing based on legitimate interests,
+            and <strong>restrict</strong> processing while an objection is
+            considered.</li>
+        <li><strong>Portability</strong> &mdash; receive your saved history in a
+            machine-readable form.</li>
+        <li><strong>Withdraw consent</strong> and stop using the Service at any
+            time, without affecting processing already carried out.</li>
+        <li><strong>Lodge a complaint</strong> &mdash; see Section 12.</li>
+        <li><strong>Damages</strong> for a violation of your rights, where the
+            Data Privacy Act so provides.</li>
+    </ul>
+    <p class="text-xs text-forest-600">
+        If you are in California: the categories of personal information
+        collected are identifiers (email, user ID), internet activity
+        (server logs), and the content you choose to submit. We do not sell or
+        share personal information, and we will not discriminate against you for
+        exercising your rights.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">9. How to exercise your rights</h4>
+    <p class="bg-forest-100 border border-forest-400 rounded p-3">
+        Email
+        <a href="mailto:rheniergustilo06@gmail.com" class="underline text-burgundy-600 hover:text-burgundy-500">rheniergustilo06@gmail.com</a>
+        from the address on your account, saying what you want done. We will
+        action access, correction, portability and deletion requests
+        <strong>within 30 days</strong>.
+    </p>
+    <p>
+        <strong>Please note:</strong> ConTeX has no self-service delete or export
+        button. These requests are carried out <strong>by hand</strong> by the
+        operator, using the Firebase console. Deletion removes your Firebase
+        Authentication account, your profile document and all of your saved
+        history. It cannot recall anything already sent to Google, and it cannot
+        affect a generated file that has already expired on its own.
+    </p>
+    <p>
+        We may need to confirm that the request comes from you before acting on
+        it. There is no charge, unless a request is manifestly unfounded or
+        excessive.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">10. Cookies and browser storage</h4>
+    <p>ConTeX uses no advertising or analytics cookies. It uses:</p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>a <strong>session cookie</strong>, strictly necessary to keep you
+            signed in, to remember that you accepted the Terms, and to make sure
+            a download link works only for the person who created it; and</li>
+        <li><strong><code>sessionStorage</code></strong> in your own browser, to
+            hold guest history for the length of the tab. This stays on your
+            device and is never transmitted.</li>
+    </ul>
+    <p>
+        The third-party hosts in Section 5 may set their own cookies when your
+        browser requests files from them.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">11. Security, and its limits</h4>
+    <p>What ConTeX does:</p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>API keys and service credentials are read from the server
+            environment and are <strong>never sent to your browser</strong>.</li>
+        <li>Every generated result is tied to an unguessable identifier held in
+            the creating session, so one visitor can never download another's
+            document.</li>
+        <li>Your user ID is always taken from the signed session cookie, never
+            from anything the browser sends, so a request cannot be crafted to
+            reach another account's history.</li>
+        <li>Passwords are handled entirely by Firebase Authentication.</li>
+    </ul>
+    <p class="text-xs text-forest-600">
+        No system is completely secure, and ConTeX is a personal project without
+        a security team, formal audit, penetration testing or a breach-response
+        organisation. If a breach occurs affecting personal data, we will notify
+        affected users and, where required, the National Privacy Commission
+        &mdash; under the Data Privacy Act this is within 72 hours of knowledge
+        of the breach. Please treat the Service accordingly and do not entrust
+        it with sensitive material.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">12. Complaints</h4>
+    <p>
+        Please raise any concern with us first at the address in Section 1. You
+        also have the right to complain to a supervisory authority:
+    </p>
+    <ul class="list-disc list-inside space-y-1">
+        <li><strong>Philippines</strong> &mdash; National Privacy Commission,
+            <a href="https://www.privacy.gov.ph" class="underline text-burgundy-600 hover:text-burgundy-500" target="_blank" rel="noopener noreferrer">privacy.gov.ph</a>.</li>
+        <li><strong>EEA or UK</strong> &mdash; your national data protection
+            authority, or the UK Information Commissioner's Office.</li>
+        <li><strong>Elsewhere</strong> &mdash; your local privacy or data
+            protection regulator, if your country has one.</li>
+    </ul>
+
+    <h4 class="font-bold text-forest-900 text-base">13. Children</h4>
+    <p>
+        ConTeX is not intended for anyone under <strong>16</strong>, and we do
+        not knowingly collect personal data from them. If you believe someone
+        under 16 has created an account, tell us and we will delete it and its
+        history.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">14. Changes to this policy</h4>
+    <p>
+        If this policy changes materially, the version number changes and you are
+        asked to accept the new version before converting again. The version in
+        force is shown at the top of this document.
+    </p>
+
+    <h4 class="font-bold text-forest-900 text-base">15. Contact</h4>
+    <p>
+        <a href="mailto:rheniergustilo06@gmail.com" class="underline text-burgundy-600 hover:text-burgundy-500">rheniergustilo06@gmail.com</a>
+    </p>
+</div>

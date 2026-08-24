@@ -333,20 +333,78 @@ def save_ocr_history(uid, file_name, ocr_type, result):
     """
     # No uid means a guest: their history is never written to Firestore.
     if not db or not uid:
-        return False
+        return None
     try:
-        db.collection('ocr_history').add({
+        _timestamp, reference = db.collection('ocr_history').add({
             'uid': uid,
             'fileName': file_name,
             'ocrType': ocr_type,
             'result': result,
             'timestamp': firestore.SERVER_TIMESTAMP
         })
-        return True
+        return reference.id
     except Exception as e:
         # A history write must never break the OCR response the user came for.
         print(f"Error saving OCR history: {e}")
+        return None
+
+
+def get_ocr_history_item(uid, doc_id):
+    """
+    Read one history record, but only if it belongs to this user.
+
+    The uid check is done here rather than trusted from the request: a document
+    id is guessable enough that fetching by id alone would let any signed-in
+    user read any other user's conversion.
+    """
+    if not db or not uid or not doc_id:
+        return None
+    try:
+        snapshot = db.collection('ocr_history').document(doc_id).get()
+    except Exception as e:
+        print(f"Error reading OCR history item: {e}")
+        return None
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if data.get('uid') != uid:
+        return None
+    data['id'] = snapshot.id
+    return data
+
+
+def set_terms_accepted(uid, version):
+    """
+    Record that this user accepted the terms, so they are not asked again.
+
+    Stored on the user's own profile document rather than in the session, which
+    is what makes the acceptance survive signing out and back in.
+    """
+    if not db or not uid:
         return False
+    try:
+        db.collection('users').document(uid).set({
+            'termsAcceptedVersion': version,
+            'termsAcceptedAt': firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return True
+    except Exception as e:
+        print(f"Warning: could not record terms acceptance for {uid}: {e}")
+        return False
+
+
+def get_terms_accepted(uid):
+    """The terms version this user last accepted, or None."""
+    if not db or not uid:
+        return None
+    try:
+        snapshot = db.collection('users').document(uid).get()
+    except Exception as e:
+        print(f"Warning: could not read terms acceptance for {uid}: {e}")
+        return None
+    if not snapshot.exists:
+        return None
+    return (snapshot.to_dict() or {}).get('termsAcceptedVersion')
 
 
 def get_user_ocr_history(uid, limit=10):

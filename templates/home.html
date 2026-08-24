@@ -3,7 +3,7 @@
 
 <html lang="en">
 <head>
-    <title>ConTex App</title>
+    <title>ConTeX App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
@@ -46,17 +46,15 @@
         <span>
             <img src="" alt="">
             <p class="text-cream-100 font-bold text-xl">
-                ConTex
+                ConTeX
             </p>
         </span>
-        
+
         <!-- Desktop Navigation -->
         <nav class="hidden md:block">
             <ul class="flex justify-between items-center gap-5">
                 <li><a href="#home" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Home</a></li>
-                <li><a href="#services" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Services</a></li>
-                <li><a href="#textract" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Textract</a></li>
-                <li><a href="#equation" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Equation</a></li>
+                <li><a href="#convert" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Convert</a></li>
                 <li><a href="#about" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">About</a></li>
                 <li><a href="#history" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">History</a></li>
                 {% if session.get('user') %}
@@ -87,9 +85,7 @@
         </div>
         <nav class="flex flex-col items-center gap-6 mt-10">
             <a href="#home" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Home</a>
-            <a href="#services" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Services</a>
-            <a href="#textract" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Textract</a>
-            <a href="#equation" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Equation</a>
+            <a href="#convert" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Convert</a>
             <a href="#about" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">About</a>
             <a href="#history" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">History</a>
             {% if session.get('user') %}
@@ -100,299 +96,57 @@
             {% endif %}
         </nav>
     </div>
-    
+
     <!-- Overlay for sidebar -->
     <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+
     <main class="flex flex-col items-center text-center pt-[10vh] landscape:pt-[15vh]">
-        <section id="home" class="flex flex-col justify-center items-center min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <h1 class="text-4xl text-forest-800 font-bold py-3 landscape:text-3xl landscape:py-1">ConTex</h1>
-            <p class="text-lg text-forest-600 mb-8 landscape:mb-4 landscape:text-base">Write by hand. Convert with ConTex.<br>
-                Transform your handwritten equations into flawless LaTeX in seconds.</p>
-            
-            <a href="#services" class="bg-forest-800 px-10 py-3 rounded-xl text-cream-100 landscape:py-2 landscape:px-6">Get Started</a>
-        </section>
-        
-        <section id="services" class="flex flex-col justify-center items-center min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <h2 class="text-4xl text-forest-800 font-bold mb-4 landscape:text-3xl landscape:mb-2">Choose Your Service</h2>
-            <p class="text-lg text-forest-600 pb-10 landscape:pb-4 landscape:text-base">Select the service that best fits your needs</p>
-            <div class="flex flex-col lg:flex-row flex-wrap justify-center items-stretch gap-5 landscape:gap-3 px-4">
-                <a href="#textract" class="group">
-                <span class="bg-cream-100 px-7 py-5 rounded-lg outline outline-1 outline-gray-300 shadow-lg w-96 flex flex-col items-center transition-transform duration-150 hover:scale-105 cursor-pointer">
-                    <!-- Document with text icon (adapted colors) -->
-                    <span class="flex justify-center items-center mb-6 mt-3">
-                        <svg width="64" height="64" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="8" y="6" width="28" height="32" rx="4" fill="#4B7161"/>
-                            <rect x="12" y="12" width="20" height="3.5" rx="1.75" fill="#F7F4F1"/>
-                            <rect x="12" y="19" width="20" height="3.5" rx="1.75" fill="#F7F4F1"/>
-                            <rect x="12" y="26" width="14" height="3.5" rx="1.75" fill="#EAE6E1"/>
-                            <rect x="8" y="6" width="28" height="32" rx="4" fill="none" stroke="#2B4C3F" stroke-width="1.5"/>
-                        </svg>
-                    </span>
-                    <span class="text-xl font-bold text-forest-800 mb-1">Textract</span>
-                    <span class="text-forest-600 mb-2 text-sm pb-5">Extract and convert text from images and PDFs into LaTeX format.</span>
-                    <ul class="text-sm text-forest-600 text-left list-none space-y-1 flex flex-col items-start w-full">
-                        <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Support for multiple file formats</li>
-                        <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>High accuracy text recognition</li>
-                        <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Instant LaTeX conversion</li>
-                    </ul>
-                    </span>
-                    </a>
-                    <a href="#equation" class="group">
-                        <span class="bg-cream-100 p-7 rounded-lg outline outline-1 outline-gray-300 shadow-lg w-96 flex flex-col items-center transition-transform duration-150 hover:scale-105 cursor-pointer">
-                        <!-- Pythagorean theorem equation in a box -->
-                        <span class="flex justify-center items-center mb-6 mt-3">
-                            <span class="bg-forest-100 border border-forest-400 rounded-lg px-4 py-2 shadow text-2xl font-bold text-forest-700" style="font-family: 'Poppins', 'sans-serif';">
-                                a<sup>2</sup> + b<sup>2</sup> = c<sup>2</sup>
-                            </span>
-                        </span>
-                        <span class="text-xl font-bold text-forest-800 mb-1">Equation</span>
-                        <span class="text-forest-600 mb-2 pb-5 text-sm">Convert handwritten mathematical equations to LaTeX format.</span>
-                        <ul class="text-sm text-forest-600 text-left list-none space-y-1 flex flex-col items-start w-full">
-                            <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Draw or upload equations</li>
-                            <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Real-time camera capture</li>
-                            <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Accurate equation recognition</li>
-                        </ul>
-                        </span>
-                    </a>
+        <section id="home" class="flex flex-col justify-center items-center min-h-[90vh] landscape:min-h-screen landscape:py-10 px-4">
+            <h1 class="text-4xl text-forest-800 font-bold py-3 landscape:text-3xl landscape:py-1">ConTeX</h1>
+            <p class="text-lg text-forest-600 mb-8 landscape:mb-4 landscape:text-base">Write by hand. Convert with ConTeX.<br>
+                Turn any document &mdash; handwritten or printed &mdash; into LaTeX.</p>
+
+            <div class="bg-cream-100 px-7 py-6 rounded-lg outline outline-2 outline-forest-600 shadow-lg w-full max-w-xl flex flex-col items-center mb-8">
+                <span class="text-forest-600 mb-3 text-sm text-center">
+                    One converter. Give it a page any way you like &mdash; prose and
+                    mathematics are recognised together and assembled into a single
+                    <code>.tex</code> file.
+                </span>
+                <ul class="text-sm text-forest-600 text-left list-none space-y-1 flex flex-col items-start">
+                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Images, PDFs and Word documents</li>
+                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Camera capture and handwriting on a canvas</li>
+                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Equations kept in their place in the text</li>
+                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Checked against your original, then rendered to PDF</li>
+                </ul>
             </div>
+
+            <a href="#convert" class="bg-forest-800 px-10 py-3 rounded-xl text-cream-100 landscape:py-2 landscape:px-6">Get Started</a>
         </section>
 
-        <section id="textract" class="bg-cream-100 flex justify-center items-center bg-transparent w-[95%] md:w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg {% if recognized_textract %}max-w-5xl{% else %}max-w-2xl{% endif %} w-full p-4 md:p-8 rounded-lg shadow ">
-                <h2 class="text-2xl font-bold text-forest-800 mb-1 text-center">Textract</h2>
-                <p class="text-sm text-forest-600 mb-4 text-center">
-                    Tesseract reads the document and produces the LaTeX; the AI then
-                    checks that output against your original and corrects what it can.
+        {% include 'partials/convert_section.html' %}
+
+        <section id="about" class="flex flex-col justify-center items-center min-h-[70vh] w-[95%] md:w-full landscape:py-10 px-2">
+            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-full p-4 md:p-8 text-left">
+                <h2 class="text-2xl font-bold text-forest-800 mb-3 text-center">About ConTeX</h2>
+                <p class="text-sm text-forest-700 mb-3">
+                    ConTeX reads a document and writes the LaTeX for it. You give it a
+                    page &mdash; scanned, photographed, typed or handwritten &mdash; and
+                    it returns a <code>.tex</code> file you can download, copy, or read
+                    as a rendered PDF.
                 </p>
-
-                {% include 'partials/qa_notice.html' %}
-
-                <form id="textract-form" method="POST" enctype="multipart/form-data" action="{{ url_for('textract_route') }}">
-                    <label class="block text-forest-600 mb-2">Choose an image or PDF file:</label>
-                    
-                    <!-- Drag and Drop Area -->
-                    <div id="textract-drop-area" class="border-2 border-dashed border-forest-400 rounded-lg p-8 text-center transition-colors duration-200 hover:border-forest-600 hover:bg-forest-100/30 cursor-pointer mb-4">
-                        <svg class="mx-auto h-12 w-12 text-forest-500 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                        <p class="text-forest-700 font-medium mb-1">Drop files here or click to upload</p>
-                        <p class="text-forest-600 text-sm">Supports: PNG, JPG, JPEG, BMP, TIFF, PDF</p>
-                        <input type="file" id="textract-file" name="file" accept=".png,.jpg,.jpeg,.bmp,.tiff,.pdf" required class="hidden" />
-                    </div>
-                    
-                    <!-- File name display -->
-                    <div id="textract-file-display" class="hidden mb-4 p-3 bg-forest-100 rounded-lg">
-                        <div class="flex items-center justify-between">
-                            <span class="text-forest-700 text-sm" id="textract-file-name"></span>
-                            <button type="button" onclick="clearTextractFile()" class="text-red-600 hover:text-red-800 text-sm font-medium">Remove</button>
-                        </div>
-                    </div>
-                    
-                    <div class="text-center">
-                        <button type="submit" class="bg-forest-800 text-cream-100 px-6 py-2 rounded hover:bg-forest-700 transition-colors">Upload & Process</button>
-                    </div>
-                </form>
-
-                {% if recognized_textract %}
-                    <h3 class="mt-6 font-semibold text-forest-800">Recognized Text:</h3>
-                    <pre class="mt-2 bg-forest-100 p-4 rounded text-sm whitespace-pre-wrap font-mono">{{ recognized_textract }}</pre>
-                {% endif %}
-
-                {% if textract_result %}
-                    {% with report = textract_result.qa %}
-                        {% include 'partials/qa_report.html' %}
-                    {% endwith %}
-
-                    <h3 class="mt-6 font-semibold text-forest-800">Final LaTeX</h3>
-                    <pre id="textract-tex" class="mt-2 bg-forest-100 p-4 rounded text-xs whitespace-pre-wrap font-mono max-h-96 overflow-y-auto text-left">{{ textract_result.tex }}</pre>
-                {% endif %}
-
-                {% if tex_file %}
-                    <div id="download-area" class="mt-4 flex flex-wrap gap-2 justify-center">
-                        <a href="{{ url_for('download_tex', token=tex_file) }}">
-                            <button id="download-tex-btn" type="button" class="bg-forest-800 px-4 py-2 rounded border text-cream-100">Download .tex</button>
-                        </a>
-                        <button type="button" onclick="copyTex('textract-tex')" class="bg-forest-800 px-4 py-2 rounded text-cream-100 hover:bg-forest-700 transition-colors">Copy LaTeX</button>
-                    </div>
-                {% endif %}
-
-                {% if error %}
-                    <div id="textract-error" class="mt-4 bg-red-100 text-red-700 p-3 rounded">{{ error }}</div>
-                {% endif %}
-            </div>
-        </section>
-
-        <section id="equation" class="flex flex-col justify-center items-center bg-transparent w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <div class="mt-15 max-w-3xl w-[95%] md:w-full mx-auto p-4 md:p-8 bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg">
-                <h2 class="text-2xl font-bold text-forest-800 mb-1 text-center">Convert Equation</h2>
-                <p class="text-sm text-forest-600 mb-4 text-center">
-                    Every equation on the page is recognised separately and listed in
-                    order; the AI then checks each one against your image and works out
-                    how they should be grouped.
+                <p class="text-sm text-forest-700 mb-3">
+                    Conversion is AI-powered by default. If the AI service is
+                    unavailable, ConTeX can still convert your document using tools
+                    that run entirely on this server &mdash; but it will tell you first,
+                    and let you decide whether to wait instead. It will never quietly
+                    hand you a lower-quality result.
                 </p>
-
-                {% include 'partials/qa_notice.html' %}
-
-                <form id="equation-form" method="POST" enctype="multipart/form-data" action="{{ url_for('upload_and_process') }}">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        <!-- Choose Image Card -->
-                        <div class="bg-cream-100 p-6 rounded-lg outline outline-1 outline-gray-300 shadow-sm flex flex-col items-center justify-center text-forest-700 hover:shadow-md transition-shadow">
-                            <button type="button" class="w-full flex flex-col items-center" onclick="document.getElementById('file-upload').click()">
-                                <svg class="h-10 w-10 text-forest-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="17 8 12 3 7 8"/>
-                                    <line x1="12" y1="3" x2="12" y2="15"/>
-                                </svg>
-                                <span class="font-medium">Choose Image</span>
-                            </button>
-                            <input id="file-upload" name="file" type="file" accept="image/*" class="hidden" onchange="displayFileName(this)">
-                            <span id="file-name" class="mt-2 text-xs text-forest-600">No file chosen</span>
-                        </div>
-
-                        <!-- Take Photo Card -->
-                        <div class="bg-cream-100 p-6 rounded-lg outline outline-1 outline-gray-300 shadow-sm flex flex-col items-center justify-center text-forest-700 hover:shadow-md transition-shadow">
-                            <button type="button" class="w-full flex flex-col items-center" onclick="openCameraModal()">
-                                <svg class="h-10 w-10 text-forest-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z"/>
-                                    <circle cx="12" cy="13" r="4"/>
-                                </svg>
-                                <span class="font-medium">Take Photo</span>
-                            </button>
-                            <div id="camera-preview-container" class="mt-3">
-                                <img id="camera-preview" src="" alt="Camera Preview" class="max-w-[150px] hidden rounded-md border border-gray-200">
-                            </div>
-                            <input id="camera-upload" type="file" accept="image/*" class="hidden">
-                        </div>
-
-                        <!-- Draw Card -->
-                        <div class="bg-cream-100 p-6 rounded-lg outline outline-1 outline-gray-300 shadow-sm flex flex-col items-center justify-center text-forest-700 hover:shadow-md transition-shadow">
-                            <button type="button" class="w-full flex flex-col items-center" onclick="openDrawModal()">
-                                <svg class="h-10 w-10 text-forest-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 20h9"/>
-                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                                </svg>
-                                <span class="font-medium">Draw</span>
-                            </button>
-                            <div id="draw-preview-container" class="mt-3">
-                                <img id="draw-preview" src="" alt="Draw Preview" class="max-w-[150px] hidden rounded-md border border-gray-200">
-                            </div>
-                            <input id="draw-upload" type="file" accept="image/png" class="hidden">
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="w-full px-6 py-3 bg-forest-800 text-white rounded-md hover:bg-green-600">
-                        Recognize Text
-                    </button>
-                </form>
-
-                <div id="camera-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                    <div class="bg-white p-3 md:p-4 rounded-lg text-center w-full max-w-[95vw] md:max-w-[600px] max-h-[90vh]">
-                        <video id="camera-stream" autoplay playsinline class="w-full rounded-lg max-h-[70vh] landscape:max-h-[65vh]"></video>
-                        <div class="flex flex-row gap-2 mt-2 md:mt-4 justify-center">
-                            <button type="button" onclick="capturePhoto()" class="px-4 md:px-6 py-2 md:py-3 bg-forest-800 text-white rounded-md hover:bg-green-600 w-full sm:w-auto text-sm md:text-base">Capture</button>
-                            <button type="button" onclick="closeCameraModal()" class="px-4 md:px-6 py-2 md:py-3 bg-forest-800 text-white rounded-md hover:bg-green-600 w-full sm:w-auto text-sm md:text-base">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="draw-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                    <div class="bg-white p-3 md:p-4 rounded-lg text-center w-full max-w-[95vw] md:max-w-4xl max-h-[95vh] flex flex-col">
-                        <div class="overflow-auto flex-1 flex items-center justify-center">
-                            <canvas id="draw-canvas" class="border border-gray-200 rounded-lg bg-white cursor-crosshair max-w-full max-h-full"></canvas>
-                        </div>
-                        <div class="flex flex-row gap-2 mt-2 md:mt-4 justify-center flex-shrink-0">
-                            <button type="button" onclick="clearCanvas()" class="px-4 md:px-6 py-2 md:py-3 bg-forest-800 text-white rounded-md hover:bg-green-600 flex-1 sm:flex-initial text-sm md:text-base">Clear</button>
-                            <button type="button" onclick="saveDrawing()" class="px-4 md:px-6 py-2 md:py-3 bg-forest-800 text-white rounded-md hover:bg-green-600 flex-1 sm:flex-initial text-sm md:text-base">Save</button>
-                            <button type="button" onclick="closeDrawModal()" class="px-4 md:px-6 py-2 md:py-3 bg-forest-800 text-white rounded-md hover:bg-green-600 flex-1 sm:flex-initial text-sm md:text-base">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-                </div>
-                
-            {% if error_message %}
-                <div class="text-red-500 bg-red-100 border border-red-300 p-3 rounded-md mt-4">
-                    <p class="font-semibold">Error:</p>
-                    <p>{{ error_message }}</p>
-                </div>
-            {% endif %}
-
-            {% if equation_result %}
-                <div class="mt-8 pb-5 w-full text-left">
-                    <h2 class="text-xl font-semibold text-forest-700">Detected equations</h2>
-                    {% if uploaded_image_name %}
-                        <p class="text-sm text-forest-600 mb-2">From image: {{ uploaded_image_name }}</p>
-                    {% endif %}
-
-                    <!-- The converter's own output: every equation it found,
-                         listed separately in reading order. Grouping and
-                         ordering are decided by the review stage below. -->
-                    <ol class="list-decimal list-inside space-y-2 bg-gray-100 rounded-md p-4">
-                        {% for item in equation_result.detected %}
-                            {% set verdict = equation_result.qa.equations
-                                             | selectattr('index', 'equalto', item.index)
-                                             | first %}
-                            <li class="text-sm">
-                                <code class="font-mono break-all">{{ item.latex }}</code>
-                                {% if verdict %}
-                                    <span class="ml-2 text-xs font-semibold uppercase px-2 py-0.5 rounded
-                                        {% if verdict.status == 'ok' %}bg-forest-600 text-cream-100
-                                        {% elif verdict.status == 'corrected' %}bg-burgundy-600 text-cream-100
-                                        {% else %}bg-gray-500 text-white{% endif %}">{{ verdict.status }}</span>
-                                    {% if verdict.status == 'corrected' and verdict.latex %}
-                                        <div class="mt-1 ml-4 text-xs text-forest-700">
-                                            corrected to <code class="font-mono break-all">{{ verdict.latex }}</code>
-                                        </div>
-                                    {% endif %}
-                                    {% if verdict.fidelity %}
-                                        <div class="ml-4 text-xs text-forest-600"><b>source:</b> {{ verdict.fidelity }}</div>
-                                    {% endif %}
-                                    {% if verdict.math %}
-                                        <div class="ml-4 text-xs text-forest-600"><b>maths:</b> {{ verdict.math }}</div>
-                                    {% endif %}
-                                {% endif %}
-                            </li>
-                        {% endfor %}
-                    </ol>
-
-                    {% with report = equation_result.qa %}
-                        {% include 'partials/qa_report.html' %}
-                    {% endwith %}
-
-                    {% set summary = equation_result.qa.summary %}
-                    {% if summary and (summary.relationship or summary.ordering or summary.grouping) %}
-                        <div class="mt-3 text-sm bg-forest-100 rounded-md p-3">
-                            <p class="font-semibold text-forest-800 mb-1">How these equations relate</p>
-                            {% if summary.relationship %}<p><b>Relationship:</b> {{ summary.relationship }}</p>{% endif %}
-                            {% if summary.ordering %}<p><b>Ordering:</b> {{ summary.ordering }}</p>{% endif %}
-                            {% if summary.grouping %}<p><b>Grouping:</b> {{ summary.grouping }}</p>{% endif %}
-                            {% if summary.missing and summary.missing|lower != 'none' %}
-                                <p class="text-burgundy-600"><b>Possibly missed:</b> {{ summary.missing }}</p>
-                            {% endif %}
-                        </div>
-                    {% endif %}
-
-                    <h3 class="mt-6 font-semibold text-forest-800">Final LaTeX</h3>
-                    <pre id="recognized-text" class="mt-2 bg-forest-100 p-4 rounded text-xs whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">{{ equation_result.tex }}</pre>
-
-                    <p class="mt-4 text-forest-700">Preview:</p>
-                    <div class="w-full leading-none bg-white rounded-md p-4 overflow-x-auto">
-                        {% for item in equation_result.qa.equations or equation_result.detected %}
-                            {% if item.latex and item.status != 'duplicate' and item.status != 'not_an_equation' %}
-                                $$ {\def\arraystretch{0.6} {{ item.latex }}} $$
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-
-                    <div class="mt-4 flex flex-wrap gap-2">
-                        <a href="{{ url_for('download_equation_tex', token=equation_token) }}">
-                            <button type="button" class="px-6 py-3 bg-forest-800 text-white rounded-md hover:bg-forest-700">Download .tex</button>
-                        </a>
-                        <button type="button" class="px-6 py-3 bg-forest-800 text-white rounded-md hover:bg-forest-700" onclick="copyTex('recognized-text')">
-                            Copy LaTeX
-                        </button>
-                    </div>
-                </div>
-            {% endif %}
+                <p class="text-sm text-forest-600">
+                    Read the
+                    <button type="button" class="underline text-burgundy-600 hover:text-burgundy-500" onclick="openLegal('terms')">Terms of Service</button>
+                    and
+                    <button type="button" class="underline text-burgundy-600 hover:text-burgundy-500" onclick="openLegal('privacy')">Privacy Policy</button>.
+                </p>
             </div>
         </section>
 
@@ -401,9 +155,12 @@
              Signed in : rendered from Firestore, persists forever.
              Guest     : rendered by scripts.js from sessionStorage,
                          wiped on refresh and when the tab closes.
+
+             Both kinds of entry offer the same three actions as a
+             fresh conversion: download, copy and PDF preview.
              ===================================================== -->
         <section id="history" class="flex flex-col justify-center items-center bg-transparent w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-[95%] md:w-full p-4 md:p-8">
+            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-[95%] md:w-full p-4 md:p-8 text-left">
                 <h2 class="text-2xl font-bold text-forest-800 mb-1">History</h2>
 
                 {% if is_authenticated %}
@@ -414,24 +171,50 @@
                     {% if history %}
                         <ul class="space-y-3">
                             {% for item in history %}
-                                <li class="border border-gray-300 rounded-lg p-3 bg-white">
+                                <li class="border border-gray-300 rounded-lg p-3 bg-white" data-history-id="{{ item.id }}">
                                     <div class="flex items-center justify-between gap-2 flex-wrap">
-                                        <span class="text-xs font-semibold uppercase px-2 py-1 rounded
-                                            {% if item.ocrType == 'equation' %}bg-burgundy-600 text-cream-100{% else %}bg-forest-600 text-cream-100{% endif %}">
-                                            {{ item.ocrType }}
-                                        </span>
-                                        <span class="text-sm text-forest-700 truncate">{{ item.fileName }}</span>
+                                        <span class="text-sm text-forest-700 truncate font-medium">{{ item.fileName }}</span>
                                         <span class="text-xs text-forest-500">
                                             {% if item.timestamp %}{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}{% endif %}
                                         </span>
                                     </div>
-                                    <pre class="mt-2 bg-forest-100 p-3 rounded text-xs whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">{{ item.result }}</pre>
+
+                                    {% if item.truncated %}
+                                        <p class="mt-2 text-xs text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2">
+                                            This document was too long to store in full, so the saved
+                                            copy is truncated and cannot be rendered.
+                                        </p>
+                                    {% endif %}
+
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <a href="{{ url_for('history_download', doc_id=item.id) }}">
+                                            <button type="button" class="bg-forest-800 px-3 py-1.5 rounded text-cream-100 text-sm hover:bg-forest-700 transition-colors">Download .tex</button>
+                                        </a>
+                                        <button type="button" onclick="copyHistory('{{ item.id }}', this)"
+                                                class="bg-forest-800 px-3 py-1.5 rounded text-cream-100 text-sm hover:bg-forest-700 transition-colors">Copy LaTeX</button>
+                                        <button type="button" onclick="toggleHistoryPreview('{{ item.id }}', this)"
+                                                {% if item.truncated %}disabled{% endif %}
+                                                class="bg-cream-100 border border-forest-600 px-3 py-1.5 rounded text-forest-800 text-sm hover:bg-forest-100 transition-colors disabled:opacity-40">Preview PDF</button>
+                                        {% if not item.truncated %}
+                                            <a href="{{ url_for('history_preview', doc_id=item.id) }}"
+                                               data-document-url="{{ url_for('preview_document', doc=item.id) }}"
+                                               onclick="return openPdf(this)"
+                                               target="_blank" rel="noopener">
+                                                <button type="button" class="bg-cream-100 border border-forest-600 px-3 py-1.5 rounded text-forest-800 text-sm hover:bg-forest-100 transition-colors">Open in new tab</button>
+                                            </a>
+                                        {% endif %}
+                                    </div>
+
+                                    <div id="history-preview-{{ item.id }}"
+                                         data-pages-url="{{ url_for('preview_pages', doc=item.id) }}"
+                                         data-page-url="{{ url_for('preview_page', doc=item.id) }}"
+                                         class="hidden mt-3 border border-gray-300 rounded overflow-hidden"></div>
                                 </li>
                             {% endfor %}
                         </ul>
                     {% else %}
                         <p id="auth-history-empty" class="text-forest-600">
-                            No saved results yet. Run Textract or Equation and it will appear here.
+                            No saved conversions yet. Convert a document and it will appear here.
                         </p>
                     {% endif %}
                 {% else %}
@@ -456,34 +239,48 @@
 
     </main>
 
+    {% include 'partials/modals.html' %}
+
     <script>
         window.pageData = {
-            hasEquationResult: {{ 'true' if equation_result else 'false' }},
-            hasTextractResult: {{ 'true' if recognized_textract else 'false' }},
-            showEquationResult: {{ 'true' if show_equation_result else 'false' }},
-            showTextractResult: {{ 'true' if show_textract_result else 'false' }},
+            showConvertResult: {{ 'true' if show_convert_result else 'false' }},
+            hasConvertResult: {{ 'true' if convert_result else 'false' }},
+            hasConvertError: {{ 'true' if convert_error or convert_blocked else 'false' }},
+
+            // Terms gate
+            termsVersion: {{ terms_version | tojson }},
+            hasAcceptedTerms: {{ 'true' if has_accepted_terms else 'false' }},
+            acceptTermsUrl: {{ url_for('accept_terms') | tojson }},
+
+            // AI availability, as of this render. Re-checked before every
+            // conversion so a stale warning is never what the user acts on.
+            aiStatusUrl: {{ url_for('ai_status_route') | tojson }},
+            ai: {{ ai | tojson }},
+
+            legalUrls: {
+                terms: {{ url_for('legal', document='terms') | tojson }},
+                privacy: {{ url_for('legal', document='privacy') | tojson }}
+            },
+            acceptedExtensions: {{ accepted_extensions | tojson }},
 
             // History wiring (see scripts.js)
             isAuthenticated: {{ 'true' if is_authenticated else 'false' }},
-            // True only on the redirect that immediately follows an OCR POST.
+            // True only on the redirect that immediately follows a conversion.
             // False on a refresh or a fresh visit, which is what wipes guest history.
             keepGuestHistory: {{ 'true' if keep_guest_history else 'false' }},
-            // The result to append to guest history on this load, if any.
+            // The result to append to guest history on this load, if any. The
+            // token is kept with it so a guest's older entries can still be
+            // previewed and downloaded, not just re-read as text.
             latestEntry:
-                {% if not is_authenticated and equation_result %}
-                    { ocrType: 'equation',
-                      fileName: {{ (uploaded_image_name or 'image') | tojson }},
-                      result: {{ equation_result.tex | tojson }} }
-                {% elif not is_authenticated and textract_result %}
-                    { ocrType: 'textract',
-                      fileName: {{ (textract_result.file_name or 'document') | tojson }},
-                      result: {{ textract_result.tex | tojson }} }
+                {% if not is_authenticated and convert_result %}
+                    { fileName: {{ (convert_result.file_name or 'document') | tojson }},
+                      result: {{ convert_result.tex | tojson }},
+                      token: {{ convert_token | tojson }} }
                 {% else %}
                     null
                 {% endif %}
         };
     </script>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </body>
 </html>

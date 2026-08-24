@@ -1,34 +1,55 @@
 {# ---------------------------------------------------------------------------
-   Shown ABOVE the upload control on both converters, deliberately.
+   Shown ABOVE the upload control, deliberately.
 
-   The OCR itself runs on this server. The QA step, when it is configured,
-   sends the uploaded document to an external API - and on Gemini's free tier
-   that document is used to train Google's models. The user has to know that
-   before they choose a file, not after.
+   The user has to know where their document goes before they choose a file,
+   not after. Since the AI-first change this notice had to be rewritten: the
+   model now reads the document itself, so "the OCR stays on this server" is no
+   longer true of the normal path. Saying it anyway would be a comfortable
+   falsehood.
+
+   The local converters are what runs on this server, and they only run as the
+   fallback - which is the one case where nothing leaves the machine.
    --------------------------------------------------------------------------- #}
 {% if not qa.configured %}
     <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
-        AI quality checking is not configured on this server
-        (<code>GEMINI_API_KEY</code> is missing), so results come straight from the
-        converter without review. Everything else works normally.
+        AI-powered conversion is not configured on this server
+        (<code>GEMINI_API_KEY</code> is missing). Documents will be converted
+        here instead, using tools that run entirely on this machine &mdash;
+        nothing is sent anywhere, but the results are of lower quality. You
+        will be asked before that happens.
     </div>
 {% elif not qa.enabled %}
     <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
-        AI quality checking is switched off on this server
-        (<code>AI_QA_ENABLED=false</code>). Results come straight from the converter.
+        AI-powered conversion is switched off on this server
+        (<code>AI_QA_ENABLED=false</code>). Documents will be converted here
+        instead, with nothing sent to any external service and results of lower
+        quality. You will be asked before that happens.
     </div>
 {% elif qa.trains_on_input %}
     <div class="mb-4 bg-yellow-50 text-yellow-900 border border-yellow-400 p-3 rounded text-sm text-left">
         <p class="font-semibold mb-1">Before you upload</p>
         <p>
-            The OCR runs on this server, but the quality check sends your document to
-            Google's Gemini API on its <strong>free tier</strong>, and Google uses
-            free-tier input to train its models. Please do not upload anything
-            confidential, personal or sensitive.
+            Your document is sent to Google's Gemini API, which reads it and
+            writes the LaTeX. This server is using the <strong>free tier</strong>,
+            and Google uses free-tier input to train its models. Please do not
+            upload anything confidential, personal or sensitive.
         </p>
         <p class="mt-1">
-            You can turn the review off server-side with <code>AI_QA_ENABLED=false</code>;
-            the converters keep working on their own.
+            If the AI service is unavailable, ConTeX can convert your document
+            without it &mdash; that fallback OCR runs on this server and sends
+            nothing anywhere, but produces lower-quality results. You are always
+            asked first.
+        </p>
+    </div>
+{% else %}
+    <div class="mb-4 bg-forest-100 text-forest-800 border border-forest-400 p-3 rounded text-sm text-left">
+        <p class="font-semibold mb-1">Before you upload</p>
+        <p>
+            Your document is sent to {{ qa.name | title }} for conversion. This
+            server is not on a free tier, so the provider does not use it for
+            training &mdash; but it still leaves this machine. If the service is
+            unavailable, the fallback OCR runs on this server and sends nothing
+            anywhere.
         </p>
     </div>
 {% endif %}
