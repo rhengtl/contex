@@ -1,6 +1,6 @@
 # OCR accuracy benchmark
 
-ConTex ships two OCR converters plus an AI review layer, and none had a way to
+ConTeX ships two OCR converters plus an AI review layer, and none had a way to
 measure how well they work.
 These scripts build a synthetic corpus with **exact ground truth**, run it through
 the app's real code paths, and report error rates.
