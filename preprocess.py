@@ -13,8 +13,11 @@ empty string, so the user saw a blank result and no error at all. The
 projection-profile deskew below is the same algorithm bench/deskew_test.py
 validated, moved into the app and made fast enough for a web request.
 
-Three steps, all no-ops when they are not needed:
+Four steps, all no-ops when they are not needed:
 
+  Flatten alpha - a transparent PNG (which is exactly what the Draw canvas
+                  produces) turns black when converted to greyscale, because
+                  PIL drops the alpha channel rather than compositing it.
   EXIF rotation - phone cameras store orientation as metadata, and a sideways
                   page defeats every OCR engine and every vision model.
   Deskew        - estimate the dominant text angle and rotate it flat.
@@ -122,6 +125,29 @@ def enabled():
     return os.getenv('OCR_PREPROCESS', 'true').lower() != 'false'
 
 
+def flatten_alpha(image):
+    """
+    Composite a transparent image onto white.
+
+    The Draw canvas clears to transparent and strokes in near-black, so its
+    PNG is RGBA with an alpha-0 background. PIL's convert('L') discards alpha
+    instead of compositing, which turns that background *black* - measured, the
+    ink mask then flags 100% of pixels and segmentation collapses to a single
+    band. Compositing first takes the same drawing to 0.4% ink and the correct
+    band count.
+    """
+    if image.mode not in ('RGBA', 'LA', 'PA') and 'transparency' not in image.info:
+        return image
+    try:
+        rgba = image.convert('RGBA')
+        white = Image.new('RGB', rgba.size, (255, 255, 255))
+        white.paste(rgba, mask=rgba.split()[-1])
+        return white
+    except Exception as exc:
+        print(f"Warning: could not flatten transparency ({exc})")
+        return image
+
+
 def prepare_image(image, do_deskew=True, do_upscale=True):
     """
     Run the full conditioning chain on a PIL image.
@@ -131,6 +157,13 @@ def prepare_image(image, do_deskew=True, do_upscale=True):
     must not cost the user their OCR run.
     """
     notes = []
+    # Flattening is not optional conditioning - without it a drawing is a black
+    # rectangle to every engine - so it runs even when preprocessing is off.
+    flattened = flatten_alpha(image)
+    if flattened is not image:
+        notes.append('Placed a transparent image on a white background.')
+    image = flattened
+
     if not enabled():
         return image, notes
 

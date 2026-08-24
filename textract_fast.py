@@ -95,6 +95,74 @@ def extract_text_from_file(file_path, languages='eng'):
     
     return '\n'.join(extracted_text)
 
+def extract_lines(image, languages='eng'):
+    """
+    Read a page and return its lines **with geometry and confidence**.
+
+    `image_to_string` throws all of this away, but the unified pipeline needs
+    it for two things:
+
+      position    Each line's box says where it sits, which is what lets an
+                  equation be spliced back into the right place in the flow.
+      confidence  Tesseract has no mathematical model, so where a formula is it
+                  guesses at glyphs and its confidence collapses. Measured
+                  across bench/img_pages: prose lines never drop below 43,
+                  while every line overlapping display maths falls to 0-5. That
+                  is the text/maths discriminator, and it costs nothing.
+
+    Returns a list of dicts: text, box (left, top, right, bottom), min_conf,
+    mean_conf, and Tesseract's own block/paragraph/line numbering, which is
+    reading order as the engine understood it.
+    """
+    data = pytesseract.image_to_data(image, lang=languages,
+                                     output_type=pytesseract.Output.DICT)
+    grouped = {}
+    for index, raw_text in enumerate(data['text']):
+        text = (raw_text or '').strip()
+        if not text:
+            continue
+        try:
+            confidence = int(float(data['conf'][index]))
+        except (TypeError, ValueError):
+            confidence = -1
+        if confidence < 0:
+            continue
+        key = (data['block_num'][index], data['par_num'][index],
+               data['line_num'][index])
+        left, top = data['left'][index], data['top'][index]
+        right = left + data['width'][index]
+        bottom = top + data['height'][index]
+        entry = grouped.get(key)
+        if entry is None:
+            grouped[key] = {
+                'words': [text], 'confs': [confidence],
+                'box': [left, top, right, bottom],
+                'block': key[0], 'par': key[1], 'line': key[2],
+            }
+        else:
+            entry['words'].append(text)
+            entry['confs'].append(confidence)
+            box = entry['box']
+            box[0] = min(box[0], left)
+            box[1] = min(box[1], top)
+            box[2] = max(box[2], right)
+            box[3] = max(box[3], bottom)
+
+    lines = []
+    for entry in grouped.values():
+        confs = entry['confs']
+        lines.append({
+            'text': ' '.join(entry['words']),
+            'box': tuple(entry['box']),
+            'min_conf': min(confs),
+            'mean_conf': sum(confs) / len(confs),
+            'block': entry['block'], 'par': entry['par'], 'line': entry['line'],
+        })
+    # Reading order: down the page, then across.
+    lines.sort(key=lambda item: (item['box'][1], item['box'][0]))
+    return lines
+
+
 # Characters that are syntax in LaTeX and must be escaped before raw OCR text
 # can be dropped into a document. Without this, any page containing a '%' or a
 # '&' produced a .tex file that silently lost content or failed to compile.

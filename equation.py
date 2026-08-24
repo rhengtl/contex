@@ -103,23 +103,33 @@ def _bands(mask, merge_gap):
     return merged
 
 
-def segment_equations(image, max_regions=None):
+def segment_boxes(image, max_regions=None, allow_empty=False):
     """
-    Split a page into candidate equation regions, top to bottom.
+    Find candidate regions and return their **coordinates**, top to bottom.
 
-    Returns a list of PIL images. A page holding a single expression comes back
-    as one region - the whole image - so single-equation uploads behave exactly
-    as they always did.
+    Returns a list of (left, top, right, bottom) boxes in the coordinate space
+    of `image`. These boxes are the join key the unified pipeline needs: they
+    are what lets an equation be placed back into the text flow at the position
+    it actually occupied on the page.
+
+    `allow_empty` distinguishes the two callers. The standalone equation
+    converter wants the whole image back when it cannot find distinct regions,
+    because the user uploaded a photo of one formula. The unified pipeline
+    wants an empty list, because "no distinct regions" there means "this page
+    is prose" - and handing a whole page of text to a formula model produces
+    the runs of \\qquad that the tight-cropping fix was written to stop.
     """
     max_regions = max_regions or int(os.getenv('EQUATION_MAX_REGIONS', '12'))
+    whole = [] if allow_empty else [(0, 0) + image.size]
+
     mask = _ink_mask(image)
     if not mask.any():
-        return [image]
+        return whole
 
     height, width = mask.shape
     raw = _bands(mask, merge_gap=1)
     if not raw:
-        return [image]
+        return whole
 
     # Choosing the merge threshold is the whole trick. Measured on a rendered
     # page of display equations: the gaps *inside* a fraction (numerator, bar,
@@ -141,8 +151,8 @@ def segment_equations(image, max_regions=None):
         regions.append((max(top - _CROP_PADDING, 0),
                         min(bottom + _CROP_PADDING, height)))
 
-    if len(regions) <= 1:
-        return [image]
+    if len(regions) <= 1 and not allow_empty:
+        return whole
 
     if len(regions) > max_regions:
         # Keep the tallest regions - the ones most likely to be equations
@@ -150,7 +160,7 @@ def segment_equations(image, max_regions=None):
         regions = sorted(sorted(regions, key=lambda r: r[1] - r[0],
                                 reverse=True)[:max_regions])
 
-    crops = []
+    boxes = []
     for top, bottom in regions:
         # Crop horizontally as well. pix2text-mfr expects a formula that fills
         # its crop; handing it a full-width strip of mostly blank page is what
@@ -162,8 +172,51 @@ def segment_equations(image, max_regions=None):
             right = min(int(ink[-1]) + 1 + _CROP_PADDING, width)
         else:
             left, right = 0, width
-        crops.append(image.crop((left, top, right, bottom)))
-    return crops
+        boxes.append((left, top, right, bottom))
+    return boxes
+
+
+def segment_equations(image, max_regions=None):
+    """
+    Split a page into candidate equation regions, top to bottom.
+
+    Returns a list of PIL images. A page holding a single expression comes back
+    as one region - the whole image - so single-equation uploads behave exactly
+    as they always did.
+    """
+    return [image.crop(box)
+            for box in segment_boxes(image, max_regions, allow_empty=False)]
+
+
+def tighten(image, box):
+    """
+    Shrink a box to the ink actually inside it.
+
+    Needed when a region has been carved vertically: the original band's left
+    and right edges were measured across the whole band, so a sub-range of it
+    can be left with a wide margin. pix2text-mfr expects a formula that fills
+    its crop - a loose one is what produced runs of \\qquad.
+    """
+    left, top, right, bottom = box
+    try:
+        mask = _ink_mask(image.crop(box))
+    except Exception:
+        return box
+    if not mask.any():
+        return box
+
+    rows = np.flatnonzero(mask.any(axis=1))
+    columns = np.flatnonzero(mask.any(axis=0))
+    new_top = top + max(int(rows[0]) - _CROP_PADDING, 0)
+    new_bottom = top + min(int(rows[-1]) + 1 + _CROP_PADDING, mask.shape[0])
+    new_left = left + max(int(columns[0]) - _CROP_PADDING, 0)
+    new_right = left + min(int(columns[-1]) + 1 + _CROP_PADDING, mask.shape[1])
+    return (new_left, new_top, new_right, new_bottom)
+
+
+def recognize(image):
+    """Public name for the single-formula recognition step."""
+    return _recognize(image)
 
 
 def process_image_list(file_bytes):

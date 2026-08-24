@@ -7,8 +7,20 @@ before and after the review, and the difference is the number that matters.
 
 Two modes:
 
+    --mode direct     AI-first: the model reads the page itself, no local
+                      converters at all. Only the "after" column is meaningful.
+    --mode unified    Both converters merged by position, then review_page().
+                      Corpus: img_pages/ - this is the one that measures the
+                      shipped pipeline, so it is the default.
     --mode textract   Tesseract -> .tex, then review_document()
+                      Corpus: img_pages/ - whole rendered pages, ground truth
+                      is the .tex they were rendered from.
     --mode equations  pix2text  -> [eq, ...], then review_equations()
+                      Corpus: img_math/ - isolated formulas, ground truth is
+                      the expression itself. Deliberately NOT the page corpus:
+                      the reviewer is supposed to discard prose the segmenter
+                      mistook for mathematics, and scoring that against a full
+                      page would count doing so as a loss.
                       (loads the ONNX model, so it is slower to start)
 
 Three metrics, because character accuracy alone would be misleading - the
@@ -148,6 +160,34 @@ def _delta(before, after):
     return f'{change:+7.2%}'
 
 
+def run_direct(path, file_name, mock):
+    """
+    AI-first: the model reads the page itself, no converter draft at all.
+
+    The "before" column is empty by construction - there is no local output to
+    score - so only the "after" numbers mean anything in this mode. That is
+    itself the point: with nothing to fall back on, a failed call is a failed
+    conversion.
+    """
+    with open(path, 'rb') as handle:
+        data = handle.read()
+    if mock:
+        return '', '', {'status': 'mock'}
+    result = ai_qa.convert_page(data, file_name)
+    return '', result['tex'], result
+
+
+def run_unified(path, file_name, mock):
+    """Both converters merged by position, then one review."""
+    import convert
+    with open(path, 'rb') as handle:
+        data = handle.read()
+    built = convert.convert(data, file_name, review=not mock)
+    review = built['qa']
+    review['detected'] = len(built['equations'])
+    return built['raw_tex'], built['tex'], review
+
+
 def run_textract(path, file_name, mock):
     """Raw Tesseract .tex, then the reviewed one."""
     text = textract_fast.extract_text_from_file(path)
@@ -175,24 +215,60 @@ def run_equations(path, file_name, mock):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode', choices=('textract', 'equations'),
-                        default='textract')
+    parser.add_argument('--mode',
+                        choices=('unified', 'direct', 'textract', 'equations'),
+                        default='unified')
+    parser.add_argument('--corpus', choices=('pages', 'mixed', 'math'),
+                        default='pages',
+                        help="'pages' = rendered LaTeX pages (printed only); "
+                             "'mixed' = handwritten and typewritten prose and "
+                             "mathematics in every combination. Ignored in "
+                             "equations mode, which has its own corpus.")
     parser.add_argument('--limit', type=int, default=0)
     parser.add_argument('--cond', default=None, help='only this condition (hi/lo)')
     parser.add_argument('--provider', default=None,
                         help='gemini or anthropic (default: configured)')
-    parser.add_argument('--model', default=None)
+    parser.add_argument('--model', default=None,
+                        help='override the model for this run (both pipelines); '
+                             'omit to use the per-pipeline default')
     parser.add_argument('--mock', action='store_true',
                         help='no API calls; scores the converter alone')
+    # The free tier limits requests per MINUTE, not just per day, and a
+    # benchmark is the one workload that reliably trips it: a run with no pause
+    # lost 8 of 8 pages to 429s. The app itself makes 1-3 calls per conversion
+    # and never sees this.
+    parser.add_argument('--sleep', type=float, default=12.0,
+                        help='seconds to pause between pages (default 12, to '
+                             'stay under the free tier per-minute limit); '
+                             '0 to disable')
     parser.add_argument('--out', default=None)
     args = parser.parse_args(argv)
 
-    manifest_path = os.path.join(BENCH, 'manifest_pages.json')
+    # Each mode gets the corpus whose ground truth actually answers its
+    # question. Scoring equation output against a whole *page* would punish the
+    # reviewer for correctly discarding prose the segmenter mistook for an
+    # expression - so equations are measured on isolated formulas instead,
+    # where the ground truth is the formula itself.
+    if args.mode == 'equations' or args.corpus == 'math':
+        name, folder, generator = 'manifest_math.json', 'img_math', 'gen_math.py'
+    elif args.corpus == 'mixed':
+        name, folder, generator = 'manifest_mixed.json', 'img_mixed', 'gen_mixed.py'
+    else:
+        name, folder, generator = 'manifest_pages.json', 'img_pages', 'gen_pages.py'
+
+    manifest_path = os.path.join(BENCH, name)
     if not os.path.exists(manifest_path):
-        print('No manifest_pages.json - run: python gen_pages.py')
+        print(f'No {name} - run: python {generator}')
         return 1
     with open(manifest_path, encoding='utf-8') as handle:
         manifest = json.load(handle)
+
+    # The math corpus stores a bare expression; wrap it so the same scorers
+    # apply to both corpora.
+    for row in manifest:
+        if 'gt_tex' not in row:
+            row['gt_tex'] = '\\[' + row['gt'] + '\\]'
+            row.setdefault('feature', row['cond'])
 
     if args.cond:
         manifest = [row for row in manifest if row['cond'] == args.cond]
@@ -209,10 +285,15 @@ def main(argv=None):
             print('AI QA is not configured - set GEMINI_API_KEY (or use --mock).')
             return 1
         info = ai_qa.provider_info()
-        print(f"reviewer: {info['name']}   model: {args.model or info['model']}")
+        # Each pipeline runs its own model, so report the one this mode uses.
+        role = ('equations' if args.mode == 'equations' else 'document')
+        print(f"reviewer: {info['name']}   "
+              f"model: {args.model or info['models'][role]}   "
+              f"role: {role}")
     print(f"mode: {args.mode}   pages: {len(manifest)}\n")
 
-    runner = run_textract if args.mode == 'textract' else run_equations
+    runner = {'unified': run_unified, 'direct': run_direct,
+              'textract': run_textract, 'equations': run_equations}[args.mode]
     header = f"  {'page':<26}{'text':>9}{'':>8}{'structure':>11}{'':>8}{'math':>9}{'':>8}  compiles"
     print(header)
 
@@ -223,8 +304,10 @@ def main(argv=None):
     failures = 0
     started = time.time()
 
-    for row in manifest:
-        path = os.path.join(BENCH, 'img_pages', row['file'])
+    for index, row in enumerate(manifest):
+        if index and args.sleep and not args.mock:
+            time.sleep(args.sleep)
+        path = os.path.join(BENCH, folder, row['file'])
         try:
             raw, reviewed, review = runner(path, row['file'], args.mock)
         except Exception as exc:
