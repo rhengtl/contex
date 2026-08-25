@@ -23,8 +23,9 @@ Word documents take neither path: a `.docx` already knows its own headings,
 cells and words, so it is read structurally by `docx_input.py` and only its
 LaTeX form is decided — by the model when available, deterministically when not.
 
-**Why AI-first.** Measured on the same corpora with the same model
-(`bench/score_qa.py --mode direct` against `--mode unified`):
+**Why AI-first.** Measured on the same corpus with the same model, against the
+older arrangement where the local converters produced a draft and the model
+reviewed it:
 
 | page corpus, 8 pages | converters + review | AI-first |
 |---|---|---|
@@ -60,14 +61,13 @@ and offers *Continue without AI* / *Cancel and wait* / *Check again*. Cancelling
 means nothing is converted. `convert()` raises `FallbackNotAuthorized` if a POST
 arrives without that agreement, so the gate is not merely a dialog.
 
-**Quota failures rotate models before they ever reach the user.** Each role has
+**Quota failures rotate models before they ever reach the user.** The role has
 an ordered chain, and a model returning a 429 says nothing about the next one —
 free-tier quota is spent one model at a time:
 
 | role | chain, best first |
 |---|---|
 | `document` | `gemini-3.1-flash-lite` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.7-flash` |
-| `equations` | `gemini-3.6-flash` → `gemini-3.1-flash-lite` → `gemini-3.5-flash` → `gemini-3.7-flash` |
 
 ### Rounds
 
@@ -134,14 +134,13 @@ guarantee with one API call per page instead of one per document.
 
 Two rules shape the whole design.
 
+**The AI is an enhancement, never a gate.** No API key, dead network, exhausted
+free-tier quota, unparseable reply — every failure path falls back to the local
+converters, with a note saying why. A user never loses a conversion because the
+model was unavailable.
 
-**QA is an enhancement, never a gate.** No API key, dead network, exhausted
-free-tier quota, unparseable reply — every failure path returns the converter's
-own output with a note saying why the review did not happen. A user never loses
-a conversion because a review failed.
-
-**Source fidelity outranks tidiness.** For equations especially, the reviewer is
-told to treat the image as evidence and to leave unusual-but-valid mathematics
+**Source fidelity outranks tidiness.** For mathematics especially, the model is
+told to treat the page as evidence and to leave unusual-but-valid expressions
 alone. "This looks odd" is not grounds for a change; "the image clearly shows
 something else" is.
 
@@ -153,14 +152,14 @@ The converter handles four kinds of content, in any combination on one page:
 
 | | handwritten | typewritten |
 |---|---|---|
-| **prose** | Tesseract fails → AI review transcribes | Tesseract, near-perfect |
+| **prose** | Tesseract fails → the model transcribes | Tesseract, near-perfect |
 | **equations** | pix2text-mfr | pix2text-mfr |
 
 **Tesseract is 95.4% word-error-rate on handwriting** — the worst of nine tools
 in an independent 2026 benchmark, because it pattern-matches shapes designed for
 print. Nothing tunes that away. Vision models sit at 11–14% WER on the same
-task, so on a handwritten line the AI review stage is not polishing an OCR
-result, it *is* the transcriber. The prompt says so explicitly.
+task, so on a handwritten line the model is not polishing an OCR result, it
+*is* the transcriber. The prompt says so explicitly.
 
 **pix2text-mfr reads handwritten mathematics as well as printed.** Measured on
 `bench/img_mixed`: hand-lettered `E = mc²`, `a² + b² = c²`,
@@ -178,7 +177,7 @@ like unread ink, was nominated as an equation, came back as `\mathrm` letter
 soup, was rejected as prose, and was discarded. Silent content loss. Now a
 rejected region that no text engine read is *salvaged*: the letter soup is
 unwrapped back into words (`layout.unwrap_text`) and kept, flagged uncertain.
-Rough — "phigsics" for "physics" — but present, and the reviewer fixes it.
+Rough — "phigsics" for "physics" — but present rather than silently lost.
 
 **Printed equations were missed.** `E = mc²` in a serif font is ordinary glyphs,
 so Tesseract reads it happily at confidence 80 and the confidence discriminator
@@ -191,35 +190,17 @@ with the formula beneath it, the carved remainder keeps the *band's* full width,
 hiding that the formula inside is centred. Centring is now judged on the words
 Tesseract found, not on the region.
 
-### Uncertain lines are named, not hoped over
+### Uncertain lines are counted
 
-Any line no engine read confidently is collected and listed to the reviewer
-explicitly: *"These lines were NOT read reliably by any engine, and are very
-likely handwritten. Treat each as a guess and read it off the image yourself."*
-That focuses the model's attention where it is needed instead of relying on it
-to notice.
+On the fallback path, any line no engine read confidently is marked
+`uncertain` by `layout.py` and counted into `summary['uncertain_lines']`. It is
+the honest measure of how much of a fallback conversion is guesswork.
 
-The reviewer is also told **not** to mark handwriting up differently. A
-handwritten sentence and a printed one both become ordinary LaTeX prose; a
-handwritten formula and a printed one both become ordinary LaTeX mathematics.
-
-### Measured
-
-`bench/score_qa.py --mode unified --corpus mixed`:
-
-| | before review | after review |
-|---|---|---|
-| text | 94.76% | **100.00%** |
-| math | 100.00% | 100.00% |
-| compiles | 5/5 | 5/5 |
-
-Printed pages come back `clean` — untouched, so no regression — while
-handwritten pages are `corrected`. All ten scenarios were also checked
-end to end with the live reviewer: handwritten prose reached 100% word recall,
-including the line Tesseract could not see at all, and a page carrying printed
-prose, printed mathematics, handwritten prose and handwritten mathematics
-together came back at 100% prose recall with all three equations correct and in
-reading order.
+The model is told **not** to mark handwriting up differently. A handwritten
+sentence and a printed one both become ordinary LaTeX prose; a handwritten
+formula and a printed one both become ordinary LaTeX mathematics. What the page
+was written with changes how carefully the model must read, not how the result
+is typeset.
 
 ### Limits
 
@@ -261,28 +242,16 @@ Then a last line of defence: pix2text returns prose as spaced letters inside
 `\mathrm`, so a result with no relation, operator or script is discarded and the
 text engine's reading of that region stands.
 
-### What the AI review adds here
-
-One call, one document, the whole page in view. This is the only stage that can
-check the *merge* — whether an equation landed in the right place, whether
-content got duplicated between the two converters, whether something that is not
-an equation was transcribed as one. Two separate reviews structurally cannot see
-that, because neither has both halves. It also halves the free-tier quota cost.
-
-Live, on `mixed_hi.png`: the pipeline deliberately left `Einstein's mass-energy
+Live, on `mixed_hi.png`: the merge deliberately left `Einstein's mass-energy
 relation is E = mc?...` as text, because it is a sentence with inline
-mathematics. The reviewer restored it to
-`$E = mc^2$ ... $\gamma = 1/\sqrt{1 - v^2/c^2}$`, turned the numbered lines into
-an `enumerate`, and matched ground truth. On `table_hi.png` it rebuilt the full
-`tabular` from the image.
+mathematics rather than a displayed formula.
 
 ### An honest limitation
 
-On this corpus — machine-rendered, perfectly clean LaTeX pages — the reviewer is
-strong enough to rebuild structure and mathematics from the image alone, so
-after review the unified pipeline is roughly level with the text-only pipeline
-(98.78% vs 97.92% text at high resolution; 93.21% vs 98.10% at low). The clear
-win is *before* review:
+On this corpus — machine-rendered, perfectly clean LaTeX pages — a capable model
+rebuilds structure and mathematics from the image alone, which is why the AI
+path does not need the merge at all. The merge earns its place on the path that
+has no model:
 
 | without any AI | unified | text-only |
 |---|---|---|
@@ -300,39 +269,9 @@ converter did before.
 ## The fallback: text half (Tesseract)
 
 Tesseract reads the document and `generate_tex_source()` wraps the text in a
-minimal LaTeX document, exactly as before. That draft then goes to the reviewer
-together with the original upload, which is asked to check:
+minimal LaTeX document. On the fallback path that draft is the result; it is
+what the merge in `layout.py` builds on:
 
-- Does the extracted text make sense, and does it say what the page says?
-- Is the meaning and context preserved?
-- Is the reading order right, and does each piece of text sit in the correct
-  place relative to the rest?
-- Is any content missing, duplicated, garbled, or invented?
-- Does the LaTeX structure match the page (headings, lists, tables)?
-- Are there obvious formatting or structural problems?
-
-A clean review replies `LATEX_OK` and the OCR output is returned untouched.
-Otherwise the reviewer returns findings plus a corrected document, which is then
-validated and — if it does not build — given exactly one repair attempt.
-
-### What this actually fixes
-
-Measured on `bench/img_pages/headings_lo.png` with the live API. Tesseract
-produced:
-
-```
-1 Introduction
-
-measurements into meaning.        <- "Signal processing turns" was dropped
-1.1 Motivation
-...
-\uFFFDThis note covers the transform      <- garbage character
-The derivation proceeds in three steps,   <- comma instead of full stop
-```
-
-The reviewer restored the missing words, removed the garbage, fixed the
-punctuation, and rebuilt the heading hierarchy as `\section` / `\subsection`.
-The result compiles.
 
 ---
 
@@ -350,7 +289,7 @@ producing an **ordered list**:
 
 It deliberately stops there. Working out whether those are three independent
 results or one derivation — and how to lay them out — needs the original image,
-so that judgement belongs to the review stage, not to a guess in the converter.
+which is why that judgement belongs to the AI path, not to a guess here.
 
 ### Segmentation
 
@@ -374,28 +313,6 @@ expression. With tight crops the same page went from
 
 to all three correct, before any AI involvement.
 
-### The review
-
-For each expression the reviewer runs two separate checks:
-
-1. **Source fidelity** — does the transcription match the image? The image is
-   the evidence, and this check outranks everything else.
-2. **Mathematical sanity** — is it coherent, or does it show the signature of a
-   recognition failure (a stray operator, unbalanced delimiters, digits fused
-   into a variable, `\cdot` where the image shows a decimal point)?
-
-Then, for the group: are they related? Does one follow from another? Does the
-image indicate a relationship? What is the correct order? Should any of them be
-grouped into one environment?
-
-The reply is parsed into per-equation verdicts (all shown in the UI) plus a
-final `.tex`. A key-per-line format is used rather than JSON because every value
-is LaTeX, and backslash-heavy strings are exactly what models escape incorrectly
-inside JSON — one bad escape would cost the whole review.
-
-On the live API, the three equations above were identified as "the standard
-kinematic equations of motion", ordering confirmed, and grouped into a single
-`align*` environment.
 
 ---
 
@@ -403,12 +320,10 @@ kinematic equations of motion", ordering confirmed, and grouped into a single
 
 > **On Gemini's free tier, Google uses submitted documents to train its models.**
 
-Since the AI-first change the model reads the document itself, so the old claim
-that "the OCR runs on this server, only the review leaves" is no longer true of
-the normal path — and `templates/partials/qa_notice.html` was rewritten rather
-than left saying something comfortable and false. The notice above the upload
-control now says the document is sent to the provider, and that the *fallback*
-is the path on which nothing leaves the machine.
+The model reads the document itself, so on the normal path the upload leaves
+this server. `templates/partials/qa_notice.html`, shown above the upload
+control, says so plainly: the document is sent to the provider, and the
+*fallback* is the only path on which nothing leaves the machine.
 
 To replace the training warning with a quieter notice, enable billing on the
 Google Cloud project (paid-tier inputs are not used for training) and set
@@ -453,9 +368,9 @@ Everything else:
 
 ## Cost
 
-One review per conversion, plus at most one repair — `AI_QA_MAX_API_CALLS`
-caps it at 3. Typical usage on the live API was ~1,700 input / ~900 output
-tokens for a page of prose and ~1,900 / ~1,000 for three equations. Rate limits
+One call per page, plus at most one repair — `AI_QA_MAX_API_CALLS` caps it at
+3. Typical usage on the live API was ~1,700 input / ~900 output tokens for a
+page of prose. Rate limits
 are retried with backoff (`AI_QA_RETRY_ATTEMPTS`); an exhausted quota rotates
 to the next model in the role's chain; and only an exhausted *chain* degrades to
 the converter's own output rather than failing.
@@ -479,10 +394,9 @@ Disable with `OCR_PREPROCESS=false`.
 
 ## Measuring it
 
-`bench/score_qa.py` runs each converter **twice — before and after the review**,
-because the only question that matters is whether reviewing helps. Three metrics,
-since character accuracy alone would punish `\dfrac` for `\frac` as hard as a
-wrong exponent:
+`bench/score_qa.py` scores the shipped pipeline against ground truth. Three
+metrics, since character accuracy alone would punish `\dfrac` for `\frac` as
+hard as a wrong exponent:
 
 - **text** — character accuracy of the prose, markup stripped
 - **structure** — how many of the source's sections/lists/tables/display-math
@@ -491,14 +405,14 @@ wrong exponent:
 
 The baseline it establishes for Tesseract alone on the rendered-page corpus:
 **78% text, 0% structure, 0% maths.** Structure and mathematics are precisely
-what the review layer exists to recover.
+what the fallback cannot recover, and why it is the fallback.
 
 ```powershell
 cd bench
 ..\.venv\Scripts\python.exe gen_pages.py       # build the corpus
-..\.venv\Scripts\python.exe score_qa.py --mock # converter alone, no API calls
-..\.venv\Scripts\python.exe score_qa.py        # before vs after the review
-..\.venv\Scripts\python.exe score_qa.py --mode equations
+..\.venv\Scripts\python.exe score_qa.py --mock # check the harness, no API calls
+..\.venv\Scripts\python.exe score_qa.py        # the shipped AI pipeline
+..\.venv\Scripts\python.exe score_qa.py --corpus mixed
 ```
 
 A rendered LaTeX page is the easiest input these converters will ever see. Before
@@ -603,19 +517,17 @@ worth having:
 
 ---
 
-## Which model reviews what, and why
+## Which model converts, and why
 
-The two roles prefer **different models**, because they are different jobs.
-Each preference heads an automatic fallback chain (see *Falling back is never
-silent* above) — the table below is what each role reaches for first, not the
+The preference heads an automatic fallback chain (see *Falling back is never
+silent* above) — the table below is what the role reaches for first, not the
 only model it will ever use.
 
 | Role | Prefers | Thinking | The job |
 |---|---|---|---|
 | `document` | `gemini-3.1-flash-lite` | `low` | Whole page in, whole document out |
-| `equations` | `gemini-3.6-flash` | `high` | Short list in, ordered/grouped `.tex` out |
 
-**Document review is reading-dominant.** It fails by not noticing a dropped
+**Converting a page is reading-dominant.** It fails by not noticing a dropped
 line - a reading failure, not a reasoning one. So it runs on the model with the
 best *measured* full-page reading among free-tier options: on socOCRbench (an
 independent benchmark of 280 document images scoring edit similarity, chrF and
@@ -623,12 +535,6 @@ table structure) `gemini-3.1-flash-lite` scores **0.6214**, statistically tied
 with the best free-tier model and ahead of `gemini-3.5-flash` at 0.6096. It is
 also the cheapest of them if billing is ever enabled. This path carries the
 larger payload, so the cheap model is on the expensive half.
-
-**Equation review is reasoning-dominant.** The transcriptions are short; the
-hard parts are deciding whether an odd expression is an OCR error or valid
-mathematics, and working out how several equations relate. That is judgement, so
-it runs on a full Flash model with the thinking budget turned up. Its payload is
-small, so the better model costs little.
 
 ### Why not `gemini-3.7-flash`
 
@@ -656,15 +562,14 @@ On the same test page, given a formula pix2text had mangled into prose:
 | `gemini-3.6-flash` | **recovered it** — `F(\omega) = \int_{-\infty}^{\infty} f(t)e^{-i\omega t}\,dt` |
 
 The lesson generalises: newer is not a substitute for measured. `bench/score_qa.py`
-scores before/after per model, so the assignment stays testable rather than
-assumed:
+scores a corpus per model, so the assignment stays testable rather than assumed:
 
 ```powershell
-.venv\Scripts\python.exe bench\score_qa.py --mode equations --limit 4
-.venv\Scripts\python.exe bench\score_qa.py --mode equations --limit 4 --model gemini-3.1-flash-lite
+.venv\Scripts\python.exe bench\score_qa.py --corpus math --limit 4
+.venv\Scripts\python.exe bench\score_qa.py --corpus math --limit 4 --model gemini-3.1-flash-lite
 ```
 
-**Claude** is the opt-in alternative, `claude-sonnet-5` for both pipelines.
+**Claude** is the opt-in alternative, `claude-sonnet-5`.
 Sonnet rather than Opus 5 because this is proofreading and Opus costs 2.5x for
 it, with the same vision and 1M context. The reason to reach for this provider
 is not quality but data handling: Anthropic does not train on API input, so it
@@ -686,11 +591,9 @@ Defaults shown; full list in `.env.example`.
 | `GEMINI_PAID_TIER` | `false` | `true` replaces the training warning with a quieter notice. |
 | `AI_QA_PROVIDER` | `gemini` | `gemini` or `anthropic`. |
 | `AI_QA_MODEL_DOCUMENT` | `gemini-3.1-flash-lite` | *Preferred* model for reading documents. The built-in chain still stands behind it; a comma-separated list sets your own order. |
-| `AI_QA_MODEL_EQUATIONS` | `gemini-3.6-flash` | *Preferred* model for equation review. |
-| `AI_QA_MODEL` | — | Preferred model for both roles. |
+| `AI_QA_MODEL` | — | Preferred model for every role. |
 | `AI_QA_THINKING_DOCUMENT` | `low` | `low`/`medium`/`high`/`off`. |
-| `AI_QA_THINKING_EQUATIONS` | `high` | `low`/`medium`/`high`/`off`. |
-| `AI_QA_THINKING` | — | Set to apply one level to both roles. |
+| `AI_QA_THINKING` | — | Set to apply one level to every role. |
 | `AI_QA_MAX_API_CALLS` | `3` | Per conversion unit: one pass plus one repair. |
 | `AI_QA_MAX_PDF_PAGES` | `10` | Pages of a PDF sent to the model. |
 | `AI_QA_RETRY_ATTEMPTS` | `3` | Retries on a 429 or an upstream 5xx. |
@@ -723,7 +626,6 @@ Defaults shown; full list in `.env.example`.
 | `templates/partials/terms_gate.html` | The agreement checkbox. |
 | `templates/partials/modals.html` | Legal, AI-outage, camera and canvas dialogs. |
 | `templates/partials/qa_notice.html` | Pre-upload privacy disclosure. |
-| `templates/partials/qa_report.html` | Shared QA report block. |
 | `static/scripts.js` | Input plumbing, gate, camera, canvas, preview, history. |
 | `bench/score_qa.py` | Before/after scoring for the conversion layer. |
 | `test_ai_qa.py` | 127-check verification suite (no API key needed). |
@@ -743,9 +645,8 @@ Defaults shown; full list in `.env.example`.
   (and parked for an hour) rather than being fatal — but it wastes one call the
   first time each hour. Prune `MODEL_CHAIN` in `llm_providers.py` when that
   happens.
-- **Segmentation is vertical only.** Two equations side by side on one line are
-  treated as one region. The reviewer usually notices and splits them, but the
-  converter will not.
+- **Segmentation is vertical only.** On the fallback path, two equations side
+  by side on one line are treated as one region.
 - **The benchmark corpus is synthetic** — rendered LaTeX and handwriting
   *fonts*, no real handwriting, no camera captures, English only. Clean pages
   flatter the direct-to-AI path; on a phone photo of genuinely messy

@@ -113,9 +113,6 @@
                on the finished document. Not during processing: someone
                watching a progress bar cannot act on "the AI just stopped",
                and someone about to use the output can.
-
-               It used to be rendered here AND repeated as the QA status
-               message below, so the same sentence appeared twice on one page.
                --------------------------------------------------------------- #}
             {% set notice = stats.fallback_notice if stats else None %}
             {% if notice %}
@@ -206,17 +203,6 @@
                 <pre id="convert-tex" class="mt-2 bg-forest-100 p-4 rounded text-xs whitespace-pre-wrap font-mono max-h-96 overflow-y-auto text-left">{{ convert_result.tex }}</pre>
             </details>
 
-            {# The list of detected equations is no longer shown either: every
-               one of them is already in the LaTeX source above, in the place
-               it actually belongs, and reading them out of context said less
-               than reading the document. They are still stored with the
-               result. #}
-
-            {# The AI quality-check report is no longer shown. It reported on
-               the conversion process, which the preview above already answers
-               better: the user can see the document. The report is still
-               produced and stored with the result, so nothing that depends on
-               it has changed - it is only no longer rendered. #}
         {% endif %}
     </div>
 </section>

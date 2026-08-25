@@ -204,11 +204,6 @@ def _live():
     return state
 
 
-def _active_outage():
-    """The service-wide outage record, or None once it has expired."""
-    return _live()['service']
-
-
 def unavailable_models():
     """Models known to be exhausted right now."""
     return set(_live()['models'])

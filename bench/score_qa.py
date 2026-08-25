@@ -1,30 +1,19 @@
-"""Measure what the AI QA layer adds to each converter.
+"""Measure how well the AI pipeline converts a page to LaTeX.
 
-The question this answers is not "is the AI good at OCR" - the AI does no OCR
-here. It is: **does reviewing the converter's output against the original page
-make the result better, worse, or no different?** So every page is scored twice,
-before and after the review, and the difference is the number that matters.
+The model reads the page itself and writes the document, so there is no local
+draft to compare against: the "before" column is empty by construction and only
+the "after" numbers mean anything. That is itself the point - with nothing to
+fall back on, a failed call is a failed conversion.
 
-Two modes:
+Corpora, chosen with --corpus:
 
-    --mode direct     AI-first: the model reads the page itself, no local
-                      converters at all. Only the "after" column is meaningful.
-    --mode unified    Both converters merged by position, then review_page().
-                      Corpus: img_pages/ - this is the one that measures the
-                      shipped pipeline, so it is the default.
-    --mode textract   Tesseract -> .tex, then review_document()
-                      Corpus: img_pages/ - whole rendered pages, ground truth
-                      is the .tex they were rendered from.
-    --mode equations  pix2text  -> [eq, ...], then review_equations()
-                      Corpus: img_math/ - isolated formulas, ground truth is
-                      the expression itself. Deliberately NOT the page corpus:
-                      the reviewer is supposed to discard prose the segmenter
-                      mistook for mathematics, and scoring that against a full
-                      page would count doing so as a loss.
-                      (loads the ONNX model, so it is slower to start)
+    pages   rendered LaTeX pages, printed only (img_pages/) - the default
+    mixed   handwritten and typewritten prose and mathematics in every
+            combination (img_mixed/)
+    math    isolated formulas (img_math/)
 
-Three metrics, because character accuracy alone would be misleading - the
-reviewer is allowed to write different LaTeX as long as it says the same thing:
+Three metrics, because character accuracy alone would be misleading - the model
+is allowed to write different LaTeX as long as it says the same thing:
 
     text        character accuracy of the prose, LaTeX markup stripped
     structure   how many of the source's sections/lists/tables/display-math
@@ -36,7 +25,7 @@ Usage, from bench/:
     python gen_pages.py                    # build the corpus first
     python score_qa.py --mock              # check the harness, no API calls
     python score_qa.py --limit 4           # cheap sample of the real thing
-    python score_qa.py --mode equations
+    python score_qa.py --corpus mixed      # handwriting and mixed content
     python score_qa.py --provider anthropic
 """
 
@@ -54,7 +43,6 @@ sys.path.insert(0, BENCH)
 from score_math import lev, normalize  # reuse the existing LaTeX normaliser
 import ai_qa  # noqa: E402
 import latex_tools  # noqa: E402
-import textract_fast  # noqa: E402
 
 _STRUCTURE = {
     'section': r'\\section\b',
@@ -177,59 +165,20 @@ def run_direct(path, file_name, mock):
     return '', result['tex'], result
 
 
-def run_unified(path, file_name, mock):
-    """Both converters merged by position, then one review."""
-    import convert
-    with open(path, 'rb') as handle:
-        data = handle.read()
-    built = convert.convert(data, file_name, review=not mock)
-    review = built['qa']
-    review['detected'] = len(built['equations'])
-    return built['raw_tex'], built['tex'], review
-
-
-def run_textract(path, file_name, mock):
-    """Raw Tesseract .tex, then the reviewed one."""
-    text = textract_fast.extract_text_from_file(path)
-    raw = textract_fast.generate_tex_source(text)
-    if mock:
-        return raw, raw, {'status': 'mock'}
-    with open(path, 'rb') as handle:
-        review = ai_qa.review_document(handle.read(), file_name, raw)
-    return raw, review['tex'], review
-
-
-def run_equations(path, file_name, mock):
-    """Raw equation list laid out plainly, then the reviewed .tex."""
-    import equation
-    with open(path, 'rb') as handle:
-        data = handle.read()
-    detected = equation.process_image_list(data)
-    raw = ai_qa.equations_to_tex(detected)
-    if mock:
-        return raw, raw, {'status': 'mock', 'detected': len(detected)}
-    review = ai_qa.review_equations(data, file_name, detected)
-    review['detected'] = len(detected)
-    return raw, review['tex'], review
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode',
-                        choices=('unified', 'direct', 'textract', 'equations'),
-                        default='unified')
     parser.add_argument('--corpus', choices=('pages', 'mixed', 'math'),
                         default='pages',
                         help="'pages' = rendered LaTeX pages (printed only); "
                              "'mixed' = handwritten and typewritten prose and "
-                             "mathematics in every combination. Ignored in "
-                             "equations mode, which has its own corpus.")
+                             "mathematics in every combination; "
+                             "'math' = isolated formulas.")
     parser.add_argument('--limit', type=int, default=0)
     parser.add_argument('--cond', default=None, help='only this condition (hi/lo)')
     parser.add_argument('--provider', default=None,
                         help='gemini or anthropic (default: configured)')
     parser.add_argument('--model', default=None,
-                        help='override the model for this run (both pipelines); '
+                        help='override the model for this run; '
                              'omit to use the per-pipeline default')
     parser.add_argument('--mock', action='store_true',
                         help='no API calls; scores the converter alone')
@@ -244,12 +193,7 @@ def main(argv=None):
     parser.add_argument('--out', default=None)
     args = parser.parse_args(argv)
 
-    # Each mode gets the corpus whose ground truth actually answers its
-    # question. Scoring equation output against a whole *page* would punish the
-    # reviewer for correctly discarding prose the segmenter mistook for an
-    # expression - so equations are measured on isolated formulas instead,
-    # where the ground truth is the formula itself.
-    if args.mode == 'equations' or args.corpus == 'math':
+    if args.corpus == 'math':
         name, folder, generator = 'manifest_math.json', 'img_math', 'gen_math.py'
     elif args.corpus == 'mixed':
         name, folder, generator = 'manifest_mixed.json', 'img_mixed', 'gen_mixed.py'
@@ -285,15 +229,11 @@ def main(argv=None):
             print('AI QA is not configured - set GEMINI_API_KEY (or use --mock).')
             return 1
         info = ai_qa.provider_info()
-        # Each pipeline runs its own model, so report the one this mode uses.
-        role = ('equations' if args.mode == 'equations' else 'document')
-        print(f"reviewer: {info['name']}   "
-              f"model: {args.model or info['models'][role]}   "
-              f"role: {role}")
-    print(f"mode: {args.mode}   pages: {len(manifest)}\n")
+        print(f"model: {args.model or info['models']['document']}   "
+              f"provider: {info['name']}")
+    print(f"corpus: {args.corpus}   pages: {len(manifest)}\n")
 
-    runner = {'unified': run_unified, 'direct': run_direct,
-              'textract': run_textract, 'equations': run_equations}[args.mode]
+    runner = run_direct
     header = f"  {'page':<26}{'text':>9}{'':>8}{'structure':>11}{'':>8}{'math':>9}{'':>8}  compiles"
     print(header)
 
@@ -356,7 +296,7 @@ def main(argv=None):
 
     if args.out:
         with open(args.out, 'w', encoding='utf-8') as handle:
-            json.dump({'mode': args.mode, 'rows': rows}, handle, indent=1)
+            json.dump({'corpus': args.corpus, 'rows': rows}, handle, indent=1)
         print(f'wrote {args.out}')
     return 0
 

@@ -1,14 +1,15 @@
 # OCR accuracy benchmark
 
-ConTeX ships two OCR converters plus an AI review layer, and none had a way to
-measure how well they work.
+ConTeX converts pages with an AI model, and falls back to two local OCR engines
+when it is unavailable. Neither half had a way to measure how well it works.
 These scripts build a synthetic corpus with **exact ground truth**, run it through
 the app's real code paths, and report error rates.
 
-- `textract_fast.extract_text_from_file` — Tesseract, plain document text
-- `equation.process_image` — `breezedeus/pix2text-mfr` (TrOCR + ONNX Runtime), LaTeX formulas
-- `ai_qa.review_document` / `review_equations` — the AI review layer, scored by
-  running each converter **twice**, before and after the review (see `score_qa.py`)
+- `ai_qa.convert_page` — the shipped pipeline: the model reads the page and
+  writes the LaTeX (see `score_qa.py`)
+- `textract_fast.extract_text_from_file` — Tesseract, the fallback's prose half
+- `equation.process_image` — `breezedeus/pix2text-mfr` (TrOCR + ONNX Runtime),
+  the fallback's mathematics half
 
 ## Running
 
@@ -26,10 +27,11 @@ python rescore_math.py                            # re-score, ignoring cosmetic 
 python deskew_test.py                             # does deskewing fix rotated pages?
 
 python gen_pages.py                       # 16 full pages with structural ground truth
-python score_qa.py --mock                 # converter alone, no API calls
-python score_qa.py                        # converter vs converter+review
-python score_qa.py --mode equations       # the equation pipeline instead
-python score_qa.py --provider anthropic   # compare reviewers on the same corpus
+python gen_mixed.py                       # handwritten / typewritten combinations
+python score_qa.py --mock                 # check the harness, no API calls
+python score_qa.py                        # the shipped AI pipeline
+python score_qa.py --corpus mixed         # handwriting and mixed content
+python score_qa.py --provider anthropic   # compare models on the same corpus
 ```
 
 `gen_pages.py` needs a LaTeX engine and Poppler: it writes a `.tex` page, compiles

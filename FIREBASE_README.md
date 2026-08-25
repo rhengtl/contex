@@ -73,10 +73,24 @@ python app.py
 - `GET/POST /forgot-password` - Password reset
 - `GET /logout` - Logout user
 
-**OCR Features:**
+**Conversion:**
 - `GET /` - Home page (main app)
-- `POST /equation` - Process equation images
-- `POST /textract` - Extract text from documents
+- `POST /accept-terms` - Record acceptance of the Terms and Privacy Policy
+- `POST /convert` - Convert an image, PDF or .docx to LaTeX
+- `GET /api/ai-status` - Whether AI conversion is available right now
+- `GET /legal/<document>` - Terms of Service and Privacy Policy
+
+**Output:**
+- `GET /download-converted-tex` - Download the generated `.tex`
+- `GET /preview/pages` - Page count for the rendered preview
+- `GET /preview/page.png` - One rendered page image
+- `GET /preview/document` - The compiled PDF, for opening in a new tab
+- `GET /preview.pdf` - The compiled PDF itself
+
+**History** (signed-in users):
+- `GET /history/<doc_id>/download` - Download a saved conversion
+- `GET /history/<doc_id>/tex` - Its LaTeX, for the copy button
+- `GET /history/<doc_id>/preview.pdf` - Its compiled PDF
 
 ## Firebase Helper Functions
 
@@ -94,6 +108,11 @@ verify_id_token(id_token)
 upsert_user_profile(uid, email, display_name)
 save_ocr_history(uid, file_name, ocr_type, result)
 get_user_ocr_history(uid, limit=10)
+get_ocr_history_item(uid, doc_id)
+
+# Terms acceptance
+set_terms_accepted(uid, version)
+get_terms_accepted(uid)
 ```
 
 ## Firestore Data Structure

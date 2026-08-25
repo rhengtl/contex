@@ -1,11 +1,10 @@
 # llm_providers.py
 """
-Provider adapter for the AI QA layer.
+Provider adapter for the AI pipeline.
 
-The review layer in ai_qa.py knows nothing about any particular vendor. It builds
-neutral "parts" (a page of media, some instruction text), hands them to a
-Conversation, and gets text back. This module is the only place that speaks a
-vendor SDK.
+ai_qa.py knows nothing about any particular vendor. It builds neutral "parts"
+(a page of media, some instruction text), hands them to a Conversation, and
+gets text back. This module is the only place that speaks a vendor SDK.
 
 Two backends ship:
 
@@ -31,21 +30,18 @@ import time
 # Pipeline roles
 # ---------------------------------------------------------------------------
 
-# The two pipelines ask for different things, so they are allowed different
-# models and different amounts of reasoning.
+# A role names a job the model is asked to do, so that each may be given its
+# own model and its own amount of reasoning.
 #
 #   document   Reading-dominant. A whole page in, a whole document out. The way
 #              this fails is by not noticing a dropped line, which is a reading
 #              failure - so it wants the model with the best *measured*
 #              full-page reading, and it runs on the larger payload.
-#   equations  Reasoning-dominant. A short list in, a short list out. The way
-#              this fails is by "correcting" unusual-but-valid mathematics, or
-#              by missing that one equation follows from another - so it wants
-#              the strongest reasoner, and the payload is small enough that the
-#              pricier model costs little.
+#
+# One role ships today. The plumbing stays because pinning a model per role is
+# how an operator overrides it (AI_QA_MODEL_DOCUMENT beats AI_QA_MODEL).
 ROLE_DOCUMENT = 'document'
-ROLE_EQUATIONS = 'equations'
-ROLES = (ROLE_DOCUMENT, ROLE_EQUATIONS)
+ROLES = (ROLE_DOCUMENT,)
 
 
 def _role_env(prefix, role, default=None):
@@ -244,10 +240,9 @@ class Provider:
     #: Human-readable service name, for status messages shown to users.
     label = 'the AI service'
 
-    #: Built-in reasoning effort per role. Document review is a reading job and
-    #: gains little from long deliberation; equation review is where the
-    #: judgement calls live, so it gets the budget.
-    THINKING = {ROLE_DOCUMENT: 'low', ROLE_EQUATIONS: 'high'}
+    #: Built-in reasoning effort per role. Converting a page is a reading job
+    #: and gains little from long deliberation.
+    THINKING = {ROLE_DOCUMENT: 'low'}
 
     def is_configured(self):
         return bool(os.getenv(self.env_key))
@@ -493,8 +488,6 @@ class GeminiProvider(Provider):
     MODEL_CHAIN = {
         ROLE_DOCUMENT: ['gemini-3.1-flash-lite', 'gemini-3.6-flash',
                         'gemini-3.5-flash', 'gemini-3.7-flash'],
-        ROLE_EQUATIONS: ['gemini-3.6-flash', 'gemini-3.1-flash-lite',
-                         'gemini-3.5-flash', 'gemini-3.7-flash'],
     }
 
     def is_configured(self):
@@ -691,7 +684,6 @@ class AnthropicProvider(Provider):
     # the bill 2.5x to solve a problem that waiting solves for nothing.
     MODEL_CHAIN = {
         ROLE_DOCUMENT: ['claude-sonnet-5'],
-        ROLE_EQUATIONS: ['claude-sonnet-5'],
     }
 
     def is_configured(self):

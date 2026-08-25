@@ -4,7 +4,7 @@
 }
 
 html {
-    /* the nav anchors (#textract, #equation, ...) rely on this */
+    /* the nav anchors (#convert, #about, #history) rely on this */
     scroll-behavior: smooth;
 }
 

@@ -1,4 +1,12 @@
-# ocr_engine.py
+"""
+Formula recognition: breezedeus/pix2text-mfr (TrOCR) on ONNX Runtime.
+
+Part of the local fallback, used when the AI is unavailable. convert.py calls
+segment_boxes() to find the formula regions on a page, then tighten() and
+recognize() to read each one; layout.py places the results back where their
+boxes sat.
+"""
+
 import io
 import os
 

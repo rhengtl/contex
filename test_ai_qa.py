@@ -1,14 +1,15 @@
 # test_ai_qa.py
 """
-Verification suite for the two converters and the AI QA layer.
+Verification suite for the conversion pipeline and the app around it.
 
 Run it with:      python test_ai_qa.py
 
-Covers everything that does not need a live API key: equation segmentation, the
-LaTeX validator, the real compile path, image preprocessing, both Flask routes,
-the session-scoped download store, and the QA layer driven by a scripted
-stand-in for the reviewer. The heavy OCR model and Firebase are stubbed out so
-the suite runs in seconds and touches no network.
+Covers everything that does not need a live API key: the AI pipeline driven by
+a scripted stand-in for the model, model rotation and the local fallback,
+equation segmentation, the LaTeX validator, the real compile path, image
+preprocessing, the Flask routes, the session-scoped result store, and the page
+previews. The heavy OCR model and Firebase are stubbed out so the suite runs in
+seconds and touches no network.
 """
 
 import io
@@ -103,8 +104,6 @@ def check(condition, message):
 # afterwards. Snapshot the real callables now and put them back before each
 # test.
 _REAL_CALLABLES = {
-    (ai_qa, 'review_document'): ai_qa.review_document,
-    (ai_qa, 'review_equations'): ai_qa.review_equations,
     (ai_qa, 'convert_page'): ai_qa.convert_page,
     (convert, 'convert'): convert.convert,
 }
@@ -130,8 +129,6 @@ GOOD_TEX = r"""\documentclass{article}
 Einstein's relation is $E = mc^{2}$.
 \end{document}
 """
-
-CODE_FENCE = '\n```latex\n'
 
 BROKEN_TEX = r"""\documentclass{article}
 \begin{document}
@@ -444,13 +441,11 @@ class ScriptedConversation(llm_providers.Conversation):
 class ScriptedProvider(llm_providers.Provider):
     name = 'scripted'
 
-    #: Distinct per role, so tests can assert each pipeline picked its own.
-    #: A one-model chain per role: rotation is exercised separately, and a
-    #: scripted provider that silently moved to another model would make every
-    #: other test harder to read.
+    #: A one-model chain: rotation is exercised separately, and a scripted
+    #: provider that silently moved to another model would make every other
+    #: test harder to read.
     MODEL_CHAIN = {
         llm_providers.ROLE_DOCUMENT: ['scripted-document'],
-        llm_providers.ROLE_EQUATIONS: ['scripted-equations'],
     }
 
     def __init__(self, script, fail_on_start=None):
@@ -493,394 +488,10 @@ def prompt_text(parts):
 # Textract QA
 # ---------------------------------------------------------------------------
 
-@test('the generated .tex and the original document both reach the reviewer')
-def _():
-    provider = with_reviewer(['LATEX_OK'])
-    try:
-        ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        parts = provider.conversation.turns[0]
-        check(any(p['kind'] == 'media' for p in parts),
-              'the original document was not shown to the reviewer')
-        check('E = mc^{2}' in prompt_text(parts),
-              'the generated LaTeX was not sent for review')
-    finally:
-        restore_provider()
-
-
-@test('a clean review returns the OCR output unchanged')
-def _():
-    with_reviewer(['LATEX_OK'])
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['status'] == 'clean', result['status'])
-        check(result['tex'] == GOOD_TEX, 'a clean review altered the document')
-    finally:
-        restore_provider()
-
-
-@test('the reviewer can correct an obvious OCR error')
-def _():
-    garbled = GOOD_TEX.replace('Einstein', 'Einstem').replace('Energy', 'Enerqy')
-    with_reviewer([
-        "- 'Einstem' should read 'Einstein'\n"
-        "- the heading 'Enerqy' should read 'Energy'\n"
-        f'```latex\n{GOOD_TEX}```'])
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', garbled)
-        check(result['status'] == 'corrected', result['status'])
-        check('Einstein' in result['tex'] and 'Enerqy' not in result['tex'],
-              'the correction was not applied')
-        check(any('Einstein' in f for f in result['findings']),
-              f"findings not reported: {result['findings']}")
-    finally:
-        restore_provider()
-
-
-@test('a corrected document that does not validate gets one repair attempt')
-def _():
-    with_reviewer([f'Fixed some text.\n```latex\n{BROKEN_TEX}```',
-                   f'```latex\n{GOOD_TEX}```'])
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(latex_tools.static_validate(result['tex']) == [],
-              'an invalid document was returned')
-        check(any('validation' in f.lower() for f in result['findings']),
-              result['findings'])
-    finally:
-        restore_provider()
-
-
-@test('a repaired document is re-checked, not reported with a stale status')
-def _():
-    if not latex_tools.find_engine():
-        return skip('no LaTeX engine installed')
-    with_reviewer([
-        'Fixed it.' + CODE_FENCE + BROKEN_TEX + '```',
-        CODE_FENCE + GOOD_TEX + '```'])
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['tex'].strip() == GOOD_TEX.strip(), 'repair not applied')
-        check(result['compile']['ok'],
-              'a working document was reported as not compiling')
-    finally:
-        restore_provider()
-
-
-@test('a reviewer failure returns the OCR output, never an error page')
-def _():
-    with_reviewer([], fail_on_start=llm_providers.LlmError(
-        'The free Gemini quota is exhausted.'))
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['status'] == 'failed', result['status'])
-        check(result['tex'] == GOOD_TEX, 'the OCR output was lost on failure')
-        check('quota' in result['message'], result['message'])
-    finally:
-        restore_provider()
-
-
-@test('an unexpected reviewer crash still returns the OCR output')
-def _():
-    with_reviewer([RuntimeError('/secret/path/to/key.json')])
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['tex'] == GOOD_TEX, 'the OCR output was lost')
-        check('/secret/path' not in result['message'], result['message'])
-    finally:
-        restore_provider()
-
-
-@test('QA is skipped cleanly when no provider is configured')
-def _():
-    saved = {k: os.environ.pop(k) for k in
-             ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'ANTHROPIC_API_KEY')
-             if k in os.environ}
-    try:
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['status'] == 'skipped', result['status'])
-        check(result['tex'] == GOOD_TEX, 'the OCR output was altered')
-    finally:
-        os.environ.update(saved)
-
-
-@test('QA can be switched off without touching the converters')
-def _():
-    os.environ['AI_QA_ENABLED'] = 'false'
-    try:
-        check(not ai_qa.enabled(), 'AI_QA_ENABLED=false was ignored')
-        result = ai_qa.review_document(png_bytes(), 'scan.png', GOOD_TEX)
-        check(result['status'] == 'skipped' and result['tex'] == GOOD_TEX, result)
-    finally:
-        del os.environ['AI_QA_ENABLED']
-
 
 # ---------------------------------------------------------------------------
 # Equation QA
 # ---------------------------------------------------------------------------
-
-EQUATIONS = [
-    {'index': 1, 'latex': 'v = u + at'},
-    {'index': 2, 'latex': 's = ut + \\frac{1}{2}at^{2}'},
-    {'index': 3, 'latex': 'v^{2} = u^{2} + 2as'},
-]
-
-REVIEW_REPLY = """[EQ 1]
-status: ok
-latex: v = u + at
-fidelity: matches the image exactly
-math: standard kinematic relation, coherent
-
-[EQ 2]
-status: corrected
-latex: s = ut + \\frac{1}{2}at^{2}
-fidelity: the image shows 1/2, the OCR read it as 1\\2
-math: coherent once the fraction is restored
-
-[EQ 3]
-status: ok
-latex: v^{2} = u^{2} + 2as
-fidelity: matches the image
-math: consistent with the other two
-
-[SUMMARY]
-missing: none
-related: yes
-relationship: the three standard equations of motion for constant acceleration
-ordering: as given; the image lists them in this order
-grouping: they should be grouped in a single align environment
-
-```latex
-\\documentclass{article}
-\\usepackage{amsmath}
-\\begin{document}
-\\begin{align}
-v &= u + at \\\\
-s &= ut + \\frac{1}{2}at^{2} \\\\
-v^{2} &= u^{2} + 2as
-\\end{align}
-\\end{document}
-```
-"""
-
-
-@test('the equation list and the original image both reach the reviewer')
-def _():
-    provider = with_reviewer([REVIEW_REPLY])
-    try:
-        ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        parts = provider.conversation.turns[0]
-        check(any(p['kind'] == 'media' for p in parts),
-              'the original image was not shown to the reviewer')
-        text = prompt_text(parts)
-        for item in EQUATIONS:
-            check(item['latex'] in text,
-                  f"equation {item['index']} was not sent for review")
-        check('1. ' in text and '3. ' in text,
-              'the equations were not presented as an ordered list')
-    finally:
-        restore_provider()
-
-
-@test('every equation gets a transcription verdict')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        check(len(result['equations']) == 3,
-              f"{len(result['equations'])} verdicts for 3 equations")
-        for verdict in result['equations']:
-            check(verdict['fidelity'], f'no fidelity check on {verdict}')
-    finally:
-        restore_provider()
-
-
-@test('every equation gets a mathematical plausibility verdict')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        for verdict in result['equations']:
-            check(verdict['math'], f'no mathematics check on {verdict}')
-    finally:
-        restore_provider()
-
-
-@test('a corrected equation is reported with its corrected LaTeX')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        corrected = [e for e in result['equations'] if e['status'] == 'corrected']
-        check(len(corrected) == 1, f'{len(corrected)} corrections found')
-        check('frac' in corrected[0]['latex'], corrected[0])
-        check(result['status'] == 'corrected', result['status'])
-    finally:
-        restore_provider()
-
-
-@test('the reviewer decides whether the equations are related')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        check(result['summary']['related'] is True, result['summary'])
-        check('equations of motion' in result['summary']['relationship'],
-              result['summary']['relationship'])
-        check(result['summary']['ordering'], 'no ordering decision')
-        check('align' in result['summary']['grouping'],
-              result['summary']['grouping'])
-    finally:
-        restore_provider()
-
-
-@test('related equations are grouped and ordered in the final .tex')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        tex = result['tex']
-        check(r'\begin{align}' in tex, 'related equations were not grouped')
-        check(tex.index('u + at') < tex.index('ut +') < tex.index('2as'),
-              'the equations are not in the reviewed order')
-        check(latex_tools.static_validate(tex) == [],
-              latex_tools.static_validate(tex))
-    finally:
-        restore_provider()
-
-
-@test('the final equation document compiles')
-def _():
-    with_reviewer([REVIEW_REPLY])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-    finally:
-        restore_provider()
-    if not latex_tools.find_engine():
-        return skip('no LaTeX engine installed')
-    check(result['compile']['ok'],
-          result['compile']['errors'] or result['compile']['reason'])
-
-
-@test('unusual but valid mathematics is preserved, not "corrected"')
-def _():
-    unusual = [{'index': 1, 'latex': '\\frac{d^{3}y}{dx^{3}} = -\\pi^{e}'}]
-    reply = """[EQ 1]
-status: ok
-latex: \\frac{d^{3}y}{dx^{3}} = -\\pi^{e}
-fidelity: the image really does show a third derivative equal to -pi^e
-math: unconventional but well formed; no sign of a recognition error
-
-[SUMMARY]
-missing: none
-related: no
-relationship: independent
-ordering: as given
-grouping: none
-
-```latex
-\\documentclass{article}
-\\usepackage{amsmath}
-\\begin{document}
-\\begin{equation*}
-\\frac{d^{3}y}{dx^{3}} = -\\pi^{e}
-\\end{equation*}
-\\end{document}
-```
-"""
-    with_reviewer([reply])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', unusual)
-        check(result['equations'][0]['status'] == 'ok',
-              'an unusual but valid expression was marked as wrong')
-        check('\\pi^{e}' in result['tex'],
-              'the unusual expression was altered in the output')
-        check(result['status'] == 'clean', result['status'])
-    finally:
-        restore_provider()
-
-
-@test('duplicates and non-equations are dropped from the output')
-def _():
-    noisy = [{'index': 1, 'latex': 'E = mc^{2}'},
-             {'index': 2, 'latex': 'E = mc^{2}'},
-             {'index': 3, 'latex': 'Figure 1'}]
-    reply = """[EQ 1]
-status: ok
-latex: E = mc^{2}
-fidelity: matches
-math: fine
-
-[EQ 2]
-status: duplicate
-latex: E = mc^{2}
-fidelity: the same expression as entry 1
-math: n/a
-
-[EQ 3]
-status: not_an_equation
-latex: Figure 1
-fidelity: this is a figure caption, not an expression
-math: n/a
-
-[SUMMARY]
-missing: none
-related: no
-relationship: independent
-ordering: as given
-grouping: none
-"""
-    with_reviewer([reply])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', noisy)
-        check(result['status'] == 'partial', result['status'])
-        check(result['tex'].count('E = mc^{2}') == 1,
-              'the duplicate survived into the output')
-        check('Figure 1' not in result['tex'],
-              'a non-equation survived into the output')
-    finally:
-        restore_provider()
-
-
-@test('a reviewer failure still returns the detected equations')
-def _():
-    with_reviewer([], fail_on_start=llm_providers.LlmError('network down'))
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        check(result['status'] == 'failed', result['status'])
-        for item in EQUATIONS:
-            check(item['latex'] in result['tex'],
-                  f"equation {item['index']} was lost when QA failed")
-        check(latex_tools.static_validate(result['tex']) == [],
-              latex_tools.static_validate(result['tex']))
-    finally:
-        restore_provider()
-
-
-@test('the un-reviewed fallback layout is valid LaTeX')
-def _():
-    tex = ai_qa.equations_to_tex(EQUATIONS)
-    check(latex_tools.static_validate(tex) == [], latex_tools.static_validate(tex))
-    check(tex.count(r'\begin{equation*}') == 3, tex)
-
-
-@test('a malformed reviewer reply degrades instead of losing the equations')
-def _():
-    with_reviewer(['I am not going to follow the format.'])
-    try:
-        result = ai_qa.review_equations(png_bytes(), 'eq.png', EQUATIONS)
-        check(result['status'] == 'partial', result['status'])
-        for item in EQUATIONS:
-            check(item['latex'] in result['tex'], 'an equation was lost')
-    finally:
-        restore_provider()
-
-
-@test('the review parser tolerates extra prose around the blocks')
-def _():
-    equations, summary = ai_qa.parse_equation_review(
-        'Here is my review.\n\n' + REVIEW_REPLY + '\n\nHope that helps.')
-    check(len(equations) == 3, f'{len(equations)} parsed')
-    check(summary['related'] is True, summary)
 
 
 # ---------------------------------------------------------------------------
@@ -2080,7 +1691,7 @@ def _():
     check(tex_store.read(token) is None, 'discard did not delete')
 
 
-@test('gemini remains the default provider for the review layer')
+@test('gemini remains the default provider for the AI pipeline')
 def _():
     saved = os.environ.pop('AI_QA_PROVIDER', None)
     try:
@@ -2093,12 +1704,12 @@ def _():
 
 
 # ---------------------------------------------------------------------------
-# Per-pipeline model selection
+# Per-role model selection
 # ---------------------------------------------------------------------------
 
-_MODEL_VARS = ('AI_QA_MODEL', 'AI_QA_MODEL_DOCUMENT', 'AI_QA_MODEL_EQUATIONS',
+_MODEL_VARS = ('AI_QA_MODEL', 'AI_QA_MODEL_DOCUMENT',
                'AI_QA_THINKING', 'AI_QA_THINKING_DOCUMENT',
-               'AI_QA_THINKING_EQUATIONS', 'AI_QA_EFFORT')
+               'AI_QA_EFFORT')
 
 
 def with_clean_model_env(fn):
@@ -2114,23 +1725,15 @@ def with_clean_model_env(fn):
                 os.environ.pop(name, None)
 
 
-@test('each pipeline asks for its own model and its own amount of thinking')
+@test('a role asks for its own model and its own amount of thinking')
 def _():
     def run():
         provider = with_reviewer(['LATEX_OK'])
-        ai_qa.review_document(png_bytes(), 'page.png', GOOD_TEX)
-        document = provider.conversation
-
-        provider = with_reviewer([REVIEW_REPLY])
-        ai_qa.review_equations(png_bytes(), 'eq.png',
-                               [{'index': 1, 'latex': 'a=b'}])
-        equations = provider.conversation
+        document = provider.start('sys', role=llm_providers.ROLE_DOCUMENT)
 
         check(document.model == 'scripted-document', document.model)
-        check(equations.model == 'scripted-equations', equations.model)
-        # Reading job gets a short leash, judgement job gets the budget.
+        # Converting a page is a reading job: a short leash, not the budget.
         check(document.thinking == 'low', document.thinking)
-        check(equations.thinking == 'high', equations.thinking)
     try:
         with_clean_model_env(run)
     finally:
@@ -2144,11 +1747,6 @@ def _():
         models = gemini.models()
         check(models[llm_providers.ROLE_DOCUMENT] == 'gemini-3.1-flash-lite',
               models[llm_providers.ROLE_DOCUMENT])
-        # Not 3.7-flash: measured on a live key, its free daily quota ran out
-        # after about a dozen calls, which would leave most equation
-        # conversions unreviewed.
-        check(models[llm_providers.ROLE_EQUATIONS] == 'gemini-3.6-flash',
-              models[llm_providers.ROLE_EQUATIONS])
     with_clean_model_env(run)
 
 
@@ -2171,31 +1769,30 @@ def _():
     with_clean_model_env(run)
 
 
-@test('one pipeline can be repointed without disturbing the other')
+@test('a per-role model override beats the global one')
 def _():
     def run():
-        os.environ['AI_QA_MODEL_EQUATIONS'] = 'special-math-model'
+        os.environ['AI_QA_MODEL'] = 'global-model'
+        os.environ['AI_QA_MODEL_DOCUMENT'] = 'document-model'
         gemini = llm_providers.GeminiProvider()
         models = gemini.models()
-        check(models[llm_providers.ROLE_EQUATIONS] == 'special-math-model',
-              models[llm_providers.ROLE_EQUATIONS])
-        check(models[llm_providers.ROLE_DOCUMENT] == 'gemini-3.1-flash-lite',
+        check(models[llm_providers.ROLE_DOCUMENT] == 'document-model',
               models[llm_providers.ROLE_DOCUMENT])
     with_clean_model_env(run)
 
 
-@test('thinking level is overridable per pipeline and globally')
+@test('thinking level is overridable per role and globally')
 def _():
     def run():
         gemini = llm_providers.GeminiProvider()
+        check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'low',
+              'the built-in default changed')
+        os.environ['AI_QA_THINKING'] = 'off'
+        check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'off',
+              'global override ignored')
         os.environ['AI_QA_THINKING_DOCUMENT'] = 'medium'
         check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'medium',
-              'per-role override ignored')
-        check(gemini.default_thinking(llm_providers.ROLE_EQUATIONS) == 'high',
-              'per-role override leaked to the other pipeline')
-        os.environ['AI_QA_THINKING'] = 'off'
-        check(gemini.default_thinking(llm_providers.ROLE_EQUATIONS) == 'off',
-              'global override ignored')
+              'per-role override does not beat the global one')
     with_clean_model_env(run)
 
 
@@ -2208,17 +1805,6 @@ def _():
         for secret in ('GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'api_key'):
             check(secret not in blob, f'{secret} leaked into provider_info')
     with_clean_model_env(run)
-
-
-@test('the document reviewer is warned that its converter cannot read maths')
-def _():
-    system = ' '.join(ai_qa._DOCUMENT_SYSTEM.split())
-    check('no mathematical model' in system, 'blind spot not described')
-    check('QA: unreadable formula' in system, 'no placeholder instruction')
-    # The failure this guards against: garbled formula text smoothed into
-    # fluent prose that the page never contained.
-    check('never as prose to be smoothed out' in system,
-          'the repair-into-prose failure is not called out')
 
 
 # ---------------------------------------------------------------------------
@@ -2414,40 +2000,14 @@ def _():
     check(salvaged == [], 'salvage overwrote text the OCR had read')
 
 
-@test('the reviewer is told which lines are unreliable')
-def _():
-    captured = {}
-
-    class Spy(ScriptedProvider):
-        def start(self, system, model=None, role=None, thinking=None,
-                  attempts=None):
-            convo = super().start(system, model, role, thinking, attempts)
-            captured['system'] = system
-            return convo
-
-    provider = Spy(['LATEX_OK'])
-    llm_providers.get_provider = lambda name=None: provider
-    try:
-        ai_qa.review_page(png_bytes(), 'scan.png', GOOD_TEX, equations=[],
-                          uncertain=['Thisideachangediuow phigsics'])
-        sent = prompt_text(provider.conversation.turns[0])
-        check('phigsics' in sent, 'the uncertain line was not shown')
-        check('handwritten' in sent.lower(),
-              'the reviewer was not told these are probably handwriting')
-        system = ' '.join(captured['system'].split())
-        check('handwriting' in system.lower(),
-              'the system prompt never mentions handwriting')
-        check('read it off the image' in system,
-              'the reviewer is not told to transcribe handwriting itself')
-    finally:
-        restore_provider()
-
-
 @test('handwriting is typeset as ordinary LaTeX, not marked up as different')
 def _():
-    system = ' '.join(ai_qa._UNIFIED_SYSTEM.split())
-    check('Do not mark handwriting up as different from print' in system,
-          'the reviewer is not told to typeset both hands the same way')
+    system = ' '.join(ai_qa._DIRECT_SYSTEM.split())
+    check('a handwritten sentence and a printed one both become ordinary '
+          'LaTeX prose' in system,
+          'the model is not told to typeset both hands the same way')
+    check('changes how carefully you must read, not how it is typeset' in system,
+          'the reason the two are typeset alike is no longer given')
 
 
 # ---------------------------------------------------------------------------
@@ -2491,8 +2051,6 @@ def _():
         lambda data, name, validate=True, outline=None, rotation=None: (
             calls.append('direct')
             or ai_qa.blank_review('', 'failed', 'rate limited')))
-    ai_qa.review_page = lambda *a, **k: (
-        calls.append('review') or qa_result(GOOD_TEX))
     convert.convert(png_bytes(), 'scan.png')
     check(calls == ['direct'], f'extra API call made: {calls}')
 
@@ -2656,8 +2214,6 @@ def _():
         check(len(chain) == len(set(chain)), f'{role}: duplicate models {chain}')
         check(chain[0] == provider.default_model(role),
               f'{role}: chain does not lead with the preferred model')
-    check(chains['document'][0] != chains['equations'][0],
-          'both roles now prefer the same model - the split is gone')
 
 
 @test('pinning a model keeps it first without removing the safety net')
