@@ -1563,9 +1563,13 @@ def _():
     finally:
         _fake_firebase.get_user_ocr_history = real_list
 
+    # Checked by what the button does, not by what it is called: the wording
+    # is free to change, the capability is not.
     check('/history/doc-tab/preview.pdf' in page,
           'a saved conversion cannot be opened on its own')
-    check('Open in new tab' in page, 'the history item has no open button')
+    check('target="_blank"' in page, 'nothing opens in a separate tab')
+    check('preview_document' in page or '/preview/document' in page,
+          'the history item has no open button')
 
     # And the link has to actually serve the document.
     if latex_tools.find_engine():
@@ -1574,7 +1578,7 @@ def _():
         check(opened.data[:4] == b'%PDF', 'the opened tab is not a PDF')
 
     # Guests build their list in the browser, and must get the same button.
-    check('Open in new tab' in _script(),
+    check("'/preview/document?token='" in _script(),
           'guest history items cannot be opened in a new tab')
 
 
@@ -1595,12 +1599,14 @@ def _():
     check('text block' not in page, 'the conversion counts are back')
     check('AI quality check' not in page, 'the AI quality report is back')
     check('offline conversion' not in page, 'the conversion-path badge is back')
+    check('Equations found' not in page, 'the detected-equation list is back')
 
     # Still produced, still stored.
     stored = tex_store.read(token)
     check('text_blocks' in (stored.get('stats') or {}),
           'the stats stopped being produced, which was not the intent')
     check(stored.get('qa'), 'the QA report stopped being produced')
+    check(stored.get('detected'), 'the equations stopped being produced')
 
     # And what the user actually needs is untouched.
     check('id="preview-panel"' in page, 'the preview went with it')

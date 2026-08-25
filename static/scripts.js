@@ -1446,7 +1446,7 @@ window.addEventListener('DOMContentLoaded', function () {
                     open.innerHTML = '<button type="button" class="bg-cream-100 '
                         + 'border border-forest-600 px-3 py-1.5 rounded '
                         + 'text-forest-800 text-sm hover:bg-forest-100 '
-                        + 'transition-colors">Open in new tab</button>';
+                        + 'transition-colors">Open PDF in new tab</button>';
                     actions.appendChild(open);
                 }
                 li.appendChild(actions);

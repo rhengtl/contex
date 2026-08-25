@@ -206,18 +206,11 @@
                 <pre id="convert-tex" class="mt-2 bg-forest-100 p-4 rounded text-xs whitespace-pre-wrap font-mono max-h-96 overflow-y-auto text-left">{{ convert_result.tex }}</pre>
             </details>
 
-            {% if convert_result.detected %}
-                <details class="mt-3 text-left">
-                    <summary class="cursor-pointer text-sm text-forest-700 hover:text-forest-900 font-medium">
-                        Equations found ({{ convert_result.detected | length }})
-                    </summary>
-                    <ol class="mt-2 space-y-1 text-sm list-decimal list-inside">
-                        {% for item in convert_result.detected %}
-                            <li><code class="text-xs break-all">{{ item.latex }}</code></li>
-                        {% endfor %}
-                    </ol>
-                </details>
-            {% endif %}
+            {# The list of detected equations is no longer shown either: every
+               one of them is already in the LaTeX source above, in the place
+               it actually belongs, and reading them out of context said less
+               than reading the document. They are still stored with the
+               result. #}
 
             {# The AI quality-check report is no longer shown. It reported on
                the conversion process, which the preview above already answers
