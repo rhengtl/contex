@@ -318,18 +318,22 @@ def upsert_user_profile(uid, email, display_name):
         return False
 
 
-def save_ocr_history(uid, file_name, ocr_type, result):
+def save_ocr_history(uid, file_name, ocr_type, result, truncated=False):
     """
     Save OCR processing history to Firestore
-    
+
     Args:
         uid (str): User's unique ID
         file_name (str): Name of processed file
         ocr_type (str): Type of OCR ('equation' or 'textract')
         result (str): OCR result text
-    
+        truncated (bool): whether `result` had to be cut short to be stored
+
+    `truncated` is written as its own field so the history list can be read
+    without the documents themselves - see get_user_ocr_history.
+
     Returns:
-        bool: Success status
+        str: the new document's id, or None
     """
     # No uid means a guest: their history is never written to Firestore.
     if not db or not uid:
@@ -340,6 +344,7 @@ def save_ocr_history(uid, file_name, ocr_type, result):
             'fileName': file_name,
             'ocrType': ocr_type,
             'result': result,
+            'truncated': bool(truncated),
             'timestamp': firestore.SERVER_TIMESTAMP
         })
         return reference.id
@@ -407,6 +412,11 @@ def get_terms_accepted(uid):
     return (snapshot.to_dict() or {}).get('termsAcceptedVersion')
 
 
+#: The fields the history list actually renders. Everything else - the stored
+#: LaTeX above all - is left in Firestore until a route asks for that document.
+_LIST_FIELDS = ['fileName', 'timestamp', 'truncated', 'ocrType']
+
+
 def get_user_ocr_history(uid, limit=10):
     """
     Get user's OCR history from Firestore
@@ -436,8 +446,16 @@ def get_user_ocr_history(uid, limit=10):
     try:
         # Preferred path: ordered server-side. Needs the uid ASC + timestamp
         # DESC composite index declared in firestore.indexes.json.
+        #
+        # select() so the documents themselves stay where they are. The list
+        # shows a name, a date and some buttons; it never shows the LaTeX. A
+        # stored document runs to 60 KB, so fetching twenty of them meant up to
+        # a megabyte crossing the network before the page could start
+        # rendering, to display none of it. Each document is read in full only
+        # when something actually asks for one.
         return _rows(
             collection.where(filter=owned)
+                      .select(_LIST_FIELDS)
                       .order_by('timestamp', direction=firestore.Query.DESCENDING)
                       .limit(limit)
                       .stream()
@@ -453,7 +471,8 @@ def get_user_ocr_history(uid, limit=10):
         print("Notice: ocr_history composite index not ready - sorting in "
               "Python. Deploy it with: firebase deploy --only firestore:indexes")
         try:
-            history = _rows(collection.where(filter=owned).limit(200).stream())
+            history = _rows(collection.where(filter=owned)
+                            .select(_LIST_FIELDS).limit(200).stream())
             history.sort(key=lambda r: r.get('timestamp') or _EPOCH, reverse=True)
             return history[:limit]
         except Exception as e2:

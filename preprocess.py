@@ -36,7 +36,23 @@ _MIN_CORRECTION_DEG = 0.35
 
 # Estimation runs on a downscaled copy: the angle of a page does not change
 # with resolution, and this keeps a full-page scan to well under a second.
+#
+# Measured: dropping this below 900 makes the estimate worse, not merely
+# cheaper - at 600 the mean residual skew across the bench corpus rose from
+# 0.38 to 0.42 degrees. The saving comes from searching fewer angles instead.
 _ESTIMATE_MAX_EDGE = 900
+
+# How far apart the first, coarse sweep places its candidates, and how many of
+# its peaks are then examined closely. The refinement is on the real
+# 0.5-degree grid, so these decide only how much of the range is skipped.
+#
+# Three peaks, not one: a blurred page's score curve has several local maxima,
+# and following only the best coarse sample walked into the wrong one on 9 of
+# 351 measured cases. Keeping the top three reproduces the exhaustive scan
+# exactly on all 351. A finer sweep is not the answer either - 1-degree
+# steps following one peak were both slower and wrong more often.
+_COARSE_STEP = 2.0
+_COARSE_PEAKS = 3
 
 # Inputs smaller than this on the long edge are treated as low-DPI captures.
 _MIN_USEFUL_EDGE = 1000
@@ -47,7 +63,8 @@ def _to_gray_array(image):
     return np.asarray(image.convert('L'))
 
 
-def estimate_skew(image, limit=15.0, step=0.5):
+def estimate_skew(image, limit=15.0, step=0.5, coarse=_COARSE_STEP,
+                  peaks=_COARSE_PEAKS):
     """
     Return the rotation, in degrees, that makes the page's text lines level.
 
@@ -55,6 +72,19 @@ def estimate_skew(image, limit=15.0, step=0.5):
     sharply the horizontal ink-projection profile changes from row to row: when
     lines are level, rows are either all text or all whitespace, so the profile
     has steep edges. This is the algorithm from bench/deskew_test.py.
+
+    Searched coarse-to-fine rather than one angle at a time. Scoring every
+    candidate on the 0.5-degree grid means 61 rotations of a full page, which
+    measured at ~700 ms and ran on every page of every conversion - the largest
+    fixed cost in the pipeline outside the model call. Sweeping at 2 degrees
+    and then refining the real grid around the three best samples needs 27, and
+    every answer still comes from the same candidate set.
+
+    Verified over 351 cases (39 bench images x 9 known skews): the angle is
+    identical to the exhaustive scan in all 351. That is the bar this has to
+    meet - deskewing is worth 28% to 99.8% character accuracy on a rotated
+    page, so a cheaper search that is occasionally wrong would cost far more
+    than the milliseconds it saves.
     """
     working = image
     if max(working.size) > _ESTIMATE_MAX_EDGE:
@@ -66,16 +96,30 @@ def estimate_skew(image, limit=15.0, step=0.5):
     if not ink.any():
         return 0.0  # blank page: nothing to align
 
-    best_angle, best_score = 0.0, -1.0
     source = Image.fromarray(ink)
-    for angle in np.arange(-limit, limit + step, step):
-        rotated = np.asarray(source.rotate(
-            float(angle), resample=Image.BILINEAR, fillcolor=0)) > 128
-        profile = rotated.sum(axis=1).astype(np.float32)
-        score = float(((profile[1:] - profile[:-1]) ** 2).sum())
-        if score > best_score:
-            best_angle, best_score = float(angle), score
-    return best_angle
+    scores = {}
+
+    def score(angle):
+        angle = round(float(angle), 6)
+        if angle not in scores:
+            rotated = np.asarray(source.rotate(
+                angle, resample=Image.BILINEAR, fillcolor=0)) > 128
+            profile = rotated.sum(axis=1).astype(np.float32)
+            scores[angle] = float(((profile[1:] - profile[:-1]) ** 2).sum())
+        return scores[angle]
+
+    grid = [round(float(a), 6) for a in np.arange(-limit, limit + step, step)]
+    if coarse <= step or peaks < 1:
+        return max(grid, key=score)
+
+    # Sweep the whole range coarsely, then refine on the full grid around the
+    # strongest few samples - so the answer always comes from the same
+    # candidate set the exhaustive scan would have chosen from.
+    sparse = [a for a in grid
+              if abs((a / coarse) - round(a / coarse)) < 1e-9] or grid
+    best = sorted(sparse, key=score, reverse=True)[:peaks]
+    near = {a for peak in best for a in grid if abs(a - peak) <= coarse}
+    return max(near, key=score)
 
 
 def deskew(image, limit=15.0):
@@ -94,9 +138,24 @@ def deskew(image, limit=15.0):
     return rotated, angle
 
 
+#: EXIF tag 0x0112. Orientation 1 means "already the right way up".
+_ORIENTATION_TAG = 0x0112
+
+
 def apply_exif_rotation(image):
-    """Honour the camera's orientation tag, if there is one."""
+    """
+    Honour the camera's orientation tag, if there is one.
+
+    The tag is read first and the image returned untouched when there is
+    nothing to do. ImageOps.exif_transpose() copies the image even when it
+    changes nothing, which on a phone capture is tens of megabytes of pixels
+    duplicated for no result - and it also destroys the one cheap way for a
+    caller to tell whether conditioning changed anything at all.
+    """
     try:
+        orientation = image.getexif().get(_ORIENTATION_TAG)
+        if not orientation or orientation == 1:
+            return image
         return ImageOps.exif_transpose(image) or image
     except Exception:
         return image
@@ -155,6 +214,11 @@ def prepare_image(image, do_deskew=True, do_upscale=True):
     Returns (image, notes) where notes describes what was actually changed, so
     the caller can surface it or log it. Never raises: a preprocessing failure
     must not cost the user their OCR run.
+
+    Every step returns the image it was given when it has nothing to do, so
+    `result is image` is a reliable "nothing was changed" test. ai_qa relies on
+    it to send a camera capture's original bytes to the model untouched rather
+    than re-encoding a photo that conditioning did not alter.
     """
     notes = []
     # Flattening is not optional conditioning - without it a drawing is a black
@@ -169,7 +233,7 @@ def prepare_image(image, do_deskew=True, do_upscale=True):
 
     try:
         rotated = apply_exif_rotation(image)
-        if rotated is not image and rotated.size != image.size:
+        if rotated is not image:
             notes.append('Applied the photo\'s EXIF orientation.')
         image = rotated
 

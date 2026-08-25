@@ -34,10 +34,18 @@ has come back.
 Records live in a file rather than a module variable so that several gunicorn
 workers share one view. They hold a status message and a timestamp - never a
 key, a prompt or any part of a user's document.
+
+Two writers can now arrive at once, because a multi-page conversion sends its
+pages to the model concurrently. Read-modify-write is done under a lock so two
+threads cannot lose each other's update, and the file is replaced atomically so
+that no reader - in this process or another worker - can ever observe a
+half-written one.
 """
 
 import json
 import os
+import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -55,6 +63,9 @@ _ASSUME_SECONDS = 900
 _MODEL_ERROR_SECONDS = 3600
 
 _FILENAME = 'ai_outage.json'
+
+#: Serialises read-modify-write on the record file within this process.
+_LOCK = threading.RLock()
 
 
 def _int_env(name, default):
@@ -93,10 +104,23 @@ def _read():
 
 
 def _write(state):
+    # Written beside the target and moved into place, so a concurrent reader
+    # sees either the old record or the new one and never a truncated file.
     try:
-        os.makedirs(os.path.dirname(_path()) or '.', exist_ok=True)
-        with open(_path(), 'w', encoding='utf-8') as handle:
-            json.dump(state, handle)
+        folder = os.path.dirname(_path()) or '.'
+        os.makedirs(folder, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=folder, prefix='.ai_outage-',
+                                             suffix='.tmp')
+        try:
+            with os.fdopen(handle, 'w', encoding='utf-8') as out:
+                json.dump(state, out)
+            os.replace(temporary, _path())
+        except BaseException:
+            try:
+                os.remove(temporary)
+            except OSError:
+                pass
+            raise
     except OSError:
         pass  # an unwritable cache degrades to "no remembered outage"
 
@@ -130,9 +154,10 @@ def record_outage(message, retry_after=None, scope=None, provider=None):
     network, a provider-wide outage. A quota failure is NOT this - use
     record_model_outage() so the other candidates stay usable.
     """
-    state = _read()
-    state['service'] = _entry(message, retry_after, scope, provider)
-    _write(state)
+    with _LOCK:
+        state = _read()
+        state['service'] = _entry(message, retry_after, scope, provider)
+        _write(state)
 
 
 def record_model_outage(model, message, retry_after=None, scope=None,
@@ -147,24 +172,26 @@ def record_model_outage(model, message, retry_after=None, scope=None,
     """
     if not model:
         return
-    state = _read()
-    state['models'][model] = _entry(message, retry_after, scope, provider,
-                                    from_provider)
-    _write(state)
+    with _LOCK:
+        state = _read()
+        state['models'][model] = _entry(message, retry_after, scope, provider,
+                                        from_provider)
+        _write(state)
 
 
 def clear_model(model):
     """A model just answered, so it is not exhausted. Also clears the service."""
-    state = _read()
-    changed = False
-    if model and model in state['models']:
-        del state['models'][model]
-        changed = True
-    if state['service'] is not None:
-        state['service'] = None
-        changed = True
-    if changed:
-        _write(state)
+    with _LOCK:
+        state = _read()
+        changed = False
+        if model and model in state['models']:
+            del state['models'][model]
+            changed = True
+        if state['service'] is not None:
+            state['service'] = None
+            changed = True
+        if changed:
+            _write(state)
 
 
 def _expired(record):
@@ -195,13 +222,14 @@ def _prune(state):
 
 def _live():
     """Current state with expired records removed and the file kept in step."""
-    state = _read()
-    if _prune(state):
-        if state['service'] is None and not state['models']:
-            clear_outage()
-        else:
-            _write(state)
-    return state
+    with _LOCK:
+        state = _read()
+        if _prune(state):
+            if state['service'] is None and not state['models']:
+                clear_outage()
+            else:
+                _write(state)
+        return state
 
 
 def unavailable_models():

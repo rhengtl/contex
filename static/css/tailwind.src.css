@@ -1,0 +1,52 @@
+/* Source for static/css/app.css - see tailwind.config.js for the build command.
+   Edit this file, never app.css, which is generated. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Metric-matched stand-in for Poppins.
+
+   Poppins arrives from Google Fonts a moment after the page paints, and until
+   it does the text is set in whatever sans-serif is to hand. Poppins is about
+   10% wider than Arial and has a much taller default line box (1.5em against
+   1.15em), so every line moved when it swapped in - measured as the whole of
+   the home page's 0.1 cumulative layout shift.
+
+   These overrides make the stand-in occupy exactly the space Poppins will, so
+   the swap changes the letterforms and nothing else. The numbers were measured
+   in the browser against this font at each weight rather than copied from a
+   table: size-adjust is the width ratio, and the ascent and descent are
+   Poppins' own 1.05 and 0.35 divided by that ratio, so the line box comes out
+   the same height.
+
+   Several locals because Arial is not on every platform. Any one that resolves
+   gets the adjustment; if none do, the stack falls through to an unadjusted
+   sans-serif, which is exactly the behaviour there was before.
+
+   This lives here rather than in home.css because every page uses the font and
+   only the home page loads home.css.
+   --------------------------------------------------------------------------- */
+@font-face {
+    font-family: 'Poppins Fallback';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Arial'), local('Helvetica'), local('Liberation Sans'),
+         local('Roboto');
+    size-adjust: 110.54%;
+    ascent-override: 94.99%;
+    descent-override: 31.66%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Poppins Fallback';
+    font-style: normal;
+    font-weight: 700;
+    src: local('Arial Bold'), local('Arial'), local('Helvetica Bold'),
+         local('Liberation Sans Bold'), local('Roboto');
+    size-adjust: 106.24%;
+    ascent-override: 98.83%;
+    descent-override: 32.94%;
+    line-gap-override: 0%;
+}

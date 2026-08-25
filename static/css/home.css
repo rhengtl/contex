@@ -1,3 +1,8 @@
+/* Page-level styles that are not Tailwind utilities.
+   The utility stylesheet is static/css/app.css - see tailwind.config.js.
+   The Poppins fallback metrics live there too, because every page needs them
+   and only this page loads this file. */
+
 * {
     padding: 0;
     margin: 0;
@@ -10,5 +15,5 @@ html {
 
 body {
     margin: 0;
-    font-family: 'poppins', sans-serif;
+    font-family: 'Poppins', 'Poppins Fallback', sans-serif;
 }

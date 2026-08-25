@@ -13,6 +13,7 @@ Every input method (image, PDF, .docx, camera, canvas) posts the same `file`
 field to /convert.
 """
 
+import gzip
 import hashlib
 import io
 import os
@@ -44,6 +45,91 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder i
 # buffered at all, before any converter or reviewer sees it.
 _MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', '32'))
 app.config['MAX_CONTENT_LENGTH'] = _MAX_UPLOAD_MB * 1024 * 1024
+
+# Static files are addressed with a ?v= stamp that changes when the file does
+# (see add_static_version), so they can be cached hard and for a long time. A
+# year is the usual choice for an immutable URL; an edited file simply gets a
+# different URL rather than waiting for a cache to expire.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
+
+
+@app.url_defaults
+def add_static_version(endpoint, values):
+    """
+    Stamp every static URL with the file's modification time.
+
+    Without this the browser has to ask whether scripts.js changed on every
+    single page load, and gets told "no" - a round trip to learn nothing. With
+    it the answer is in the URL, so the file is taken from cache with no
+    request at all, and a genuine edit is picked up immediately because the URL
+    is different.
+    """
+    if endpoint != 'static' or 'filename' not in values:
+        return
+    try:
+        path = os.path.join(app.static_folder, values['filename'])
+        values['v'] = int(os.stat(path).st_mtime)
+    except OSError:
+        pass  # a missing file is the 404's problem, not this hook's
+
+
+# Responses worth compressing: markup, styles, scripts and JSON. Everything
+# else this app sends - PNG page images, PDFs - is already compressed, and
+# running them through gzip would cost CPU to make them very slightly larger.
+_COMPRESSIBLE = ('text/html', 'text/css', 'text/plain', 'application/javascript',
+                 'text/javascript', 'application/json', 'application/x-tex',
+                 'image/svg+xml')
+_COMPRESS_MIN_BYTES = 1024
+
+# Static files are streamed rather than buffered, so compressing one means
+# reading it into memory first. That is fine for a stylesheet and pointless for
+# anything large, hence the ceiling.
+_COMPRESS_MAX_BYTES = 4 * 1024 * 1024
+
+
+@app.after_request
+def compress_response(response):
+    """
+    gzip text responses when the client asked for it.
+
+    The home page is 28 KB of markup and scripts.js is 57 KB; both are mostly
+    repeated class names and compress to roughly a fifth. On a phone that is
+    the difference between one round trip and several.
+
+    Only the types listed above: the page images and PDFs this app serves are
+    compressed formats already, and running them through gzip would spend CPU
+    to make them marginally larger.
+    """
+    if (response.status_code < 200 or response.status_code >= 300
+            or 'Content-Encoding' in response.headers):
+        return response
+    if 'gzip' not in request.headers.get('Accept-Encoding', '').lower():
+        return response
+    if (response.mimetype or '') not in _COMPRESSIBLE:
+        return response
+
+    response.headers.add('Vary', 'Accept-Encoding')
+    length = response.content_length
+    if length is not None and not (_COMPRESS_MIN_BYTES <= length
+                                   <= _COMPRESS_MAX_BYTES):
+        return response
+    if response.direct_passthrough:
+        # A streamed file response. Turning passthrough off makes get_data()
+        # read the file wrapper, which is what we need in order to compress it.
+        response.direct_passthrough = False
+    body = response.get_data()
+    if not (_COMPRESS_MIN_BYTES <= len(body) <= _COMPRESS_MAX_BYTES):
+        return response
+
+    # mtime=0 so the same bytes always produce the same output, which keeps
+    # ETags stable across restarts.
+    packed = gzip.compress(body, compresslevel=6, mtime=0)
+    if len(packed) >= len(body):
+        return response
+    response.set_data(packed)
+    response.headers['Content-Encoding'] = 'gzip'
+    response.headers['Content-Length'] = str(len(packed))
+    return response
 
 # Bump this whenever the terms or privacy policy change materially. Everyone -
 # including users who already accepted an older version - is then asked again.
@@ -143,9 +229,11 @@ def record_history(file_name, result):
     if not uid:
         return None
     # A whole .tex document can be long; keep history rows a sane size.
-    if result and len(result) > HISTORY_RESULT_LIMIT:
+    truncated = bool(result) and len(result) > HISTORY_RESULT_LIMIT
+    if truncated:
         result = result[:HISTORY_RESULT_LIMIT] + _TRUNCATION_MARK
-    return firebase_config.save_ocr_history(uid, file_name, 'convert', result)
+    return firebase_config.save_ocr_history(uid, file_name, 'convert', result,
+                                            truncated=truncated)
 
 
 def _history_item(doc_id):
@@ -233,7 +321,11 @@ def home():
     uid = current_user_uid()
     history = firebase_config.get_user_ocr_history(uid, limit=20) if uid else []
     for item in history:
-        item['truncated'] = _TRUNCATION_MARK in (item.get('result') or '')
+        # Recorded when the row was written. Rows saved before that field
+        # existed simply do not claim to be truncated; opening one still gets
+        # the accurate explanation, because the routes that compile or copy a
+        # document read the document itself and check it there.
+        item['truncated'] = bool(item.get('truncated'))
 
     # One-shot flag set by a conversion POST. It survives exactly one redirect,
     # so we can tell the Post/Redirect/Get landing apart from a real page
@@ -355,6 +447,12 @@ def convert_route():
         'stats': result['summary'],
         'qa': _qa_payload(result['qa']),
     })
+
+    # The conversion already compiled this document to check that it builds.
+    # Keeping that PDF is what lets the preview open immediately instead of
+    # running the identical compile again while the user waits.
+    if result.get('pdf'):
+        tex_store.save_pdf(token, result['pdf'])
 
     session['convert_token'] = token
     session['show_convert_result'] = True

@@ -10,6 +10,7 @@ is installed - compiles it and reports the engine's own errors in a compact form
 Everything here runs offline, so it costs no API tokens.
 """
 
+import hashlib
 import io
 import os
 import re
@@ -37,6 +38,13 @@ _PREVIEW_DPI = int(os.getenv('PREVIEW_DPI', '110'))
 # Engine discovery
 # ---------------------------------------------------------------------------
 
+#: Resolved engine paths, keyed by the LATEX_CMD that asked for them. Looking
+#: an engine up walks PATH, which on Windows is a few milliseconds of stat
+#: calls - trivial once, but this runs on every page render and every compile.
+#: Keyed by LATEX_CMD so changing that setting still takes effect.
+_ENGINE_CACHE = {}
+
+
 def find_engine():
     """
     Return the path to a usable TeX engine, or None if none is installed.
@@ -44,8 +52,20 @@ def find_engine():
     LATEX_CMD pins an explicit engine; otherwise the first of pdflatex,
     xelatex, lualatex or tectonic found on PATH wins. Compilation is optional
     by design - the pipeline still returns a .tex file when no engine exists.
+
+    The answer is cached per LATEX_CMD: an engine does not appear or vanish
+    while the process runs, and re-walking PATH for every compile is pure cost.
     """
     explicit = os.getenv('LATEX_CMD')
+    if explicit in _ENGINE_CACHE:
+        return _ENGINE_CACHE[explicit]
+    found = _locate_engine(explicit)
+    _ENGINE_CACHE[explicit] = found
+    return found
+
+
+def _locate_engine(explicit):
+    """The uncached lookup behind find_engine()."""
     if explicit:
         if os.path.exists(explicit):
             return explicit
@@ -317,23 +337,35 @@ def missing_packages(log):
     return sorted(names)
 
 
+def source_sha(tex):
+    """Identity of a LaTeX source, used to match a cached PDF to its .tex."""
+    return hashlib.sha256((tex or '').encode('utf-8')).hexdigest()
+
+
 def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
     """
     Compile LaTeX source in a throwaway directory.
 
     Returns a dict:
         {'attempted': bool, 'ok': bool, 'engine': str|None, 'errors': str,
-         'missing_packages': [str], 'reason': str|None, 'pdf': bytes|None}
+         'missing_packages': [str], 'reason': str|None, 'pdf': bytes|None,
+         'source_sha': str|None}
 
     With want_pdf=True the compiled PDF is read into memory before cleanup, so
     the visual-verification stage can render it back to images. The working
     directory is always deleted before returning, so an uploaded document never
     lingers on disk.
+
+    `source_sha` identifies the source these bytes came from. A conversion
+    compiles the document to validate it and the preview wants that same PDF
+    rather than a second compile of the same source - but only if it really is
+    the same source, and the pipeline may repair or merge a document after
+    validating it. The hash is what lets the caller check instead of assume.
     """
     engine = engine or find_engine()
     if not engine:
         return {'attempted': False, 'ok': False, 'engine': None, 'errors': '',
-                'missing_packages': [], 'pdf': None,
+                'missing_packages': [], 'pdf': None, 'source_sha': None,
                 'reason': 'No LaTeX engine found on this server.'}
 
     timeout = timeout or _COMPILE_TIMEOUT
@@ -351,10 +383,12 @@ def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
         except subprocess.TimeoutExpired:
             return {'attempted': True, 'ok': False, 'engine': engine_name(engine),
                     'errors': '', 'missing_packages': [], 'pdf': None,
+                    'source_sha': None,
                     'reason': f'Compilation timed out after {timeout}s.'}
         except OSError as exc:
             return {'attempted': True, 'ok': False, 'engine': engine_name(engine),
                     'errors': '', 'missing_packages': [], 'pdf': None,
+                    'source_sha': None,
                     'reason': f'Could not run the LaTeX engine: {exc}'}
 
         log_path = os.path.join(workdir, 'document.log')
@@ -381,6 +415,7 @@ def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
             'missing_packages': [] if ok else missing_packages(combined),
             'reason': None,
             'pdf': pdf_bytes,
+            'source_sha': source_sha(tex) if pdf_bytes else None,
         }
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

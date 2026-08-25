@@ -2,47 +2,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Login - ConTeX App</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - ConTeX App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        poppins: ['Poppins', 'sans-serif'],
-                    },
-                    colors: {
-                        forest: {
-                            900: '#1F2937',
-                            800: '#2B4C3F',
-                            700: '#3A5F4D',
-                            600: '#4B7161',
-                            500: '#698575',
-                            400: '#86998A',
-                        },
-                        burgundy: {
-                            600: '#8B3A4A',
-                            500: '#A54B5E',
-                            400: '#BF5C72',
-                        },
-                        cream: {
-                            100: '#F7F4F1',
-                            200: '#EAE6E1',
-                            300: '#DDD8D3',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
     
     {% if firebase_config %}
     <script>

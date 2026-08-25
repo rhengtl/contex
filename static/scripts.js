@@ -586,6 +586,7 @@ function resizeView() {
     view.height = Math.round(height * ratio);
     viewCtx = view.getContext('2d');
     viewCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    refreshViewRect();
     clampOrigin();
     updateSizeLabel();
 }
@@ -608,6 +609,21 @@ function render() {
     viewCtx.fillStyle = '#ffffff';
     viewCtx.fillRect(0, 0, size.w, size.h);
     viewCtx.drawImage(sheet, -origin.x, -origin.y);
+}
+
+/* Panning used to repaint the whole sheet once per pointer event. A pen or a
+   trackpad reports far more often than the screen refreshes, so most of those
+   repaints were overwritten before anyone saw them. This collapses them to one
+   per frame, which is all a display can show anyway. */
+let renderQueued = false;
+
+function requestRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(function () {
+        renderQueued = false;
+        render();
+    });
 }
 
 function updateSizeLabel() {
@@ -656,11 +672,13 @@ function updateBrushCursorStyle() {
     cursor.classList.toggle('hidden', tool === 'pan');
 }
 
+/* Moved with a transform rather than left/top: a transform is handled by the
+   compositor and does not invalidate layout, so following the pen costs the
+   main thread nothing. */
 function moveBrushCursor(x, y) {
     const cursor = document.getElementById('brush-cursor');
     if (!cursor || tool === 'pan') return;
-    cursor.style.left = x + 'px';
-    cursor.style.top = y + 'px';
+    cursor.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     cursor.classList.remove('hidden');
 }
 
@@ -669,8 +687,22 @@ function hideBrushCursor() {
     if (cursor) cursor.classList.add('hidden');
 }
 
+/* The canvas's position on screen, remembered between pointer events.
+
+   getBoundingClientRect() forces the browser to settle pending layout before
+   it can answer. Calling it inside pointermove - which also writes to the
+   brush cursor's style - made every single move event a forced synchronous
+   layout, on the one code path that has to keep up with a pen. The rect only
+   changes when the window or the modal does, so it is recomputed there. */
+let viewRect = null;
+
+function refreshViewRect() {
+    viewRect = view ? view.getBoundingClientRect() : null;
+}
+
 function pointInView(event) {
-    const rect = view.getBoundingClientRect();
+    if (!viewRect) refreshViewRect();
+    const rect = viewRect || { left: 0, top: 0 };
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
@@ -737,7 +769,7 @@ function maybeAutoPan(point) {
     origin.x += dx * 0.35;
     origin.y += dy * 0.35;
     clampOrigin();
-    render();
+    requestRender();
     return true;
 }
 
@@ -748,6 +780,10 @@ function setupCanvas() {
 
     canvas.addEventListener('pointerdown', function (event) {
         canvas.setPointerCapture(event.pointerId);
+        // Once per stroke rather than once per move: cheap here, and it means
+        // the cached rect cannot go stale if anything moved the canvas without
+        // a resize event.
+        refreshViewRect();
         activePointers.set(event.pointerId, pointInView(event));
 
         const wantsPan = tool === 'pan' || spaceHeld || event.button === 1
@@ -775,17 +811,27 @@ function setupCanvas() {
             origin.x = panStart.origin.x - (point.x - panStart.point.x);
             origin.y = panStart.origin.y - (point.y - panStart.point.y);
             clampOrigin();
-            render();
+            requestRender();
             return;
         }
         if (!drawing) return;
 
         const scrolled = maybeAutoPan(point);
-        const here = toSheet(point);
-        maybeGrow(here);
-        strokeSegment(last, here);
-        last = here;
-        if (scrolled) render();
+
+        // Every position the pen reported since the last event, not just the
+        // one the browser chose to deliver. A fast stroke can cover several
+        // hundred pixels between frames; drawing only the endpoints turns a
+        // curve into a chord. This is finer input, not coarser - the stroke
+        // the model reads is closer to what was written.
+        const moves = event.getCoalescedEvents ? event.getCoalescedEvents() : null;
+        const points = (moves && moves.length) ? moves.map(pointInView) : [point];
+        for (let i = 0; i < points.length; i += 1) {
+            const here = toSheet(points[i]);
+            maybeGrow(here);
+            strokeSegment(last, here);
+            last = here;
+        }
+        if (scrolled) requestRender();
     });
 
     ['pointerup', 'pointercancel'].forEach(function (name) {
@@ -890,7 +936,10 @@ function saveDrawing() {
     out.toBlob(function (blob) {
         if (!blob) { toast('Could not save that drawing.'); return; }
         attachBlob(target, 'draw', blob, 'drawing.png');
-        showPreview(INPUT_TARGETS[target].drawPreview, out.toDataURL('image/png'));
+        // The same bytes the blob already holds, rather than encoding the
+        // canvas to PNG a second time and base64-ing the result. showPreview
+        // revokes the URL when the preview is replaced.
+        showPreview(INPUT_TARGETS[target].drawPreview, URL.createObjectURL(blob));
         toast('Drawing ready to convert.');
     }, 'image/png');
 

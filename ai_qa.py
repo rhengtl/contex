@@ -91,12 +91,25 @@ def provider_info():
 # ---------------------------------------------------------------------------
 
 def _prepare_image(file_bytes, extension):
+    """
+    The bytes to show the model, and their media type.
+
+    The original upload is sent unchanged whenever that is the best option:
+    the model already reads it, it is small enough to send whole, and
+    conditioning found nothing to correct. Re-encoding it in that case would
+    cost a decode and an encode to produce the same page.
+
+    Otherwise the conditioned image is sent - and it is the conditioned one
+    that goes, not the original. A page that needed deskewing is worth 28% to
+    99.8% character accuracy straightened, so having done the work, sending the
+    unstraightened original instead would be the one indefensible outcome.
+    """
     media_type = _NATIVE_IMAGE_TYPES.get(extension)
     with Image.open(io.BytesIO(file_bytes)) as img:
         img.load()
         conditioned, _notes = preprocess.prepare_image(img)
         too_big = max(conditioned.size) > _MAX_IMAGE_EDGE
-        if media_type and not too_big:
+        if media_type and not too_big and conditioned is img:
             return file_bytes, media_type
         if conditioned.mode not in ('RGB', 'L'):
             conditioned = conditioned.convert('RGB')
@@ -104,7 +117,10 @@ def _prepare_image(file_bytes, extension):
             conditioned.thumbnail((_MAX_IMAGE_EDGE, _MAX_IMAGE_EDGE),
                                   Image.LANCZOS)
         buffer = io.BytesIO()
-        conditioned.save(buffer, format='PNG', optimize=True)
+        # PNG is lossless either way; optimize=True only trades noticeably more
+        # CPU for a few percent of size, on a page that is about to be uploaded
+        # once and discarded.
+        conditioned.save(buffer, format='PNG', compress_level=6)
         return buffer.getvalue(), 'image/png'
 
 
@@ -200,7 +216,7 @@ def _validate_and_repair(convo, tex, calls_left, report):
                       'errors': '', 'missing_packages': [], 'reason': None}
 
     if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-        compile_result = latex_tools.compile_tex(tex)
+        compile_result = latex_tools.compile_tex(tex, want_pdf=True)
         if compile_result['attempted'] and not compile_result['ok']:
             detail = compile_result['errors'] or compile_result['reason'] or ''
             if compile_result['missing_packages']:
@@ -220,7 +236,8 @@ def _validate_and_repair(convo, tex, calls_left, report):
                     # Re-check: reporting the pre-repair compile result would
                     # tell the user a working document does not build.
                     if _bool_env('AI_QA_ENABLE_COMPILE', True):
-                        compile_result = latex_tools.compile_tex(repaired)
+                        compile_result = latex_tools.compile_tex(
+                            repaired, want_pdf=True)
                     return repaired, compile_result
         except LlmError:
             pass  # keep what we have
@@ -247,7 +264,23 @@ class Rotation:
     and nothing should keep a user on the fourth-choice model because the first
     was busy an hour ago. The one exception is a model the provider explicitly
     told us to stay away from until a stated time - see ai_status.hard_blocked.
+
+    `pinned()` builds a throwaway round for one speculative call: a single
+    model, and a quota error that changes nothing anywhere. convert.py sends a
+    document's pages out concurrently through those, so that a 429 caused by
+    our own burst cannot retire a model the service is perfectly willing to
+    serve one request at a time. See _convert_units.
     """
+
+    @classmethod
+    def pinned(cls, model, role=None):
+        """A one-model round whose failures are private to it."""
+        rotation = cls(role)
+        rotation.chain = [model] if model else []
+        rotation.cursor = 0
+        rotation.exhausted = not rotation.chain
+        rotation.records = False
+        return rotation
 
     def __init__(self, role=None):
         self.role = role or llm_providers.ROLE_DOCUMENT
@@ -255,6 +288,9 @@ class Rotation:
         self.chain = self.provider.model_chain(self.role)
         self.cursor = 0
         self.exhausted = not self.chain
+        #: Whether a failure here is allowed to mark a model unavailable for
+        #: the whole server. False for speculative rounds - see pinned().
+        self.records = True
         #: Set when a failure no model can get around ends the round early.
         self.fatal = None
 
@@ -303,37 +339,46 @@ class Rotation:
                                             attempts=attempts)
                 reply = convo.ask(parts)
             except LlmQuotaError as exc:
-                ai_status.record_model_outage(
-                    model, str(exc), retry_after=exc.retry_after,
-                    scope=exc.scope, provider=self.provider.name)
+                if self.records:
+                    ai_status.record_model_outage(
+                        model, str(exc), retry_after=exc.retry_after,
+                        scope=exc.scope, provider=self.provider.name)
                 last = exc
                 self._advance()
                 self._announce(model, exc)
             except LlmModelError as exc:
-                ai_status.record_model_outage(
-                    model, str(exc),
-                    retry_after=ai_status._MODEL_ERROR_SECONDS, scope='model',
-                    provider=self.provider.name, from_provider=False)
+                if self.records:
+                    ai_status.record_model_outage(
+                        model, str(exc),
+                        retry_after=ai_status._MODEL_ERROR_SECONDS,
+                        scope='model', provider=self.provider.name,
+                        from_provider=False)
                 last = exc
                 self._advance()
                 self._announce(model, exc)
             except LlmError as exc:
                 # A rejected key or an unreachable network dooms every model,
                 # so rotating would repeat the same failure three more times.
-                ai_status.record_outage(str(exc), provider=self.provider.name)
+                if self.records:
+                    ai_status.record_outage(str(exc),
+                                            provider=self.provider.name)
                 self.exhausted = True
                 self.fatal = exc
                 raise
             else:
                 # This model answered, so it is not exhausted and neither is
                 # the service. Not clearing here is what would strand the app
-                # on the fallback path after the service came back.
+                # on the fallback path after the service came back. A
+                # speculative round clears too: a success is unambiguous good
+                # news however it was obtained.
                 ai_status.clear_model(model)
                 return convo, reply
 
         raise last or LlmError('No usable model is configured for this server.')
 
     def _announce(self, model, error):
+        if not self.records:
+            return
         nxt = self.active
         if nxt:
             print(f'Notice: {model} is unavailable ({error}); trying {nxt}.')
@@ -576,7 +621,7 @@ def finalise_document(tex):
                           'errors': '', 'missing_packages': [],
                           'reason': None}
         if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-            compile_result = latex_tools.compile_tex(tex)
+            compile_result = latex_tools.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
     provider = llm_providers.get_provider()
@@ -595,7 +640,7 @@ def finalise_document(tex):
         compile_result = {'attempted': False, 'ok': False, 'engine': None,
                           'errors': '', 'missing_packages': [], 'reason': None}
         if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-            compile_result = latex_tools.compile_tex(tex)
+            compile_result = latex_tools.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
     try:

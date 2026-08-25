@@ -31,9 +31,12 @@ matters on a free tier - but a quota that runs out on page 7 of 10 then loses
 three pages of quality instead of ten.
 """
 
+import importlib
 import io
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
 
@@ -173,6 +176,46 @@ def _split_pdf(file_bytes, limit):
 # ---------------------------------------------------------------------------
 # The local converter path
 # ---------------------------------------------------------------------------
+
+#: Started at most once per process - the module-level model load inside
+#: `equation` is what takes the time, and importing it twice does not repeat it.
+_warming = threading.Lock()
+_warmed = False
+
+
+def _warm_formula_model():
+    """
+    Begin loading the local formula model, without waiting for it.
+
+    Importing `equation` loads pix2text-mfr through ONNX Runtime, measured at
+    13.6 seconds the first time in a process. It is imported lazily, so today
+    that whole wait lands in the middle of the first fallback conversion, after
+    the user has already been told this path is the slower one.
+
+    Started here, it runs while the PDF is being rasterised and Tesseract is
+    reading page one, so most of it is over by the time anything needs it.
+    Python's import lock does the synchronising: whoever gets there second
+    simply waits for the first to finish, exactly as it would have anyway.
+
+    Only called once the fallback is certain. On the AI path the model is
+    usually never needed, and loading it would be several hundred megabytes of
+    memory spent on nothing.
+    """
+    global _warmed
+    with _warming:
+        if _warmed:
+            return
+        _warmed = True
+
+    def load():
+        try:
+            importlib.import_module('equation')
+        except Exception as exc:
+            print(f'Notice: the formula model could not be preloaded ({exc}).')
+
+    threading.Thread(target=load, name='warm-formula-model',
+                     daemon=True).start()
+
 
 def _recognize_regions(page, boxes, lines):
     """
@@ -363,8 +406,25 @@ def _notice(headline, detail, reason='', from_page=1, total=1, partial=False):
 
 
 def _result(tex, equations, summary, qa, items=None, raw_tex=''):
+    """
+    Assemble one finished conversion.
+
+    Also lifts the compiled PDF out of the QA report and onto the result. Every
+    path here compiles the finished document once already, to check it builds -
+    and the preview used to throw that away and compile the identical source a
+    second time, about 800 ms later, while the user watched a spinner.
+
+    The PDF is only carried when its hash says it came from exactly the `tex`
+    being returned. A document can be repaired or merged after it was compiled,
+    and a preview that showed a slightly different document from the one the
+    user downloads would be worse than a slow one.
+    """
+    compiled = (qa or {}).get('compile') or {}
+    pdf = compiled.pop('pdf', None)
+    if pdf and compiled.get('source_sha') != latex_tools.source_sha(tex):
+        pdf = None
     return {'tex': tex, 'raw_tex': raw_tex, 'items': items or [],
-            'equations': equations, 'summary': summary, 'qa': qa}
+            'equations': equations, 'summary': summary, 'qa': qa, 'pdf': pdf}
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +501,90 @@ def _ai_units(file_bytes, filename):
     return [(1, file_bytes, filename)]
 
 
+def _ai_workers(count):
+    """
+    How many pages of one document to have in flight at once.
+
+    Three by default. Pages are independent, so the ceiling is not correctness
+    but the provider's per-minute allowance - and on a free tier that is
+    generous enough for a few at a time and not for ten.
+    """
+    if count < 2:
+        return 1
+    return max(1, min(_int_env('AI_QA_PAGE_CONCURRENCY', 3), count))
+
+
+def _convert_one(data, name, rotation):
+    """One speculative page conversion that can never raise into the pool."""
+    try:
+        return ai_qa.convert_page(data, name, validate=False, rotation=rotation)
+    except Exception as exc:                       # pragma: no cover - defensive
+        print(f'Notice: a page conversion failed unexpectedly ({exc}).')
+        return ai_qa.blank_review('', 'failed', str(exc))
+
+
+def _convert_units(units, rotation, single):
+    """
+    Convert every unit of a document, in page order.
+
+    Pages are independent - one page's LaTeX never depends on another's - so
+    they are sent concurrently. Measured on four real pages: 18.9 s one at a
+    time against 4.1 s with four in flight, for character-identical output.
+
+    The catch is that a free tier counts requests per minute, so a burst can be
+    asked to slow down for reasons that have nothing to do with the daily quota
+    being spent. Treating that as "this model is finished" would rotate the
+    round onto a weaker model - speed bought with accuracy, which is the one
+    trade this pipeline may not make.
+
+    So the concurrent pass is speculative. Each page rides its own pinned round
+    that records nothing, and a page that fails there is merely not done yet.
+    Whatever is left is then retried one at a time through the real round,
+    where a quota error means what it has always meant. The worst case of
+    getting the concurrency wrong is the speed we had before, never the
+    quality.
+
+    Returns (results, failed_at, reason): results in page order for every unit
+    up to the first failure, then the page number that failed and why.
+    """
+    done = {}
+    workers = _ai_workers(len(units))
+
+    if workers > 1 and rotation.active:
+        model = rotation.active
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pending = {
+                pool.submit(_convert_one, data, name,
+                            ai_qa.Rotation.pinned(model, rotation.role)): number
+                for number, data, name in units}
+            for future in as_completed(pending):
+                done[pending[future]] = future.result()
+
+    results = []
+    for number, data, name in units:
+        page = done.get(number)
+        if not _usable(page):
+            if rotation.exhausted:
+                reason = (str(rotation.fatal) if rotation.fatal
+                          else 'Every AI model has reached its quota.')
+                return results, number, reason
+            # Sequential, through the real round: this is where a quota error
+            # is believed and allowed to move the conversion onto another model.
+            page = ai_qa.convert_page(data, name, validate=single,
+                                      rotation=rotation)
+        if not _usable(page):
+            return results, number, (page['message']
+                                     or 'The AI conversion was unavailable.')
+        results.append(page)
+    return results, None, ''
+
+
+def _usable(page):
+    """True when a page result actually carries a converted document."""
+    return bool(page and page['status'] not in ('failed', 'skipped')
+                and page['tex'])
+
+
 def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
     """Convert an image or a PDF, preferring the AI and degrading page by page."""
     notes = []
@@ -462,34 +606,25 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
     # times. A new conversion builds a new round and starts at the top again.
     rotation = ai_qa.Rotation() if use_ai else None
 
-    for number, data, name in units:
-        if rotation.exhausted:
-            # Every model refused. Stop asking and let the local converters
-            # finish the document - the pages already done keep their AI
-            # output, and the user is told where the change happened.
-            failed_at = number
-            reason = (str(rotation.fatal) if rotation.fatal
-                      else 'Every AI model has reached its quota.')
-            break
-
-        # A lone unit is validated inside the call, where the conversation
-        # still has the page attached and can repair against it. Several units
-        # are validated once after merging instead: per-page validation would
-        # multiply the repair budget by the page count and would be checking
-        # fragments that were never meant to compile on their own.
-        result = ai_qa.convert_page(data, name, validate=single,
-                                    rotation=rotation)
-        if result['status'] in ('failed', 'skipped') or not result['tex']:
-            failed_at = number
-            reason = result['message'] or 'The AI conversion was unavailable.'
-            break
-        ai_documents.append(result['tex'])
-        findings.extend(result['findings'])
-        single_compile = result['compile']
-        model = model or result['model']
-        provider = provider or result['provider']
-        for key in usage:
-            usage[key] += result['usage'].get(key, 0)
+    # A lone unit is validated inside the call, where the conversation still
+    # has the page attached and can repair against it. Several units are
+    # validated once after merging instead: per-page validation would multiply
+    # the repair budget by the page count and would be checking fragments that
+    # were never meant to compile on their own.
+    #
+    # When a page does fail, the pages already converted keep their AI output
+    # and only the rest falls back - so the user is told where the change
+    # happened rather than losing the whole document.
+    if units:
+        converted, failed_at, reason = _convert_units(units, rotation, single)
+        for result in converted:
+            ai_documents.append(result['tex'])
+            findings.extend(result['findings'])
+            single_compile = result['compile']
+            model = model or result['model']
+            provider = provider or result['provider']
+            for key in usage:
+                usage[key] += result['usage'].get(key, 0)
 
     ai_pages = len(ai_documents)
     local_pages = 0
@@ -617,8 +752,11 @@ def _compile_only(tex):
     """Local validation with no API involved at all."""
     if latex_tools.static_validate(tex):
         return {'attempted': False, 'ok': False, 'engine': None, 'errors': '',
-                'missing_packages': [], 'reason': 'The LaTeX did not validate.'}
-    return latex_tools.compile_tex(tex)
+                'missing_packages': [], 'pdf': None, 'source_sha': None,
+                'reason': 'The LaTeX did not validate.'}
+    # want_pdf: this is the only compile of the document on the local path, so
+    # keeping its output is what saves the preview a second one. See _result.
+    return latex_tools.compile_tex(tex, want_pdf=True)
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +781,9 @@ def convert(file_bytes, filename, allow_fallback=False):
     use_ai = bool(status['available'])
     if not use_ai and not allow_fallback:
         raise FallbackNotAuthorized(status)
+
+    if not use_ai:
+        _warm_formula_model()
 
     unavailable = '' if use_ai else (status.get('reason') or '')
     if docx_input.is_docx(filename):

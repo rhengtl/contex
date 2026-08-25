@@ -39,8 +39,9 @@ sys.modules['equation'] = _fake_equation
 
 _saved_history = []
 _fake_firebase = types.ModuleType('firebase_config')
-_fake_firebase.save_ocr_history = lambda uid, name, kind, result: (
-    _saved_history.append((uid, name, kind, result)) or f'doc-{len(_saved_history)}')
+_fake_firebase.save_ocr_history = lambda uid, name, kind, result, truncated=False: (
+    _saved_history.append((uid, name, kind, result))
+    or f'doc-{len(_saved_history)}')
 _fake_firebase.get_user_ocr_history = lambda *a, **k: []
 _fake_firebase.get_ocr_history_item = lambda uid, doc_id: _history_items.get(
     (uid, doc_id))
@@ -665,12 +666,23 @@ def _():
     check('One hour' in privacy or 'one hour' in terms.lower(),
           'the one-hour result retention is not stated')
 
-    # The browser really does contact these hosts on every page load, so the
-    # policy has to name them.
-    page = client.get('/').get_data(as_text=True)
-    for host in ('cdn.tailwindcss.com', 'fonts.googleapis.com'):
-        check(host in page, f'{host} is no longer used - update the policy')
-        check(host in privacy, f'{host} is used but not disclosed')
+    # Whatever the page loads from somewhere else, the policy has to name.
+    # Read out of the markup rather than listed here, so that adding a script
+    # or a stylesheet from a new host fails this test instead of quietly
+    # leaving the disclosure wrong.
+    markup = ''.join(client.get(path).get_data(as_text=True)
+                     for path in ('/', '/login', '/signup', '/forgot-password'))
+    hosts = {match.split('/')[2] for match in
+             re.findall(r'(?:src|href)="(https?://[^"]+)"', markup)}
+    check(hosts, 'no third-party hosts found - has the markup changed shape?')
+    for host in sorted(hosts):
+        check(host in privacy, f'{host} is contacted but not disclosed')
+
+    # And nothing may be disclosed that is no longer true: a policy naming a
+    # host the pages stopped using overstates what leaves the browser.
+    for named in re.findall(r'<code>([a-z0-9.-]+\.[a-z]{2,})</code>', privacy):
+        check(named in hosts,
+              f'{named} is disclosed but no page contacts it any more')
 
     # There is no self-service deletion, and the policy must not imply there is.
     check('by hand' in privacy, 'privacy implies deletion is automated')

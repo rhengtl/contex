@@ -130,6 +130,15 @@ halves are spliced into one document by `latex_tools.merge_documents()`, and the
 result says exactly where the change happened and what it costs. It buys that
 guarantee with one API call per page instead of one per document.
 
+Those per-page calls go out **concurrently** — `AI_QA_PAGE_CONCURRENCY`, three
+by default. Measured on a four-page PDF: 15.6 s one at a time against 7.2 s at
+three, for byte-identical LaTeX. Because a burst can trip a per-minute limit
+that a steady stream would not, the concurrent pass is *speculative*: each page
+rides a throwaway round that records nothing, and any page that comes back rate
+limited is retried one at a time through the real round before a model is
+written off. Guessing the concurrency too high therefore costs a retry — never
+a silent drop to a weaker model.
+
 ---
 
 Two rules shape the whole design.
@@ -387,7 +396,17 @@ projection-profile deskew, low-DPI upscale. No API calls, no model time. From
 
 Before this, a rotated page made Tesseract return an empty string, so the user
 saw a blank result and no error at all. Straight pages are detected (0.0°) and
-left untouched; estimation runs on a downscaled copy, about 0.05 s per page.
+left untouched.
+
+Estimation runs on a copy downscaled to 900px, and searches coarse-to-fine:
+a 2° sweep of the range, then the real 0.5° grid around the three strongest
+samples. That is 27 candidate rotations instead of 61 — about 320 ms a page
+rather than 700 ms — and it is *not* an approximation: over 351 measured cases
+(39 bench images at 9 known skews) it returns the identical angle to the
+exhaustive scan every time. Three peaks rather than one because a blurred page
+has several local maxima and following only the best coarse sample walked into
+the wrong one on 9 of those 351.
+
 Disable with `OCR_PREPROCESS=false`.
 
 ---

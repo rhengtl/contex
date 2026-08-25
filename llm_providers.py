@@ -24,6 +24,7 @@ touching the pipelines, and so the two can be compared on the same benchmark.
 import os
 import random
 import re
+import threading
 import time
 
 # ---------------------------------------------------------------------------
@@ -48,9 +49,9 @@ def _role_env(prefix, role, default=None):
     """
     Resolve a per-role setting from the environment.
 
-    `AI_QA_MODEL_EQUATIONS` beats `AI_QA_MODEL`, which beats the built-in
-    default. That way one variable still overrides both pipelines - which is
-    what most deployments want - without preventing the split.
+    `AI_QA_MODEL_DOCUMENT` beats `AI_QA_MODEL`, which beats the built-in
+    default. That way one variable still overrides every role - which is what
+    most deployments want - without preventing a per-role choice.
     """
     if role:
         specific = os.getenv(f'{prefix}_{role.upper()}')
@@ -444,6 +445,25 @@ class _GeminiConversation(Conversation):
         return text
 
 
+#: One client per API key, shared across conversations. The client owns an HTTP
+#: connection pool, so building a new one per page threw away the pooled TLS
+#: connection and paid for a fresh handshake on every request - most visibly on
+#: a multi-page PDF, which opens one conversation per page. The SDK's client is
+#: safe to share between threads, which the concurrent page conversion needs.
+_GEMINI_CLIENTS = {}
+_GEMINI_CLIENTS_LOCK = threading.Lock()
+
+
+def _gemini_client(genai, api_key):
+    """The shared client for this key, building it the first time."""
+    with _GEMINI_CLIENTS_LOCK:
+        client = _GEMINI_CLIENTS.get(api_key)
+        if client is None:
+            client = genai.Client(api_key=api_key)
+            _GEMINI_CLIENTS[api_key] = client
+        return client
+
+
 class GeminiProvider(Provider):
     name = 'gemini'
     env_key = 'GEMINI_API_KEY'
@@ -514,7 +534,7 @@ class GeminiProvider(Provider):
                 "(GEMINI_API_KEY is not set).")
 
         api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
-        client = genai.Client(api_key=api_key)
+        client = _gemini_client(genai, api_key)
         return _GeminiConversation(self, model or self.default_model(role),
                                    system, client, types,
                                    thinking or self.default_thinking(role),
