@@ -33,8 +33,8 @@ module.exports = {
     extend: {
       fontFamily: {
         // 'Poppins Fallback' is a metric-matched stand-in defined in
-        // static/css/home.css, so the page does not move when the real font
-        // finishes loading.
+        // static/css/tailwind.src.css, so the page does not move when the real
+        // font finishes loading.
         poppins: ['Poppins', 'Poppins Fallback', 'sans-serif'],
       },
       colors: {

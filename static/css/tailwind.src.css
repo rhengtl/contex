@@ -4,6 +4,21 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+    /* Slightly broader than Tailwind's own preflight, which zeroes margins on
+       named elements rather than on everything. In @layer base so it sits with
+       preflight and cannot outrank a utility class. */
+    * {
+        padding: 0;
+        margin: 0;
+    }
+
+    html {
+        /* the home page's nav anchors (#convert, #about, #history) rely on this */
+        scroll-behavior: smooth;
+    }
+}
+
 /* ---------------------------------------------------------------------------
    Metric-matched stand-in for Poppins.
 
@@ -23,9 +38,6 @@
    Several locals because Arial is not on every platform. Any one that resolves
    gets the adjustment; if none do, the stack falls through to an unadjusted
    sans-serif, which is exactly the behaviour there was before.
-
-   This lives here rather than in home.css because every page uses the font and
-   only the home page loads home.css.
    --------------------------------------------------------------------------- */
 @font-face {
     font-family: 'Poppins Fallback';

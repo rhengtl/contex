@@ -384,10 +384,10 @@ def _():
 
 
 # ---------------------------------------------------------------------------
-# Showing the source document to the reviewer
+# Showing the source document to the model
 # ---------------------------------------------------------------------------
 
-@test('an image is prepared as a media part for the reviewer')
+@test('an image is prepared as a media part for the model')
 def _():
     part = ai_qa.source_part(png_bytes(), 'scan.png')
     check(part and part['kind'] == 'media', part)
@@ -418,7 +418,7 @@ def _():
 
 
 # ---------------------------------------------------------------------------
-# Scripted reviewer
+# Scripted provider
 # ---------------------------------------------------------------------------
 
 class ScriptedConversation(llm_providers.Conversation):
@@ -432,7 +432,7 @@ class ScriptedConversation(llm_providers.Conversation):
         self.turns.append(parts)
         self._count(input=10, output=5)
         if not self.script:
-            raise AssertionError('the scripted reviewer ran out of replies')
+            raise AssertionError('the scripted provider ran out of replies')
         reply = self.script.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -468,7 +468,7 @@ class ScriptedProvider(llm_providers.Provider):
         return self.conversation
 
 
-def with_reviewer(script, fail_on_start=None):
+def with_provider(script, fail_on_start=None):
     provider = ScriptedProvider(script, fail_on_start)
     llm_providers.get_provider = lambda name=None: provider
     return provider
@@ -511,7 +511,7 @@ def qa_result(tex, status='clean', **extra):
         'compile': {'attempted': False, 'ok': False, 'engine': None,
                     'errors': '', 'missing_packages': [], 'reason': None},
         'usage': {'input': 1, 'output': 1, 'cache_read': 0, 'cache_write': 0},
-        'model': 'scripted-reviewer', 'provider': 'scripted',
+        'model': 'scripted-model', 'provider': 'scripted',
     }
     base.update(extra)
     return base
@@ -533,7 +533,7 @@ def scripted_convert(tex=None, **summary_extra):
 
     def run(data, name, allow_fallback=False):
         return {
-            'tex': tex, 'raw_tex': tex, 'items': [],
+            'tex': tex, 'items': [],
             'equations': [{'index': 1, 'latex': 'E = mc^{2}'}],
             'summary': summary, 'qa': qa_result(tex),
         }
@@ -1209,8 +1209,9 @@ def _():
 def _():
     # The counts described the machinery rather than the document, and the
     # quality report described a process the preview answers better by showing
-    # the document. Both are still produced and stored; they are only no
-    # longer rendered, so nothing that reads them has changed.
+    # the document. None of it is rendered any more. What is still *stored* is
+    # what a conversion can be accounted for by afterwards - the stats, and the
+    # record of which model produced the document and whether it compiled.
     flask_app.convert.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -1228,8 +1229,14 @@ def _():
     stored = tex_store.read(token)
     check('text_blocks' in (stored.get('stats') or {}),
           'the stats stopped being produced, which was not the intent')
-    check(stored.get('qa'), 'the QA report stopped being produced')
-    check(stored.get('detected'), 'the equations stopped being produced')
+    check(stored.get('qa'), 'the conversion record stopped being produced')
+    check((stored['qa'] or {}).get('compile'),
+          'the compile result is what makes the record worth keeping')
+    # Nothing reads a list of extracted equations, so nothing produces one.
+    check('detected' not in stored, 'the unread equation list is back')
+    for empty in ('equations', 'summary'):
+        check(empty not in (stored['qa'] or {}),
+              f'qa.{empty} is back - it can never hold anything')
 
     # And what the user actually needs is untouched.
     check('id="preview-panel"' in page, 'the preview went with it')
@@ -1740,7 +1747,7 @@ def with_clean_model_env(fn):
 @test('a role asks for its own model and its own amount of thinking')
 def _():
     def run():
-        provider = with_reviewer(['LATEX_OK'])
+        provider = with_provider(['LATEX_OK'])
         document = provider.start('sys', role=llm_providers.ROLE_DOCUMENT)
 
         check(document.model == 'scripted-document', document.model)
@@ -1870,8 +1877,8 @@ def _():
 @test('a sentence containing inline maths stays text')
 def _():
     # Low confidence because of the inline maths, but it is still a sentence.
-    # Splitting it would hand prose to a formula model; the reviewer, which can
-    # read the image, handles inline maths better.
+    # Splitting it would hand prose to a formula model; the text engine reads
+    # a sentence with inline maths better than the formula model does.
     lines = [line("Einstein's mass-energy relation is E = mc?, and the "
                   "Lorentz factor is", 195, 224, 15)]
     nominated, _ = layout.nominate(lines, [(100, 193, 900, 226)])
@@ -2126,7 +2133,7 @@ def _():
 @test('direct conversion returns nothing to fall back on when it fails')
 def _():
     # This is the trade-off the hybrid exists to cover, so pin it down.
-    with_reviewer([], fail_on_start=llm_providers.LlmError('no key'))
+    with_provider([], fail_on_start=llm_providers.LlmError('no key'))
     try:
         result = ai_qa.convert_page(png_bytes(), 'scan.png')
         check(result['status'] == 'failed', result['status'])

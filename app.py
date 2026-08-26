@@ -42,7 +42,7 @@ app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')  # Optional:
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder if it doesn't exist
 
 # Hard ceiling on request size. This stops an oversized body from being
-# buffered at all, before any converter or reviewer sees it.
+# buffered at all, before any converter or model sees it.
 _MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', '32'))
 app.config['MAX_CONTENT_LENGTH'] = _MAX_UPLOAD_MB * 1024 * 1024
 
@@ -433,17 +433,12 @@ def convert_route():
         return redirect(url_for('home') + '#convert')
 
     # Signed-in users get this saved to Firestore; guests do not.
-    history_id = record_history(file.filename, result['tex'])
+    record_history(file.filename, result['tex'])
 
     token = remember_tex({
         'tex': result['tex'],
-        'text': result['tex'],
-        'draft_tex': result['raw_tex'],
         'file_name': file.filename,
         'source': 'convert',
-        'history_id': history_id,
-        'detected': [{'index': item['index'], 'latex': item['latex']}
-                     for item in result['equations']],
         'stats': result['summary'],
         'qa': _qa_payload(result['qa']),
     })
@@ -462,13 +457,20 @@ def convert_route():
 
 
 def _qa_payload(review):
-    """The parts of a QA result the page needs (no credentials, no bulk)."""
+    """
+    The record of how a conversion went, minus credentials and bulk.
+
+    The page does not render any of this - the counts and the quality report
+    were both taken off the result UI deliberately, because the preview shows
+    the document better than a report describes it. It is still stored, so a
+    conversion can be accounted for afterwards: which model produced it,
+    whether it compiled, what the engine said if it did not, what it cost, and
+    any repair that was made along the way.
+    """
     return {
         'status': review['status'],
         'message': review['message'],
         'findings': review['findings'],
-        'equations': review['equations'],
-        'summary': review['summary'],
         'compile': review['compile'],
         'model': review['model'],
         'provider': review['provider'],

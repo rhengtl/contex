@@ -25,10 +25,11 @@ starts and makes the user choose; and when the AI dies part way through a
 multi-page document, the pages already converted keep their AI output, the rest
 are converted locally, and the result says exactly where the change happened.
 
-That last guarantee is why PDFs are sent to the model a page at a time rather
-than whole. It costs one API call per page instead of one per document, which
+That last guarantee is why PDFs are sent to the model page by page rather than
+whole. It costs one API call per page instead of one per document, which
 matters on a free tier - but a quota that runs out on page 7 of 10 then loses
-three pages of quality instead of ten.
+three pages of quality instead of ten. Page by page is about granularity, not
+order: the calls go out concurrently - see _convert_units.
 """
 
 import importlib
@@ -289,7 +290,8 @@ def analyse_page(page):
                      'recognised separately on this page.')
 
     # Lines the text engine could not read at all, recovered from the formula
-    # model. Rough, and flagged as such so the review stage re-reads them.
+    # model. Rough, and flagged as such: the flag is what the result counts as
+    # `uncertain_lines`, so the user is told how much of the page is a guess.
     for item in salvaged:
         lines.append({'text': item['text'], 'box': item['box'],
                       'min_conf': 0, 'mean_conf': 0,
@@ -367,19 +369,6 @@ def _summarise_tex(tex, pages=1):
     }
 
 
-def _expressions_in(tex):
-    """Displayed expressions, for the equation list the result page shows."""
-    found = []
-    for pattern in (r'\\\[(.+?)\\\]',
-                    r'\\begin\{(?:equation\*?|align\*?|gather\*?)\}(.+?)'
-                    r'\\end\{(?:equation\*?|align\*?|gather\*?)\}'):
-        for match in re.findall(pattern, tex or '', re.DOTALL):
-            expression = ' '.join(match.split())
-            if expression:
-                found.append({'index': len(found) + 1, 'latex': expression})
-    return found
-
-
 def _notice(headline, detail, reason='', from_page=1, total=1, partial=False):
     """
     The one message the user gets about a degraded conversion.
@@ -405,11 +394,11 @@ def _notice(headline, detail, reason='', from_page=1, total=1, partial=False):
     }
 
 
-def _result(tex, equations, summary, qa, items=None, raw_tex=''):
+def _result(tex, summary, qa, items=None):
     """
     Assemble one finished conversion.
 
-    Also lifts the compiled PDF out of the QA report and onto the result. Every
+    Also lifts the compiled PDF out of the report and onto the result. Every
     path here compiles the finished document once already, to check it builds -
     and the preview used to throw that away and compile the identical source a
     second time, about 800 ms later, while the user watched a spinner.
@@ -423,8 +412,8 @@ def _result(tex, equations, summary, qa, items=None, raw_tex=''):
     pdf = compiled.pop('pdf', None)
     if pdf and compiled.get('source_sha') != latex_tools.source_sha(tex):
         pdf = None
-    return {'tex': tex, 'raw_tex': raw_tex, 'items': items or [],
-            'equations': equations, 'summary': summary, 'qa': qa, 'pdf': pdf}
+    return {'tex': tex, 'items': items or [], 'summary': summary,
+            'qa': qa, 'pdf': pdf}
 
 
 # ---------------------------------------------------------------------------
@@ -453,8 +442,7 @@ def _convert_docx(file_bytes, filename, use_ai, unavailable=''):
             summary['path'] = 'ai'
             summary['ai_pages'] = 1
             summary['equations'] = len(_MATH_ENV.findall(result['tex']))
-            return _result(result['tex'], _expressions_in(result['tex']),
-                           summary, result)
+            return _result(result['tex'], summary, result)
         unavailable = result['message'] or unavailable
 
     summary['fallback_notice'] = _notice(
@@ -476,7 +464,7 @@ def _convert_docx(file_bytes, filename, use_ai, unavailable=''):
         'This document was built directly from the Word file, without AI.')
     report['compile'] = compile_result
     report['findings'] = findings
-    return _result(tex, _expressions_in(tex), summary, report)
+    return _result(tex, summary, report)
 
 
 # ---------------------------------------------------------------------------
@@ -642,10 +630,10 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
                         'ai_pages': ai_pages, 'fallback_pages': 0,
                         'total_pages': len(units)})
         report = {'tex': tex, 'status': 'corrected', 'message': '',
-                  'findings': findings, 'equations': [], 'summary': {},
+                  'findings': findings,
                   'compile': compile_result, 'usage': usage,
                   'model': model, 'provider': provider}
-        return _result(tex, _expressions_in(tex), summary, report)
+        return _result(tex, summary, report)
 
     # Some or all of the document still needs the local converters.
     total = page_count(file_bytes, filename)
@@ -678,10 +666,10 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
                 reason=str(exc), from_page=start, total=total, partial=True),
         })
         report = {'tex': tex, 'status': 'partial', 'message': '',
-                  'findings': findings, 'equations': [], 'summary': {},
+                  'findings': findings,
                   'compile': compile_result, 'usage': usage,
                   'model': model, 'provider': provider}
-        return _result(tex, _expressions_in(tex), summary, report)
+        return _result(tex, summary, report)
 
     local_pages = len(remaining)
     notes.extend(local_notes)
@@ -744,8 +732,7 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
     report['usage'] = usage
     report['model'] = model
     report['provider'] = provider
-    return _result(tex, equations, summary, report, items=items,
-                   raw_tex=local_tex)
+    return _result(tex, summary, report, items=items)
 
 
 def _compile_only(tex):

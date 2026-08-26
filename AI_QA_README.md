@@ -124,11 +124,11 @@ publish the reset schedule. In every other case the UI says, in those words,
 *"No estimated recovery time is currently available."*
 
 **Mid-conversion failure keeps what was finished.** This is why a PDF is sent to
-the model one page at a time rather than whole. If quota runs out on page 7 of
-10, pages 1–6 keep their AI output, pages 7–10 are converted locally, the two
-halves are spliced into one document by `latex_tools.merge_documents()`, and the
-result says exactly where the change happened and what it costs. It buys that
-guarantee with one API call per page instead of one per document.
+the model page by page rather than whole. If quota runs out on page 7 of 10,
+pages 1–6 keep their AI output, pages 7–10 are converted locally, the two halves
+are spliced into one document by `latex_tools.merge_documents()`, and the result
+says exactly where the change happened and what it costs. It buys that guarantee
+with one API call per page instead of one per document.
 
 Those per-page calls go out **concurrently** — `AI_QA_PAGE_CONCURRENCY`, three
 by default. Measured on a four-page PDF: 15.6 s one at a time against 7.2 s at

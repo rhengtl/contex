@@ -2,10 +2,11 @@
 """
 Local (non-AI) LaTeX validation and compilation.
 
-Used by the QA layer to check whatever the reviewer hands back, and by
-bench/gen_pages.py to build its corpus. It knows nothing about any AI: it takes
-LaTeX source, says what is structurally wrong with it, and - when a TeX engine
-is installed - compiles it and reports the engine's own errors in a compact form.
+Used by the conversion to check whatever the model writes, by the preview to
+render it, and by bench/gen_pages.py to build its corpus. It knows nothing
+about any AI: it takes LaTeX source, says what is structurally wrong with it,
+and - when a TeX engine is installed - compiles it and reports the engine's
+own errors in a compact form.
 
 Everything here runs offline, so it costs no API tokens.
 """
@@ -352,9 +353,9 @@ def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
          'source_sha': str|None}
 
     With want_pdf=True the compiled PDF is read into memory before cleanup, so
-    the visual-verification stage can render it back to images. The working
-    directory is always deleted before returning, so an uploaded document never
-    lingers on disk.
+    the preview can serve it and rasterise it without compiling again. The
+    working directory is always deleted before returning, so an uploaded
+    document never lingers on disk.
 
     `source_sha` identifies the source these bytes came from. A conversion
     compiles the document to validate it and the preview wants that same PDF
@@ -544,8 +545,8 @@ def merge_documents(documents):
     """
     Splice per-page LaTeX documents into one.
 
-    Converting a multi-page PDF one page at a time is what lets a conversion
-    survive losing the AI half way through: the pages already done keep their
+    Converting a multi-page PDF page by page is what lets a conversion survive
+    losing the AI half way through: the pages already done keep their
     AI output and only the remainder falls back. The cost is that each page
     arrives as its own complete document, so the preambles have to be
     reconciled rather than concatenated - four copies of \\usepackage{amsmath}

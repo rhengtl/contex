@@ -158,7 +158,7 @@ def nominate(lines, boxes, page_width=0):
 
         # Prose keeps its ground whatever its confidence: a confident sentence
         # is text, and an unconfident one is a sentence with inline maths,
-        # which the reviewer handles better than the formula model would.
+        # which the text engine reads better than the formula model would.
         # Carve it out FIRST, then judge what is left on its own - a caption
         # sitting above a formula must not lend the formula its confidence.
         prose = [line for line in covering if _is_prose(line['text'])]
@@ -319,7 +319,8 @@ def assemble(lines, equations):
             'block': line['block'], 'par': line['par'],
             'min_conf': line['min_conf'],
             # True when no engine read this confidently - handwriting, usually.
-            # The review stage is told to re-read these off the image.
+            # Counted into the result as `uncertain_lines`, so the user knows
+            # how much of the page to check.
             'uncertain': bool(line.get('uncertain'))
                          or line['min_conf'] < conf_floor(),
         })
@@ -373,9 +374,9 @@ def to_tex(items, escape):
     this module stays free of OCR dependencies and can be tested on its own.
 
     The structure here is deliberately conservative - paragraphs, headings,
-    displayed equations. Recovering tables and finer structure from the image
-    is the review stage's job; guessing at them from bounding boxes alone would
-    invent structure that is not there.
+    displayed equations. Tables and finer structure are what the AI path
+    recovers and this one does not; guessing at them from bounding boxes alone
+    would invent structure that is not there.
     """
     text_items = [i for i in items if i['kind'] == 'text']
     heights = sorted(i['box'][3] - i['box'][1] for i in text_items)

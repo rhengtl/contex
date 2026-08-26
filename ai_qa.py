@@ -65,7 +65,7 @@ def _bool_env(name, default=True):
 
 
 def enabled():
-    """QA runs when a provider is configured and it has not been switched off."""
+    """AI conversion runs when a provider is configured and is switched on."""
     return _bool_env('AI_QA_ENABLED', True) and llm_providers.is_configured()
 
 
@@ -87,7 +87,7 @@ def provider_info():
 
 
 # ---------------------------------------------------------------------------
-# Showing the original document to the reviewer
+# Showing the original document to the model
 # ---------------------------------------------------------------------------
 
 def _prepare_image(file_bytes, extension):
@@ -143,10 +143,11 @@ def _prepare_pdf(file_bytes, max_pages):
 
 def source_part(file_bytes, filename):
     """
-    Build the content part that shows the reviewer the original upload.
+    Build the content part that shows the model the original upload.
 
     Returns None when the file cannot be presented (unknown type, unreadable,
-    too large) - the caller then skips QA rather than failing the conversion.
+    too large) - the caller then falls back to the local converters rather
+    than failing the conversion.
     """
     if not file_bytes:
         return None
@@ -206,7 +207,7 @@ def fenced_latex(text):
     return None
 def _validate_and_repair(convo, tex, calls_left, report):
     """
-    Check the reviewed document and give the model one chance to fix it.
+    Check the converted document and give the model one chance to fix it.
 
     Bounded deliberately: the point of this layer is fidelity, not chasing a
     compiler. If it still does not validate we keep the text anyway and say so.
@@ -410,14 +411,12 @@ def ask_first_usable(system, role, parts, rotation=None):
     return convo, reply, rotation.provider
 
 
-def _blank_result(tex, status, message, equations=None, summary=None):
+def _blank_result(tex, status, message):
     return {
         'tex': tex,
         'status': status,
         'message': message,
         'findings': [],
-        'equations': equations or [],
-        'summary': summary or {},
         'compile': {'attempted': False, 'ok': False, 'engine': None,
                     'errors': '', 'missing_packages': [], 'reason': None},
         'usage': {'input': 0, 'output': 0, 'cache_read': 0, 'cache_write': 0},
@@ -592,7 +591,7 @@ def convert_page(file_bytes, filename, validate=True, outline=None,
 
     return {
         'tex': tex, 'status': 'corrected', 'message': '',
-        'findings': report, 'equations': [], 'summary': {},
+        'findings': report,
         'compile': compile_result, 'usage': convo.usage,
         'model': convo.model, 'provider': provider.name,
     }

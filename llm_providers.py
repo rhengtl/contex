@@ -14,11 +14,11 @@ Two backends ship:
                Google's models (see the disclosure in the upload UI) and its
                daily request limits are unpublished.
   anthropic  - Claude. No free tier, so it is opt-in, but it is the strongest
-               reviewer available and doubles as a quality ceiling to measure
+               reader available and doubles as a quality ceiling to measure
                the free models against.
 
-Both sit behind one interface so the QA layer can be pointed at either without
-touching the pipelines, and so the two can be compared on the same benchmark.
+Both sit behind one interface so the pipeline can be pointed at either without
+touching it, and so the two can be compared on the same benchmark.
 """
 
 import os
