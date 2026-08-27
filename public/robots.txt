@@ -1,0 +1,12 @@
+# ConTeX. Every useful page is behind a conversion the crawler cannot perform,
+# and the result routes are session-scoped, so there is nothing here to index
+# beyond the entry pages.
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /signup
+Disallow: /convert
+Disallow: /preview
+Disallow: /history
+Disallow: /download-converted-tex
+Disallow: /api/

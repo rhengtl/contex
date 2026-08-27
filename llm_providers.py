@@ -454,12 +454,30 @@ _GEMINI_CLIENTS = {}
 _GEMINI_CLIENTS_LOCK = threading.Lock()
 
 
+#: How long one model call may take before it is abandoned, in seconds.
+#:
+#: There was no timeout at all, which meant a connection that stalled rather
+#: than failed held a gunicorn worker until the platform killed it. Under a
+#: small worker count that is the whole service, taken down by one bad socket.
+#:
+#: Generous, because the failure this guards against is a hang, not slowness:
+#: a page of dense mathematics with thinking enabled can legitimately take
+#: most of a minute, and cutting a real answer short would trade an outage for
+#: a worse conversion. The retry logic sits above this and still applies.
+AI_REQUEST_TIMEOUT = _int_env('AI_QA_REQUEST_TIMEOUT', 180)
+
+
 def _gemini_client(genai, api_key):
     """The shared client for this key, building it the first time."""
+    from google.genai import types
     with _GEMINI_CLIENTS_LOCK:
         client = _GEMINI_CLIENTS.get(api_key)
         if client is None:
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(
+                api_key=api_key,
+                # The SDK counts this one in milliseconds.
+                http_options=types.HttpOptions(
+                    timeout=AI_REQUEST_TIMEOUT * 1000))
             _GEMINI_CLIENTS[api_key] = client
         return client
 
@@ -727,8 +745,12 @@ class AnthropicProvider(Provider):
             raise LlmError(
                 "AI LaTeX conversion is not configured on this server "
                 "(ANTHROPIC_API_KEY is not set).")
+        # Same reasoning as the Gemini client: a stalled socket must not be
+        # able to hold a worker open indefinitely. This SDK counts in seconds.
         return _AnthropicConversation(self, model or self.default_model(role),
-                                      system, anthropic.Anthropic(),
+                                      system,
+                                      anthropic.Anthropic(
+                                          timeout=AI_REQUEST_TIMEOUT),
                                       thinking or self.default_thinking(role),
                                       attempts)
 

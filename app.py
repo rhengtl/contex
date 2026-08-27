@@ -17,9 +17,15 @@ import gzip
 import hashlib
 import io
 import os
+import secrets
+import threading
+import time
+from collections import deque
+from datetime import timedelta
 
 from flask import (Flask, jsonify, request, render_template, redirect,
                    url_for, send_file, session)
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -33,11 +39,80 @@ import tex_store
 # Load environment variables from .env file
 load_dotenv()
 
+
+def _flag(name, default=False):
+    """Read a boolean setting. Anything unset falls back to `default`."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# Debug is OFF unless something asks for it. It used to default to True, which
+# meant a deployment that simply forgot to set FLASK_DEBUG shipped the Werkzeug
+# debugger - an interactive Python console on a public URL.
+DEBUG = _flag('FLASK_DEBUG', False)
+
+# Everything that is not a debug run is treated as production. Keying it off
+# the existing switch rather than a new variable means a local .env that
+# already says FLASK_DEBUG=True keeps behaving exactly as it does now, while a
+# host that sets nothing gets the safe behaviour rather than the convenient one.
+IS_PRODUCTION = not DEBUG
+
 # Initialize Flask app
 app = Flask(__name__)
-# ---------------------------------------------------------
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')  # Required for session
-# ---------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# The session secret
+# ---------------------------------------------------------------------------
+# The session cookie is what carries the signed-in user's uid (see
+# current_user_uid), and Flask's cookie is signed, not encrypted. Whoever knows
+# this key can mint a cookie for any account. It therefore has no usable
+# default: in production a missing key is a hard failure, because the previous
+# fallback of 'supersecretkey' is public knowledge in every copy of this
+# source and would have made every account forgeable.
+_secret = os.getenv('FLASK_SECRET_KEY')
+if not _secret:
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "FLASK_SECRET_KEY is not set. It signs the session cookie that "
+            "carries the signed-in user's id, so without one of your own "
+            "anyone could forge a session for any account. Generate one with: "
+            "python -c \"import secrets; print(secrets.token_hex(32))\"")
+    # A debug run gets a throwaway key so `python app.py` still starts. It
+    # changes on every restart, so sessions do not survive one - which is the
+    # correct nuisance: it is a reminder to set a real key, not a default.
+    _secret = secrets.token_hex(32)
+    print("WARNING: FLASK_SECRET_KEY is not set. Using a random key for this "
+          "debug run; sessions will not survive a restart.")
+app.secret_key = _secret
+
+app.config.update(
+    # Never readable from JavaScript: an XSS bug should not also be a session
+    # theft. (Flask's default, made explicit so it cannot be lost silently.)
+    SESSION_COOKIE_HTTPONLY=True,
+    # Lax is what stops a cross-site form from posting to /convert, /login or
+    # /accept-terms with the visitor's cookie attached. The app has no
+    # cross-site POST of its own - the Google sign-in popup hands its ID token
+    # to a same-site form - so this costs nothing and removes the CSRF class.
+    SESSION_COOKIE_SAMESITE='Lax',
+    # Only sent over HTTPS in production. Off in debug so http://localhost
+    # still works.
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    # "Remember me" is a month, not Flask's default 31 days of silence about
+    # what it is. Stated here so the answer is in one place.
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+# Behind Firebase Hosting -> Cloud Run (or any other reverse proxy) the request
+# reaches this process over plain HTTP with the real scheme, host and client
+# address in X-Forwarded-* headers. Without this, url_for(_external=True)
+# builds http:// links and the rate limiter sees every request as coming from
+# the proxy. Only ever trust these headers when something is actually in front
+# of the app: on a directly-exposed server a client can send them itself.
+if _flag('TRUST_PROXY', IS_PRODUCTION):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')  # Optional: if you want to save uploads
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Create upload folder if it doesn't exist
 
@@ -131,6 +206,144 @@ def compress_response(response):
     response.headers['Content-Length'] = str(len(packed))
     return response
 
+
+# ---------------------------------------------------------------------------
+# Security headers
+# ---------------------------------------------------------------------------
+
+# The Firebase Auth popup runs on the project's auth domain, and the browser
+# SDK is loaded from gstatic. Both have to be named explicitly, because the
+# policy below is default-deny.
+_AUTH_DOMAIN = os.getenv('FIREBASE_AUTH_DOMAIN', '')
+_FIREBASE_ORIGINS = ' '.join(filter(None, [
+    'https://www.gstatic.com',                    # the browser SDK itself
+    'https://apis.google.com',                    # the sign-in iframe
+    f'https://{_AUTH_DOMAIN}' if _AUTH_DOMAIN else '',
+]))
+
+# What the pages actually need, and nothing else.
+#
+# 'unsafe-inline' in script-src is the one weakness here and it is not an
+# oversight: the templates use inline onclick= handlers, which no nonce or hash
+# can cover - only 'unsafe-hashes' or moving them to addEventListener. Removing
+# it is a real piece of work on the front end rather than a header change, so
+# it is written down in DEPLOYMENT.md instead of quietly claimed.
+_CSP = "; ".join([
+    "default-src 'self'",
+    f"script-src 'self' 'unsafe-inline' {_FIREBASE_ORIGINS}".rstrip(),
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    # blob: for the camera preview, the canvas export and the opened PDF;
+    # data: for the small inline marks.
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    # The preview iframe points at this app; the sign-in flow opens Google's.
+    f"frame-src 'self' blob: {_FIREBASE_ORIGINS}".rstrip(),
+    # Where fetch() may go: this app, and the Firebase Auth endpoints the
+    # browser SDK calls directly.
+    "connect-src 'self' https://identitytoolkit.googleapis.com "
+    "https://securetoken.googleapis.com https://www.googleapis.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+
+
+@app.after_request
+def security_headers(response):
+    """
+    The headers a browser needs in order to defend this app for us.
+
+    Set on every response rather than on the HTML routes only: a policy that
+    applies to some responses is a policy with a gap in it, and the cost on a
+    PNG is a few dozen bytes.
+    """
+    headers = response.headers
+    headers.setdefault('Content-Security-Policy', _CSP)
+    # Never let a browser guess that a .tex or a stored page image is HTML.
+    headers.setdefault('X-Content-Type-Options', 'nosniff')
+    # frame-ancestors above is the real control; this is for older browsers.
+    headers.setdefault('X-Frame-Options', 'DENY')
+    # A converted document's URL should not travel to another site.
+    headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    # The app asks for the camera itself and needs nothing else.
+    headers.setdefault('Permissions-Policy',
+                       'camera=(self), microphone=(), geolocation=(), '
+                       'payment=(), usb=(), interest-cohort=()')
+    if IS_PRODUCTION:
+        # Only meaningful over HTTPS, and only safe once the deployment really
+        # is HTTPS-only - which Firebase Hosting and Cloud Run both are.
+        headers.setdefault('Strict-Transport-Security',
+                           'max-age=31536000; includeSubDomains')
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+#
+# SCOPE, honestly stated: this counts requests inside ONE process. Under
+# gunicorn with N workers a caller effectively gets N times the allowance, and
+# on a platform that runs several instances it multiplies again. It is a brake
+# on the obvious abuse - a script hammering /convert, which costs an API call,
+# a LaTeX compile and a rasterise every time - not a defence against a
+# distributed attacker. A shared counter (Redis, or Cloud Armor in front of
+# the service) is what that would take; see DEPLOYMENT.md.
+#
+# It is still worth having: the expensive route is open to anonymous callers by
+# design, and without any limit one loop can spend the whole Gemini free tier
+# and pin every worker on pdflatex.
+
+_RATE_BUCKETS = {}
+_RATE_LOCK = threading.Lock()
+
+# (requests, seconds) per caller, per route group. Set either to 0 to turn
+# that group's limit off - which the test suite does, because it runs far more
+# conversions in five minutes than any person would.
+_RATE_LIMITS = {
+    # A conversion is the expensive one: a model call plus a compile. Thirty
+    # in five minutes is well above anyone working through a stack of pages by
+    # hand and well below what a script would want.
+    'convert': (int(os.getenv('RATE_LIMIT_CONVERT', '30')), 300),
+    # Firebase throttles password attempts itself; this stops the traffic
+    # before it becomes our bill and their quota.
+    'auth': (int(os.getenv('RATE_LIMIT_AUTH', '20')), 300),
+}
+
+
+def _caller():
+    """Best available identity for rate limiting: the client address."""
+    return request.remote_addr or 'unknown'
+
+
+def _rate_limited(group):
+    """
+    True when this caller has used up `group`'s allowance.
+
+    A sliding window of timestamps rather than a counter with a reset, so a
+    caller cannot get a full fresh allowance by waiting for a tick boundary.
+    """
+    allowance, window = _RATE_LIMITS[group]
+    if allowance <= 0:
+        return False
+    now = time.monotonic()
+    key = (group, _caller())
+    with _RATE_LOCK:
+        # Evict callers who have gone quiet, so this cannot grow without bound.
+        if len(_RATE_BUCKETS) > 4096:
+            for stale in [k for k, v in _RATE_BUCKETS.items()
+                          if not v or now - v[-1] > window]:
+                _RATE_BUCKETS.pop(stale, None)
+        seen = _RATE_BUCKETS.setdefault(key, deque())
+        while seen and now - seen[0] > window:
+            seen.popleft()
+        if len(seen) >= allowance:
+            return True
+        seen.append(now)
+        return False
+
+
 # Bump this whenever the terms or privacy policy change materially. Everyone -
 # including users who already accepted an older version - is then asked again.
 # It is deliberately not a date alone: the version is what was agreed to.
@@ -165,6 +378,51 @@ def upload_too_large(_error):
                                 f"{_MAX_UPLOAD_MB} MB.")
     return redirect(url_for('home') + '#convert'), 302
 
+
+def _error_page(code, heading, message):
+    """
+    One error, rendered in the application's own shell.
+
+    Nothing about the cause reaches the visitor - not a stack frame, not a
+    path, not a configuration value. Flask's built-in pages are already safe
+    in that respect; this exists so a wrong turn does not also look like a
+    different, broken website, and so there is a way back rather than only the
+    browser's back button.
+
+    Falls back to plain text if even the shell cannot render, which is the one
+    case where a template is the least trustworthy thing available.
+    """
+    try:
+        return render_template('error.html', code=code, heading=heading,
+                               message=message), code
+    except Exception:
+        return f'{code} {heading}. {message}', code
+
+
+@app.errorhandler(404)
+def not_found(_error):
+    return _error_page(
+        404, 'There is nothing here',
+        'That address does not match any page in ConTeX. It may have been a '
+        'link to a result that has since expired.')
+
+
+@app.errorhandler(429)
+def too_many(_error):
+    return _error_page(
+        429, 'Too many requests',
+        'Please wait a few minutes and try again.')
+
+
+@app.errorhandler(500)
+def server_error(_error):
+    # Werkzeug has already written the traceback to the log by this point, so
+    # nothing is lost by telling the visitor as little as this does.
+    return _error_page(
+        500, 'Something went wrong on our side',
+        'The conversion you were running was not saved. Nothing about your '
+        'document was kept. Please try again.')
+
 # NOTE: conversion does not require a login. Every core feature of this app is
 # usable by guests; signing in only adds persistent history.
 
@@ -179,6 +437,20 @@ def current_user_uid():
     """
     user = session.get('user')
     return user.get('uid') if isinstance(user, dict) else None
+
+
+def _start_session(uid, email, display_name, remember=False):
+    """
+    Begin a signed-in session, discarding whatever the visitor had before.
+
+    Everything from the previous session goes - the generated-result tokens
+    above all. On a shared computer the person signing in is not necessarily
+    the person who was just using it, and a token left in the cookie would let
+    them download the document that person converted.
+    """
+    session.clear()
+    session['user'] = {'uid': uid, 'email': email, 'displayName': display_name}
+    session.permanent = bool(remember)
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +703,12 @@ def convert_route():
     """
     if request.method != 'POST':
         return redirect(url_for('home'))
+
+    if _rate_limited('convert'):
+        session['convert_error'] = (
+            'That is a lot of conversions in a short time. Please wait a few '
+            'minutes and try again.')
+        return redirect(url_for('home') + '#convert')
 
     if not terms_accepted():
         session['convert_error'] = (
@@ -820,7 +1098,19 @@ def login():
     if 'user' in session:
         return redirect(url_for('home'))
 
+    def page(**context):
+        # Every render needs the browser Firebase config, including the ones
+        # carrying an error - otherwise a mistyped password makes the Google
+        # sign-in button vanish from the page it was just on.
+        return render_template('auth/login.html',
+                               firebase_config=_browser_firebase_config(),
+                               **context)
+
     if request.method == 'POST':
+        if _rate_limited('auth'):
+            return page(error='Too many sign-in attempts. Please wait a few '
+                              'minutes and try again.'), 429
+
         # Check if this is a Firebase ID token login (from Google/Facebook)
         id_token = request.form.get('idToken')
 
@@ -837,15 +1127,11 @@ def login():
                     firebase_config.upsert_user_profile(
                         user['uid'], user['email'], user['displayName'])
 
-                    session['user'] = {
-                        'uid': user['uid'],
-                        'email': user['email'],
-                        'displayName': user['displayName']
-                    }
-                    session.permanent = True
+                    _start_session(user['uid'], user['email'],
+                                   user['displayName'], remember=True)
                     return redirect(url_for('home'))
 
-            return render_template('auth/login.html', error="Authentication failed")
+            return page(error="Authentication failed"), 401
 
         # Regular email/password login
         email = request.form.get('email')
@@ -853,26 +1139,20 @@ def login():
         remember = request.form.get('remember')
 
         if not email or not password:
-            return render_template('auth/login.html', error="Please provide email and password")
+            return page(error="Please provide email and password"), 400
 
         # Verify user with Firebase
         result = firebase_config.verify_user(email, password)
 
         if result['success']:
             user = result['user']
-            # Store user info in session
-            session['user'] = {
-                'uid': user.uid,
-                'email': user.email,
-                'displayName': user.display_name
-            }
-            session.permanent = bool(remember)
+            _start_session(user.uid, user.email, user.display_name,
+                           remember=bool(remember))
             return redirect(url_for('home'))
-        else:
-            return render_template('auth/login.html', error=result.get('error', 'Invalid credentials'))
 
-    return render_template('auth/login.html',
-                           firebase_config=_browser_firebase_config())
+        return page(error=result.get('error', 'Invalid credentials')), 401
+
+    return page()
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -922,16 +1202,26 @@ def signup():
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
+        # Same allowance as signing in. Without it this form is a free way to
+        # send mail to any address, over and over.
+        if _rate_limited('auth'):
+            return render_template(
+                'auth/forgot_password.html',
+                error='Too many requests. Please wait a few minutes and try '
+                      'again.'), 429
+
         email = request.form.get('email')
 
         if not email:
             return render_template('auth/forgot_password.html', error="Please provide your email address")
 
-        # Send password reset email via Firebase
+        # Firebase composes and sends the email itself; nothing here handles
+        # the link, and nothing writes it to a log.
         result = firebase_config.send_password_reset(email)
 
         if result['success']:
-            # For security, always show success message
+            # Deliberately the same answer whether or not the address is
+            # registered, so this form cannot be used to find out who is.
             return render_template('auth/forgot_password.html',
                                  success="If an account exists with that email, you will receive a password reset link.")
         else:
@@ -941,9 +1231,16 @@ def forgot_password():
     return render_template('auth/forgot_password.html')
 
 
-@app.route('/logout')
+@app.route('/logout', methods=['GET', 'POST'])
 def logout():
-    """Logout user and clear session"""
+    """
+    Sign out and drop the whole session.
+
+    GET is kept because the header links to it and a link is what people
+    expect; SameSite=Lax already stops another site from triggering it with
+    the visitor's cookie, which is the only thing a cross-site logout could
+    achieve here.
+    """
     session.clear()
     return redirect(url_for('login'))
 
@@ -953,7 +1250,27 @@ def index():
     return redirect(url_for('home'))
 
 
+@app.route('/healthz')
+def healthz():
+    """
+    Liveness for the platform's health check.
+
+    Deliberately shallow: it says this process can serve a request, and
+    nothing about Firestore or the model. A health check that calls out to a
+    dependency turns that dependency's bad minute into a restart loop, which
+    is worse than serving the degraded behaviour the app already handles.
+    """
+    return jsonify({'ok': True}), 200
+
+
 if __name__ == "__main__":
+    # Development entry point only. In production the app is served by
+    # gunicorn (see the Dockerfile), which imports `app` from this module and
+    # never runs this block - so the debugger cannot be switched on by
+    # accident there.
     port = int(os.getenv("PORT", 5000))
-    debug_mode = os.getenv("FLASK_DEBUG", "True").lower() == "true"
-    app.run(debug=debug_mode, host="0.0.0.0", port=port)
+    # Loopback by default. This used to bind 0.0.0.0, which with the debugger
+    # on put an interactive Python console on every network the machine was
+    # attached to. Set HOST=0.0.0.0 when you actually want to reach the dev
+    # server from a phone on the same wifi.
+    app.run(debug=DEBUG, host=os.getenv("HOST", "127.0.0.1"), port=port)

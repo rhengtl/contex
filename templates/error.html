@@ -1,0 +1,31 @@
+{# ---------------------------------------------------------------------------
+   Every unhandled error the visitor is allowed to see.
+
+   Deliberately says almost nothing about what went wrong. The detail belongs
+   in the server log, where it is useful and where it cannot leak a filesystem
+   path, a stack frame or a configuration value to whoever tripped it.
+
+   What it does give is a way out: the workspace is one click away, and a
+   conversion that failed can simply be run again.
+   --------------------------------------------------------------------------- #}
+{% extends "base.html" %}
+
+{% block title %}{{ heading }}{% endblock %}
+{% block description %}{{ message }}{% endblock %}
+
+{% block main %}
+<div class="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 py-16 text-center">
+    <p class="font-display text-6xl text-paper-400" aria-hidden="true">{{ code }}</p>
+
+    <h1 class="mt-4 font-display text-2xl text-ink-900">{{ heading }}</h1>
+
+    <p class="mt-3 text-ink-700">{{ message }}</p>
+
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="{{ url_for('home') }}" class="btn-primary">Back to the workspace</a>
+        {% if is_authenticated %}
+        <a href="{{ url_for('history_page') }}" class="btn-quiet">Past conversions</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

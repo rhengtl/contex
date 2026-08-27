@@ -85,7 +85,10 @@ function revealSubmit() {
 function hidePreview(id) {
     const preview = id && document.getElementById(id);
     if (preview) {
-        preview.src = '';
+        // removeAttribute, not src = ''. An empty src resolves to the
+        // current page, so clearing a preview that way makes the browser
+        // fetch the whole document again in order to fail to decode it.
+        preview.removeAttribute('src');
         preview.classList.add('hidden');
         preview.style.display = 'none';
     }

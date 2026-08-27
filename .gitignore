@@ -8,6 +8,7 @@
 # Firebase project config (safe to commit - contains no secrets)
 !firebase.json
 !firestore.indexes.json
+!database.rules.json
 
 # Python
 __pycache__/
@@ -64,3 +65,9 @@ node_modules/
 
 # Logs
 *.log
+
+# Firebase Hosting's public root. It deliberately holds almost nothing - every
+# dynamic route and every static asset is served by the Cloud Run service, so
+# there is no build output here and no chance of publishing the source tree.
+public/*
+!public/robots.txt

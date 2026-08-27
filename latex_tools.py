@@ -253,8 +253,104 @@ def static_validate(tex):
 
 
 # ---------------------------------------------------------------------------
-# Compilation
+# Compilation: keeping a hostile document inside its own directory
 # ---------------------------------------------------------------------------
+#
+# THE THREAT. TeX is a programming language, and this app compiles LaTeX that
+# ultimately came from a stranger. Nobody uploads a .tex file - but a model
+# transcribes what it is shown, so an image of the line
+#
+#     \input{/etc/passwd}
+#
+# becomes that line in the generated document, and the compiled preview then
+# shows the file's contents back to whoever uploaded the image. The same trick
+# with \write reaches the filesystem, and \write18 reaches the shell.
+#
+# WHAT ALREADY HELPS. The engine is invoked as an argv list, never through a
+# shell, in a fresh temporary directory that is deleted afterwards, with
+# -no-shell-escape and a timeout. That closes command execution and unbounded
+# runtime. It does NOT close file reading: -no-shell-escape says nothing about
+# \input, and kpathsea ships openin_any=a (read anything) on most TeX Live
+# builds.
+#
+# WHAT IS ADDED HERE, in two layers because neither is sufficient alone:
+#
+#   1. kpathsea is put in paranoid mode through the environment. This is the
+#      real control on TeX Live, which is what a Linux deployment runs.
+#      MiKTeX - the usual Windows install, and what this project develops
+#      against - ignores these variables and is configured through its own
+#      ini file, so on Windows layer 1 does nothing.
+#
+#   2. The source is refused if it contains a primitive that reads, writes or
+#      executes. Portable, engine-independent, and it catches MiKTeX too. It
+#      is a blunt instrument, which is affordable precisely here: this app
+#      generates self-contained documents, so a legitimate result never needs
+#      any of these. Compilation is optional anyway - refusing costs the
+#      preview, never the .tex, which still downloads and copies intact.
+
+#: kpathsea settings for the compile subprocess (TeX Live; MiKTeX ignores them).
+#: 'p' is paranoid: no dotfiles, no absolute paths, nothing above the working
+#: directory. shell_escape=f is belt to -no-shell-escape's braces.
+_SANDBOX_ENV = {
+    'openin_any': 'p',
+    'openout_any': 'p',
+    'shell_escape': 'f',
+}
+
+#: Primitives that touch the filesystem or the shell. \read and \write are
+#: matched as whole control words so that \writes or \readline in a package
+#: name is not caught by accident; \write18 is listed first because it is the
+#: shell one and deserves to be named in the message.
+_UNSAFE_CONSTRUCTS = (
+    (r'\\write\s*18\b', r'\write18 (runs shell commands)'),
+    (r'\\(?:immediate\s*)?\\?openout\b', r'\openout (writes files)'),
+    (r'\\openin\b', r'\openin (reads files)'),
+    (r'\\read(?![a-zA-Z])', r'\read (reads files)'),
+    (r'\\write(?![a-zA-Z0-9])', r'\write (writes files)'),
+    (r'\\input\b', r'\input (reads another file)'),
+    (r'\\include\b', r'\include (reads another file)'),
+    (r'\\(?:Input|)IfFileExists\b', r'\IfFileExists (probes the filesystem)'),
+    (r'\\directlua\b', r'\directlua (runs Lua)'),
+    (r'\\latelua\b', r'\latelua (runs Lua)'),
+    (r'\\ShellEscape\b', r'\ShellEscape (runs shell commands)'),
+    (r'\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bshellesc\b',
+     r'the shellesc package (runs shell commands)'),
+    (r'\\catcode\s*`?\s*\\?\\\s*=', r'\catcode on the escape character'),
+)
+
+_UNSAFE_RE = [(re.compile(pattern), label)
+              for pattern, label in _UNSAFE_CONSTRUCTS]
+
+
+def unsafe_constructs(tex):
+    """
+    Names of the file/shell primitives in `tex`, or an empty list.
+
+    Comments and verbatim bodies are stripped first, so a document that merely
+    *shows* \\input as typeset example text is not refused for it - only one
+    that would actually execute it.
+    """
+    if not tex:
+        return []
+    code = _strip_comments_and_verbatim(tex)
+    found = []
+    for pattern, label in _UNSAFE_RE:
+        if pattern.search(code) and label not in found:
+            found.append(label)
+    return found
+
+
+# Escape hatch for an operator who genuinely needs \input to work. Off by
+# default: the safe setting has to be the one you get by doing nothing.
+_ALLOW_UNSAFE = os.getenv('LATEX_ALLOW_FILE_ACCESS', 'false').lower() == 'true'
+
+
+def _compile_env():
+    """The environment for the engine: ours, plus the kpathsea restrictions."""
+    env = dict(os.environ)
+    env.update(_SANDBOX_ENV)
+    return env
+
 
 _MIKTEX_CACHE = {}
 
@@ -369,6 +465,19 @@ def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
                 'missing_packages': [], 'pdf': None, 'source_sha': None,
                 'reason': 'No LaTeX engine found on this server.'}
 
+    # Refuse before the engine ever sees it. attempted=False because nothing
+    # was run - this is the same shape as "no engine installed", and callers
+    # already treat that as "no preview, the .tex is fine".
+    unsafe = [] if _ALLOW_UNSAFE else unsafe_constructs(tex)
+    if unsafe:
+        return {'attempted': False, 'ok': False, 'engine': engine_name(engine),
+                'errors': '', 'missing_packages': [], 'pdf': None,
+                'source_sha': None,
+                'reason': 'This document asks LaTeX to reach outside itself ('
+                          + ', '.join(unsafe) + '), so it was not compiled. '
+                          'The .tex file is unchanged and can still be '
+                          'downloaded and compiled wherever you trust it.'}
+
     timeout = timeout or _COMPILE_TIMEOUT
     workdir = tempfile.mkdtemp(prefix='contex_tex_')
     try:
@@ -380,7 +489,11 @@ def compile_tex(tex, engine=None, timeout=None, want_pdf=False):
             proc = subprocess.run(
                 _engine_argv(engine, tex_name, workdir),
                 cwd=workdir, capture_output=True, text=True,
-                timeout=timeout, errors='replace')
+                timeout=timeout, errors='replace', env=_compile_env(),
+                # Nothing to type at: an engine that still finds a way to
+                # prompt gets EOF and stops, instead of holding the request
+                # open until the timeout.
+                stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return {'attempted': True, 'ok': False, 'engine': engine_name(engine),
                     'errors': '', 'missing_packages': [], 'pdf': None,

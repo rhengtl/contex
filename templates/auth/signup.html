@@ -18,11 +18,13 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script>
-        firebase.initializeApp({
-            apiKey: "{{ firebase_config.apiKey }}",
-            authDomain: "{{ firebase_config.authDomain }}",
-            projectId: "{{ firebase_config.projectId }}"
-        });
+        // tojson, not a quoted interpolation. Jinja's autoescaping is for
+        // HTML, and these values sit inside a <script> where HTML escaping is
+        // the wrong escaping - a value carrying a quote or a </script> would
+        // break out of the string. These three are public by design (they
+        // identify the project; Firebase rules are what protect the data),
+        // but "public" is not the same as "safe to paste unescaped".
+        firebase.initializeApp({{ firebase_config | tojson }});
 
         // Google creates the account on first use, so this is a sign-up path
         // as much as a sign-in one. The token goes to /login, which verifies

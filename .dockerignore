@@ -1,0 +1,77 @@
+# What must never enter the image.
+#
+# The Dockerfile ends with `COPY . .`, so this file is the only thing standing
+# between the build context and a container that carries the operator's
+# credentials. Two of these matter more than the rest:
+#
+#   .env      the Gemini key, the Flask session secret, the Firebase web key
+#   *.json    the Firebase service account private key lives in one of these,
+#             and it grants full administrative access to the project
+#
+# A container image is not a secret. Anyone who can pull it can read every
+# layer, including files a later layer deleted.
+
+.env
+.env.*
+!.env.example
+
+# Service account keys and everything else that ends in .json. The two the
+# application genuinely reads at runtime are allowed back in below.
+*.json
+!firebase.json
+!firestore.indexes.json
+!database.rules.json
+
+# Local environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Version control and editor state
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+
+# The benchmark corpus: hundreds of generated pages and their manifests. Used
+# to measure conversion quality during development, never at runtime.
+bench/
+
+# The logo masters and the script that derives the served assets. The derived
+# assets in static/img/ are what the pages reference and they do ship; these
+# are the multi-megabyte originals.
+brand/
+
+# Generated results from local runs. The container makes its own in /tmp.
+uploads/
+public/
+
+# Node, used only to build static/css/app.css. The built stylesheet is
+# committed and is what ships.
+node_modules/
+tailwind.config.js
+build_css.py
+static/css/tailwind.src.css
+
+# Documentation and tests. Keeping them out is about image size and about not
+# publishing internal notes, not about them being unimportant.
+*.md
+test_ai_qa.py
+
+# Local logs and OS clutter
+*.log
+.DS_Store
+Thumbs.db
+
+# Development tooling that must never enter the image.
+package.json
+package-lock.json
+firestore.rules.test.mjs

@@ -475,7 +475,8 @@ Then open <http://127.0.0.1:5000/>.
 ### 4. Verify
 
 ```powershell
-.venv\Scripts\python.exe test_ai_qa.py    # 127 offline checks, no API key needed
+.venv\Scripts\python.exe test_ai_qa.py    # 177 offline checks, no API key needed
+npm install; npm run test:rules            # 28 Firestore rules checks (emulator)
 ```
 
 ---
@@ -658,7 +659,10 @@ Defaults shown; full list in `.env.example`.
 | `build_css.py` | Builds `static/css/app.css`. Run after changing any class. |
 | `brand/` | The logo masters and the script that derives the served assets. |
 | `bench/score_qa.py` | Before/after scoring for the conversion layer. |
-| `test_ai_qa.py` | 159-check verification suite (no API key needed). |
+| `test_ai_qa.py` | 177-check verification suite (no API key needed). |
+| `firestore.rules.test.mjs` | 28 rules checks against the Firebase emulator. |
+| `Dockerfile` | The production image: Flask + TeX Live + Tesseract + Poppler. |
+| `DEPLOYMENT.md` | How this is deployed, and what is still outstanding. |
 
 ---
 

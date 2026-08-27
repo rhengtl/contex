@@ -16,11 +16,13 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script>
-        firebase.initializeApp({
-            apiKey: "{{ firebase_config.apiKey }}",
-            authDomain: "{{ firebase_config.authDomain }}",
-            projectId: "{{ firebase_config.projectId }}"
-        });
+        // tojson, not a quoted interpolation. Jinja's autoescaping is for
+        // HTML, and these values sit inside a <script> where HTML escaping is
+        // the wrong escaping - a value carrying a quote or a </script> would
+        // break out of the string. These three are public by design (they
+        // identify the project; Firebase rules are what protect the data),
+        // but "public" is not the same as "safe to paste unescaped".
+        firebase.initializeApp({{ firebase_config | tojson }});
 
         // The ID token is verified server-side before any session is issued;
         // this only hands it over.
@@ -81,8 +83,12 @@
                 <div>
                     <div class="mb-1.5 flex items-baseline justify-between gap-3">
                         <label for="password" class="field-label mb-0">Password</label>
+                        {# py/-my rather than a taller line: the negative
+                           margin keeps the baseline aligned with the label
+                           while giving the link a 32px tall hit area, which
+                           is what WCAG 2.5.8 asks for. #}
                         <a href="{{ url_for('forgot_password') }}"
-                           class="link-quiet text-[0.8125rem]">Forgot password?</a>
+                           class="link-quiet -my-1.5 py-1.5 text-[0.8125rem]">Forgot password?</a>
                     </div>
                     <input type="password" id="password" name="password" required
                            autocomplete="current-password" class="field"

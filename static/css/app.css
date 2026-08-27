@@ -2181,6 +2181,10 @@ fieldset:disabled .dropzone:hover {
   max-height: 75vh;
 }
 
+.min-h-\[60vh\] {
+  min-height: 60vh;
+}
+
 .min-h-\[calc\(100vh-16rem\)\] {
   min-height: calc(100vh - 16rem);
 }
@@ -2722,6 +2726,11 @@ fieldset:disabled .dropzone:hover {
   padding-bottom: 3rem;
 }
 
+.py-16 {
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+}
+
 .py-2 {
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
@@ -2784,6 +2793,11 @@ fieldset:disabled .dropzone:hover {
 .text-3xl {
   font-size: 1.875rem;
   line-height: 2.25rem;
+}
+
+.text-6xl {
+  font-size: 3.75rem;
+  line-height: 1;
 }
 
 .text-\[0\.8125rem\] {

@@ -62,6 +62,11 @@ _accepted_terms = {}
 _SCRATCH = tempfile.mkdtemp(prefix='contex_test_')
 os.environ['UPLOAD_FOLDER'] = _SCRATCH
 os.environ['FLASK_SECRET_KEY'] = 'test-secret'
+# The suite converts far more in five minutes than a person ever would,
+# so the per-caller brake is off by default here and switched on
+# deliberately by the one test that is about it.
+os.environ.setdefault('RATE_LIMIT_CONVERT', '0')
+os.environ.setdefault('RATE_LIMIT_AUTH', '0')
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used')
 
 from PIL import Image  # noqa: E402
@@ -3246,6 +3251,492 @@ def _():
                                     'apple-touch-icon.png'))
     check(apple.mode == 'RGB',
           'the apple touch icon gained transparency - iOS masks it already')
+
+
+def read_source(relative):
+    """One of the project's own files, read from disk.
+
+    Several of the guards below are about what the source says rather than
+    about what it does at run time - a default that must not come back, a
+    header that must still be set, a log line that must stay deleted.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        *relative.split('/'))
+    with open(path, encoding='utf-8') as handle:
+        return handle.read()
+
+
+def read_code(relative):
+    """
+    The same file with its comments and docstrings removed.
+
+    Necessary because this project explains itself at length, and several of
+    the things these guards forbid are named in the comment that explains why
+    they were removed. Searching the raw text finds the explanation and
+    reports the bug as present again.
+    """
+    import ast
+    import io as _io
+    import tokenize
+
+    source = read_source(relative)
+
+    stripped = []
+    for token in tokenize.generate_tokens(_io.StringIO(source).readline):
+        if token.type == tokenize.COMMENT:
+            continue
+        stripped.append(token)
+    without_comments = tokenize.untokenize(stripped)
+
+    tree = ast.parse(without_comments)
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc:
+                docstrings.add(doc)
+
+    for doc in docstrings:
+        without_comments = without_comments.replace(doc, '')
+    return without_comments
+
+
+# ---------------------------------------------------------------------------
+# Production hardening
+# ---------------------------------------------------------------------------
+#
+# Everything below is about a deployed instance rather than about conversion
+# quality. It is in this suite because the failure mode of every one of them
+# is silence: nothing looks wrong on the page when the session secret is
+# guessable, when a header stops being sent, or when a hostile document is
+# handed to the LaTeX engine after all.
+
+
+@test('a hostile document never reaches the LaTeX engine')
+def _():
+    # Nobody uploads a .tex file, but the model transcribes what it is shown -
+    # so a photograph of the line \input{/etc/passwd} becomes that line in the
+    # generated document, and compiling it would print the file into the
+    # preview. Measured before this guard existed: a canary string from an
+    # unrelated file on disk did appear in the produced PDF.
+    attacks = {
+        'reading an absolute path': r'\input{/etc/passwd}',
+        'reading a relative one':   r'\input{../../secret.txt}',
+        'including a file':         r'\include{elsewhere}',
+        'running a shell command':  r'\immediate\write18{id}',
+        'a spaced write18':         r'\write 18{id}',
+        'opening a file to read':   r'\newread\f \openin\f=/etc/hosts',
+        'opening one to write':     r'\immediate\openout\x=/tmp/x',
+        'writing to a stream':      r'\immediate\write\x{payload}',
+        'running Lua':              r'\directlua{os.execute("id")}',
+        'probing the filesystem':   r'\IfFileExists{/etc/passwd}{a}{b}',
+    }
+    for label, body in attacks.items():
+        tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        found = latex_tools.unsafe_constructs(tex)
+        check(found, f'{label} was not recognised as unsafe')
+
+        result = latex_tools.compile_tex(tex, want_pdf=True)
+        check(not result['ok'], f'{label} compiled anyway')
+        check(result['pdf'] is None, f'{label} produced a PDF')
+        check('reach outside itself' in (result['reason'] or ''),
+              f'{label} was refused without saying why: {result["reason"]!r}')
+
+    # The preamble form, which reads as an ordinary package line.
+    shellesc = ('\\documentclass{article}\n\\usepackage{shellesc}\n'
+                '\\begin{document}x\\end{document}\n')
+    check(latex_tools.unsafe_constructs(shellesc),
+          'the shellesc package was not recognised')
+
+
+@test('an ordinary document is not mistaken for a hostile one')
+def _():
+    # The guard is blunt on purpose, so the thing to prove is that it is not
+    # blunt enough to refuse real output. These are the shapes this app's own
+    # pipeline produces, plus the two cases where the dangerous word appears
+    # as text rather than as an instruction.
+    fine = {
+        'prose and inline maths':
+            'The theorem states $a^2+b^2=c^2$.',
+        'a display':
+            '\\[ \\int_0^1 x \\, dx = \\frac{1}{2} \\]',
+        'an align environment':
+            '\\begin{align}\nx &= 1 \\\\\ny &= 2\n\\end{align}',
+        'a table':
+            '\\begin{tabular}{|c|c|}\\hline a & b \\\\\\hline\\end{tabular}',
+        'a section heading':
+            '\\section*{Introduction}\nSome text.',
+        'the word input inside a comment':
+            'Real text.\n% remember to \\input{notes} later',
+        'the word input shown verbatim':
+            '\\begin{verbatim}\n\\input{/etc/passwd}\n\\end{verbatim}',
+    }
+    for label, body in fine.items():
+        tex = ('\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n'
+               '\\usepackage{amsmath}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        found = latex_tools.unsafe_constructs(tex)
+        check(not found, f'{label} was refused: {found}')
+
+    # inputenc in particular: it contains the letters of \input and is in the
+    # preamble of nearly every document this app writes.
+    check(not latex_tools.unsafe_constructs(GOOD_TEX),
+          'the suite\'s own good document was refused')
+
+
+@test('the engine is told to stay inside its own directory')
+def _():
+    # Layer one of two. These are kpathsea settings, so they are what protects
+    # a Linux deployment; MiKTeX ignores them, which is exactly why the source
+    # guard above exists as well and why neither is described as sufficient.
+    env = latex_tools._compile_env()
+    check(env.get('openin_any') == 'p', 'reading is not restricted')
+    check(env.get('openout_any') == 'p', 'writing is not restricted')
+    check(env.get('shell_escape') == 'f', 'shell escape is not disabled')
+    check('PATH' in env, 'the engine lost the rest of its environment')
+
+    # And the flags on the command line, which is the part that works
+    # everywhere.
+    argv = latex_tools._engine_argv('pdflatex', 'document.tex', '/tmp/x')
+    check('-no-shell-escape' in argv, 'shell escape is not disabled on argv')
+    check('-interaction=nonstopmode' in argv, 'the engine could sit at a prompt')
+
+
+@test('an image cannot be a decompression bomb')
+def _():
+    # The 32 MB limit on the request body says nothing about the decoded size:
+    # a PNG of one flat colour is a few hundred kilobytes and can declare a
+    # canvas that needs gigabytes of RAM to expand.
+    check(Image.MAX_IMAGE_PIXELS, 'the pixel ceiling was removed entirely')
+    limit = Image.MAX_IMAGE_PIXELS
+
+    side = int((limit * 1.5) ** 0.5) + 1          # half again over the limit
+    buffer = io.BytesIO()
+    Image.new('L', (side, side), 255).save(buffer, format='PNG')
+    bomb = buffer.getvalue()
+    check(len(bomb) < 2 * 1024 * 1024,
+          'the fixture is not actually a bomb - it is large on disk too')
+
+    try:
+        opened = Image.open(io.BytesIO(bomb))
+        opened.load()
+    except Exception:
+        pass          # DecompressionBombWarning promoted to an error, or Error
+    else:
+        raise AssertionError(
+            f'a {side}x{side} image decoded despite a {limit} pixel ceiling')
+
+    # A real page must still open: a 300 DPI A4 scan is about 8.7 megapixels.
+    page = io.BytesIO()
+    Image.new('RGB', (2480, 3508), 'white').save(page, format='PNG')
+    scan = Image.open(io.BytesIO(page.getvalue()))
+    scan.load()
+    check(scan.size == (2480, 3508), 'an ordinary scan was refused')
+
+
+@test('the session secret has no usable default')
+def _():
+    # The cookie carries the signed-in uid and is signed, not encrypted, so
+    # whoever knows the key can mint one for any account. It used to fall back
+    # to 'supersecretkey', which is in every copy of the source.
+    code = read_code('app.py')
+    check('supersecretkey' not in code,
+          'the guessable default session key is back')
+    # A second argument to getenv IS a default, whatever it says.
+    check("getenv('FLASK_SECRET_KEY'," not in code,
+          'the session key has a fallback value again')
+    check("os.getenv('FLASK_SECRET_KEY')" in code,
+          'the session key no longer comes from the environment')
+
+    # In production a missing key must stop the process rather than pick one.
+    guard = code.split('_secret = os.getenv')[1].split('app.secret_key')[0]
+    check('IS_PRODUCTION' in guard and 'raise RuntimeError' in guard,
+          'a missing key no longer fails closed in production')
+
+
+@test('the debugger cannot be switched on by forgetting something')
+def _():
+    code = read_code('app.py')
+    # Both of these used to default the other way: debug on, and bound to
+    # every interface, which together put an interactive Python console on
+    # the network.
+    check("_flag('FLASK_DEBUG', False)" in code,
+          'debug no longer defaults to off')
+    check('host=os.getenv("HOST", "127.0.0.1")' in code,
+          'the development server binds every interface again')
+    check(flask_app.IS_PRODUCTION is not flask_app.DEBUG,
+          'production and debug are no longer opposites')
+
+
+@test('the session cookie is locked down')
+def _():
+    config = flask_app.app.config
+    check(config['SESSION_COOKIE_HTTPONLY'] is True,
+          'the session cookie is readable from JavaScript')
+    check(config['SESSION_COOKIE_SAMESITE'] == 'Lax',
+          'the session cookie would be sent on a cross-site POST, which is '
+          'what stops CSRF on /convert and /login')
+    # Secure follows the environment: on over HTTPS, off so that
+    # http://localhost still works while developing.
+    check(config['SESSION_COOKIE_SECURE'] == flask_app.IS_PRODUCTION,
+          'the Secure flag does not track the environment')
+
+
+@test('every response carries its security headers')
+def _():
+    client = client_for_tests()
+    for path in ('/', '/history', '/login', '/legal/terms', '/api/ai-status'):
+        headers = client.get(path).headers
+        policy = headers.get('Content-Security-Policy', '')
+        check(policy, f'{path} has no content security policy')
+        check("default-src 'self'" in policy, f'{path} is not default-deny')
+        check("object-src 'none'" in policy, f'{path} allows plugins')
+        check("frame-ancestors 'none'" in policy,
+              f'{path} can be framed by another site')
+        check("base-uri 'self'" in policy, f'{path} allows a rewritten base')
+        check(headers.get('X-Content-Type-Options') == 'nosniff',
+              f'{path} lets the browser guess its type')
+        check(headers.get('Referrer-Policy'),
+              f'{path} sends no referrer policy')
+        check('camera=(self)' in headers.get('Permissions-Policy', ''),
+              f'{path} does not keep the camera to itself')
+
+    # The generated files too - a .tex or a page image served without nosniff
+    # is a file a browser might decide to run as HTML.
+    client = accept_terms(client_for_tests())
+    flask_app.convert.convert = scripted_convert()
+    client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'p.png')},
+                content_type='multipart/form-data')
+    with client.session_transaction() as stored:
+        token = stored['tex_tokens'][-1]
+    download = client.get(f'/download-converted-tex?token={token}')
+    check(download.headers.get('X-Content-Type-Options') == 'nosniff',
+          'the downloaded .tex is served without nosniff')
+
+
+@test('the expensive route has a brake on it')
+def _():
+    # /convert is open to anyone, and each call costs an API request, a LaTeX
+    # compile and a rasterise. The limiter counts within one process only -
+    # that is written down where it is defined - but a single loop against a
+    # single instance is the abuse it exists to stop.
+    saved = dict(flask_app._RATE_LIMITS)
+    flask_app._RATE_LIMITS['convert'] = (3, 300)
+    flask_app._RATE_BUCKETS.clear()
+    try:
+        client = accept_terms(client_for_tests())
+        flask_app.convert.convert = scripted_convert()
+        for attempt in range(3):
+            client.post('/convert',
+                        data={'file': (io.BytesIO(png_bytes()), 'p.png')},
+                        content_type='multipart/form-data')
+            with client.session_transaction() as stored:
+                check(stored.get('convert_error') is None,
+                      f'conversion {attempt + 1} of 3 was refused early')
+
+        client.post('/convert',
+                    data={'file': (io.BytesIO(png_bytes()), 'p.png')},
+                    content_type='multipart/form-data')
+        with client.session_transaction() as stored:
+            refusal = stored.get('convert_error') or ''
+        check('wait' in refusal.lower(),
+              f'the fourth conversion was not refused: {refusal!r}')
+
+        # Turning it off must really turn it off, because that is what the
+        # suite itself relies on.
+        flask_app._RATE_LIMITS['convert'] = (0, 300)
+        check(not flask_app._rate_limited('convert'),
+              'a limit of zero still refuses')
+    finally:
+        flask_app._RATE_LIMITS.clear()
+        flask_app._RATE_LIMITS.update(saved)
+        flask_app._RATE_BUCKETS.clear()
+
+
+@test('signing in does not inherit the previous visitor’s documents')
+def _():
+    # On a shared computer the person signing in is not necessarily the person
+    # who was just using it, and a result token left in the cookie would let
+    # them download that document.
+    client = accept_terms(client_for_tests())
+    flask_app.convert.convert = scripted_convert()
+    client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'p.png')},
+                content_type='multipart/form-data')
+    with client.session_transaction() as stored:
+        check(stored.get('tex_tokens'), 'the guest never got a result')
+
+    with flask_app.app.test_request_context():
+        from flask import session as live
+        live['tex_tokens'] = ['abc']
+        live['terms_version'] = 'anything'
+        flask_app._start_session('uid-1', 'a@b.c', 'A', remember=False)
+        check(live.get('tex_tokens') is None,
+              'a previous visitor\'s result tokens survived the sign-in')
+        check(live['user']['uid'] == 'uid-1', 'the new session has no user')
+
+
+@test('a password reset link is never written to a log')
+def _():
+    # It used to generate the link with the Admin SDK, print it, and tell the
+    # user an email was on its way - so nothing was ever sent, and a string
+    # equivalent to the account password sat in the server log.
+    code = read_code('firebase_config.py')
+    check('generate_password_reset_link' not in code,
+          'the reset link is being generated locally again, which means '
+          'something has to deliver it and nothing here can')
+    check('sendOobCode' in read_source('firebase_config.py'),
+          'Firebase is no longer asked to send the email itself')
+
+    reset = code.split('def send_password_reset')[1].split('\ndef ')[0]
+    for line in reset.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('print('):
+            check('link' not in stripped.lower(),
+                  f'password reset logs something it should not: {stripped}')
+
+
+@test('an unknown email address is answered like a known one')
+def _():
+    # Both the sign-in form and the reset form have to give the same answer
+    # either way, or they become a way to find out who has an account here.
+    # firebase_config is stubbed out for this suite, so the real module has to
+    # be read from disk rather than imported.
+    code = read_code('firebase_config.py')
+    check("INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password'" in code,
+          'the credential failure message is no longer generic')
+
+    verify = code.split('def verify_user')[1].split('\ndef ')[0]
+    for code_name in ('EMAIL_NOT_FOUND', 'INVALID_PASSWORD'):
+        check(code_name in code,
+              f'{code_name} is no longer folded into the generic message')
+    check('INVALID_CREDENTIALS_MESSAGE' in verify,
+          'sign-in no longer uses the generic message')
+
+    reset = code.split('def send_password_reset')[1].split('\ndef ')[0]
+    check("'EMAIL_NOT_FOUND'" in reset and "{'success': True}" in reset,
+          'an unknown address is no longer answered as success')
+
+
+@test('an error page tells the visitor nothing about the server')
+def _():
+    # Flask's built-in pages are already safe; the risk is the opposite one -
+    # a handler added later that helpfully includes the exception.
+    client = client_for_tests()
+    response = client.get('/no-such-page-exists')
+    check(response.status_code == 404,
+          f'a wrong address gave {response.status_code}, not 404')
+    body = response.get_data(as_text=True)
+    check('ConTeX' in body, 'the 404 is not rendered in the application shell')
+    for leak in ('Traceback', 'File "', 'site-packages', 'Werkzeug'):
+        check(leak not in body, f'the 404 page mentions {leak!r}')
+
+    # And the 500 page itself. A route cannot be added after the first
+    # request in Flask 3, so the handler is called the way Flask calls it -
+    # inside a request context, with the exception it would have caught.
+    with flask_app.app.test_request_context('/anything'):
+        body, status = flask_app.server_error(
+            RuntimeError('AIzaSy-pretend-key at /srv/app/app.py line 1'))
+    check(status == 500, f'the 500 handler returned {status}')
+    for leak in ('AIzaSy', '/srv/app', 'RuntimeError', 'Traceback', 'line 1'):
+        check(leak not in body,
+              f'the 500 page hands the visitor {leak!r}')
+    check('ConTeX' in body, 'the 500 page is not in the application shell')
+    check('try again' in body.lower(),
+          'the 500 page does not tell the visitor what to do')
+
+
+@test('the deployment configuration matches the application')
+def _():
+    import json
+    config = json.loads(read_source('firebase.json'))
+
+    # Hosting has to exist, and it has to send the dynamic routes somewhere
+    # that can run Python - Hosting itself only serves files.
+    check('hosting' in config, 'firebase.json declares no hosting')
+    hosting = config['hosting']
+    rewrites = hosting.get('rewrites') or []
+    check(rewrites, 'nothing is rewritten, so no route reaches the app')
+    catch_all = [r for r in rewrites if r.get('source') == '**']
+    check(catch_all, 'there is no catch-all rewrite')
+    check('run' in catch_all[-1] or 'function' in catch_all[-1],
+          'the catch-all does not point at anything that can run code')
+
+    # And it must not publish the source tree.
+    ignore = hosting.get('ignore') or []
+    for secret in ('.env', '*.json', 'firebase-debug.log'):
+        check(any(secret in pattern for pattern in ignore),
+              f'hosting would publish {secret}')
+
+    check(config.get('firestore', {}).get('rules') == 'firestore.rules',
+          'the rules file is no longer wired up')
+    check(config.get('firestore', {}).get('indexes') ==
+          'firestore.indexes.json',
+          'the index file is no longer wired up')
+
+
+@test('nothing secret can reach the deployed image')
+def _():
+    ignored = read_source('.dockerignore')
+    for secret in ('.env', '*.json', '.venv', 'uploads', 'bench'):
+        check(any(line.strip() == secret or line.strip().startswith(secret)
+                  for line in ignored.splitlines()),
+              f'the image build would copy {secret}')
+    # The one .json that must survive, because the app reads it at runtime.
+    check('!firestore.indexes.json' in ignored or
+          'firestore.indexes.json' not in ignored,
+          'the ignore file is inconsistent about firestore.indexes.json')
+
+    gitignored = read_source('.gitignore')
+    check('.env' in gitignored, '.env is no longer ignored by git')
+    check('*.json' in gitignored,
+          'service account keys are no longer ignored by git')
+
+
+@test('the history query has the index it needs')
+def _():
+    import json
+    declared = json.loads(read_source('firestore.indexes.json'))
+    wanted = [
+        {'fieldPath': 'uid', 'order': 'ASCENDING'},
+        {'fieldPath': 'timestamp', 'order': 'DESCENDING'},
+    ]
+    matches = [index for index in declared.get('indexes', [])
+               if index.get('collectionGroup') == 'ocr_history'
+               and index.get('fields') == wanted]
+    check(matches,
+          'the uid ASC + timestamp DESC index on ocr_history is not declared, '
+          'so the history list falls back to sorting in Python')
+
+
+@test('the app has somewhere to answer a health check')
+def _():
+    response = client_for_tests().get('/healthz')
+    check(response.status_code == 200, 'no health endpoint')
+    check(response.get_json() == {'ok': True}, 'the health check says nothing')
+    # It must not reach out to anything: a check that calls Firestore turns
+    # Firestore's bad minute into a restart loop.
+    source = read_source('app.py')
+    body = source.split('def healthz')[1].split('\n\n\n')[0]
+    for reaching in ('firebase_config.', 'ai_status.', 'convert.',
+                     'latex_tools.'):
+        check(reaching not in body,
+              f'the health check calls {reaching} - a dependency outage would '
+              f'then look like a dead process')
+
+
+@test('the AI is never allowed to hang a worker')
+def _():
+    check(llm_providers.AI_REQUEST_TIMEOUT > 0,
+          'model calls have no timeout, so a stalled socket holds a worker '
+          'until the platform kills it')
+    source = read_source('llm_providers.py')
+    check('http_options' in source and 'AI_REQUEST_TIMEOUT * 1000' in source,
+          'the Gemini client is built without a timeout')
+    check('anthropic.Anthropic(\n' in source or
+          'timeout=AI_REQUEST_TIMEOUT' in source,
+          'the Anthropic client is built without a timeout')
 
 
 @test('the application never uses a browser dialog of its own')

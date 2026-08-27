@@ -13,19 +13,51 @@ load_dotenv()
 
 # Initialize Firebase Admin SDK
 def initialize_firebase():
-    """Initialize Firebase Admin SDK if not already initialized"""
+    """
+    Initialize the Firebase Admin SDK if it is not already running.
+
+    Two ways in, in this order:
+
+    1. FIREBASE_SERVICE_ACCOUNT_PATH - a downloaded key file. This is how
+       local development works, because a laptop has no Google identity of
+       its own.
+
+    2. Application Default Credentials - the identity the platform already
+       gives the process. On Cloud Run, Cloud Functions or GCE this is the
+       service account attached to the service, and it is strictly better
+       than a key file: there is no private key to ship in an image, to leak
+       in a log, or to rotate by hand. A deployment should therefore set no
+       FIREBASE_SERVICE_ACCOUNT_PATH at all.
+
+    Naming a path that does not exist is still an error. That is a typo or a
+    file that failed to deploy, and silently falling through to ADC would
+    turn it into a confusing permissions failure much later on.
+    """
     if not firebase_admin._apps:
         service_account_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
-        
-        if not service_account_path or not os.path.exists(service_account_path):
-            raise FileNotFoundError(f"Firebase service account file not found: {service_account_path}")
-        
-        cred = credentials.Certificate(service_account_path)
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': os.getenv('FIREBASE_DATABASE_URL')
-        })
-        print("Firebase Admin SDK initialized successfully")
-    
+
+        if service_account_path:
+            if not os.path.exists(service_account_path):
+                raise FileNotFoundError(
+                    f"FIREBASE_SERVICE_ACCOUNT_PATH points at a file that is "
+                    f"not there: {service_account_path}. Leave the variable "
+                    f"unset to use the platform's own credentials instead.")
+            cred = credentials.Certificate(service_account_path)
+            source = 'service account key file'
+        else:
+            cred = credentials.ApplicationDefault()
+            source = 'application default credentials'
+
+        options = {}
+        # Only the Realtime Database needs this, and this app uses Firestore.
+        # Passed through when it is set so an existing deployment does not
+        # change behaviour, omitted otherwise rather than sent as None.
+        if os.getenv('FIREBASE_DATABASE_URL'):
+            options['databaseURL'] = os.getenv('FIREBASE_DATABASE_URL')
+
+        firebase_admin.initialize_app(cred, options)
+        print(f"Firebase Admin SDK initialized ({source})")
+
     return firestore.client()
 
 # Initialize Firestore client
@@ -202,31 +234,74 @@ def verify_user(email, password):
     return {'success': True, 'user': user}
 
 
+# Firebase Auth REST endpoint for "email me a reset link". Unlike the Admin
+# SDK's generate_password_reset_link, which only builds a link and leaves
+# delivering it to you, this one makes Firebase send its own email - which is
+# the whole point, because this project has no mail server of any kind.
+_RESET_ENDPOINT = 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode'
+
+
 def send_password_reset(email):
     """
-    Send password reset email to user
-    
-    Args:
-        email (str): User's email address
-    
+    Ask Firebase to email this address a password reset link.
+
+    What this used to do: call auth.generate_password_reset_link(), print the
+    resulting link to the server log, and return success. Nothing was ever
+    sent, so every user who asked to reset a password was told an email was on
+    its way and then waited for one that did not exist - and a link that is
+    equivalent to the account's password sat in the log for anyone with log
+    access to use.
+
     Returns:
-        dict: {'success': True} or {'success': False, 'error': error_message}
+        dict: {'success': True} whether or not the address is registered - the
+              answer must not reveal which, or the form becomes a way to test
+              whether somebody has an account here.
     """
-    try:
-        # Generate password reset link
-        link = auth.generate_password_reset_link(email)
-        
-        # In production, you would send this link via email service (SendGrid, etc.)
-        # For now, we'll just return success
-        print(f"Password reset link generated for {email}: {link}")
-        
-        return {'success': True, 'reset_link': link}
-    
-    except auth.UserNotFoundError:
-        # For security, return success even if user doesn't exist
+    if not email or not str(email).strip():
         return {'success': True}
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
+
+    api_key = os.getenv('FIREBASE_API_KEY')
+    if not api_key:
+        print("ERROR: FIREBASE_API_KEY is not set - password reset emails "
+              "cannot be sent.")
+        return {'success': False,
+                'error': 'Password reset is not configured on this server. '
+                         'Please contact the administrator.'}
+
+    try:
+        response = requests.post(
+            _RESET_ENDPOINT,
+            params={'key': api_key},
+            json={'requestType': 'PASSWORD_RESET',
+                  'email': str(email).strip()},
+            timeout=15,
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"Error requesting a password reset email: {e}")
+        return {'success': False,
+                'error': 'Could not reach the authentication service. '
+                         'Please try again.'}
+
+    if response.status_code == 200:
+        return {'success': True}
+
+    try:
+        code = response.json().get('error', {}).get('message', '')
+    except ValueError:
+        code = ''
+    code = code.split(':')[0].strip()
+
+    # An unknown address is not an error the user gets to see.
+    if code in ('EMAIL_NOT_FOUND', 'INVALID_EMAIL', 'MISSING_EMAIL'):
+        return {'success': True}
+    if code == 'TOO_MANY_ATTEMPTS_TRY_LATER':
+        return {'success': False,
+                'error': 'Too many requests. Please try again later.'}
+
+    # Log the code, never the address plus the outcome together.
+    print(f"Password reset request failed: {code or response.status_code}")
+    return {'success': False,
+            'error': 'The reset email could not be sent. Please try again.'}
 
 
 def get_user_by_uid(uid):
@@ -478,6 +553,3 @@ def get_user_ocr_history(uid, limit=10):
         except Exception as e2:
             print(f"Error getting OCR history (fallback): {e2}")
             return []
-    except Exception as e:
-        print(f"Error getting OCR history: {e}")
-        return []

@@ -26,9 +26,27 @@ Four steps, all no-ops when they are not needed:
 """
 
 import os
+import warnings
 
 import numpy as np
 from PIL import Image, ImageOps
+
+# A decompression-bomb ceiling. It lives here because this module is imported
+# by every path that opens an uploaded image, and PIL's limit is process-wide.
+#
+# The 32 MB cap on the request body says nothing about how big a picture
+# becomes once it is decoded: a PNG of one flat colour compresses to a few
+# kilobytes and can still declare 30000x30000 pixels, which is 3.6 GB of RGBA
+# the moment PIL expands it. 64 megapixels is far above any real page - a
+# 300 DPI A4 scan is about 8.7 - so nothing legitimate is refused.
+#
+# The warning is promoted to an exception too, because PIL only *warns* at the
+# limit and does not raise until twice it. Without that line the real ceiling
+# would be 128 megapixels, not the 64 this says.
+_MAX_PIXELS = int(os.getenv('MAX_IMAGE_PIXELS', str(64_000_000)))
+if _MAX_PIXELS > 0:
+    Image.MAX_IMAGE_PIXELS = _MAX_PIXELS
+    warnings.simplefilter('error', Image.DecompressionBombWarning)
 
 # Below this the angle is noise, and rotating would only resample the image
 # for nothing.
