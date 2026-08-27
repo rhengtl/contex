@@ -142,6 +142,22 @@ ACCEPTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif',
                        '.webp', '.gif', '.pdf', '.docx']
 
 
+@app.context_processor
+def shell_context():
+    """
+    What the application shell needs on every page.
+
+    The header, the footer and the base template are on every route,
+    including the ones that never thought about them - the auth pages had no
+    header at all and no way back to the app except the browser's own back
+    button. Injecting this here means a new route cannot forget it.
+    """
+    return {
+        'is_authenticated': bool(current_user_uid()),
+        'max_upload_mb': _MAX_UPLOAD_MB,
+    }
+
+
 @app.errorhandler(413)
 def upload_too_large(_error):
     """Turn Werkzeug's 413 into the same in-page error the route uses."""
@@ -313,24 +329,12 @@ def home():
     convert_blocked = session.pop('convert_blocked', None)
     convert_result = owned_tex(convert_token) if convert_token else None
 
-    # ---------------------------------------------------------
-    # History
-    # Signed in  -> read the persistent list back from Firestore.
-    # Guest      -> nothing server-side; the browser holds it in sessionStorage.
-    # ---------------------------------------------------------
-    uid = current_user_uid()
-    history = firebase_config.get_user_ocr_history(uid, limit=20) if uid else []
-    for item in history:
-        # Recorded when the row was written. Rows saved before that field
-        # existed simply do not claim to be truncated; opening one still gets
-        # the accurate explanation, because the routes that compile or copy a
-        # document read the document itself and check it there.
-        item['truncated'] = bool(item.get('truncated'))
-
     # One-shot flag set by a conversion POST. It survives exactly one redirect,
-    # so we can tell the Post/Redirect/Get landing apart from a real page
-    # refresh: on the PRG landing we keep the guest's session history, on a
-    # refresh or a fresh visit we tell the browser to wipe it.
+    # so the browser can tell the Post/Redirect/Get landing apart from an
+    # ordinary load and never wipe a guest's history on the very hop that just
+    # added to it. What a plain load does is decided in the browser, where the
+    # navigation type is actually known - see the guest history section of
+    # scripts.js.
     keep_guest_history = session.pop('just_processed', False)
 
     return render_template('home.html',
@@ -339,8 +343,6 @@ def home():
                            show_convert_result=show_convert_result,
                            convert_error=convert_error,
                            convert_blocked=convert_blocked,
-                           history=history,
-                           is_authenticated=bool(uid),
                            keep_guest_history=keep_guest_history,
                            accepted_extensions=ACCEPTED_EXTENSIONS,
                            terms_version=TERMS_VERSION,
@@ -349,6 +351,40 @@ def home():
                            qa=ai_qa.provider_info(),
                            latex_engine=latex_tools.engine_name(
                                latex_tools.find_engine()))
+
+
+# How many saved conversions the history page lists.
+HISTORY_PAGE_LIMIT = 20
+
+
+@app.route('/history')
+def history_page():
+    """
+    Past conversions.
+
+    Signed in -> read the persistent list back from Firestore.
+    Guest     -> nothing server-side; the browser holds its own list in
+                 sessionStorage and scripts.js renders it into this page.
+
+    Its own route rather than a section of the workspace: reaching a past
+    conversion used to mean scrolling past the entire converter, and after a
+    conversion the page scrolled itself to the result, leaving history
+    off-screen. It also means the workspace no longer queries Firestore on
+    every single visit in order to render something below the fold.
+    """
+    uid = current_user_uid()
+    history = (firebase_config.get_user_ocr_history(uid, limit=HISTORY_PAGE_LIMIT)
+               if uid else [])
+    for item in history:
+        # Recorded when the row was written. Rows saved before that field
+        # existed simply do not claim to be truncated; opening one still gets
+        # the accurate explanation, because the routes that compile or copy a
+        # document read the document itself and check it there.
+        item['truncated'] = bool(item.get('truncated'))
+
+    return render_template('history.html',
+                           history=history,
+                           history_limit=HISTORY_PAGE_LIMIT)
 
 
 @app.route('/legal/<document>')
@@ -758,6 +794,26 @@ def _latest_token(source):
 # Authentication
 # ---------------------------------------------------------------------------
 
+def _browser_firebase_config():
+    """
+    The Firebase settings the browser SDK needs, or None if not configured.
+
+    These three are public by design - they identify the project, they are not
+    credentials, and Firebase security rules are what actually protect the
+    data. Nothing else from the service account ever reaches a page.
+
+    Both auth pages get this, so the federated sign-in button is real on
+    each. The sign-up page previously rendered its Google and Facebook buttons
+    without ever being given a config or a click handler, so both were inert.
+    """
+    settings = {
+        'apiKey': os.getenv('FIREBASE_API_KEY'),
+        'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN'),
+        'projectId': os.getenv('FIREBASE_PROJECT_ID'),
+    }
+    return settings if all(settings.values()) else None
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     # If user is already logged in, redirect to home
@@ -815,13 +871,8 @@ def login():
         else:
             return render_template('auth/login.html', error=result.get('error', 'Invalid credentials'))
 
-    # Pass Firebase config to template
-    firebase_config_data = {
-        'apiKey': os.getenv('FIREBASE_API_KEY'),
-        'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN'),
-        'projectId': os.getenv('FIREBASE_PROJECT_ID')
-    }
-    return render_template('auth/login.html', firebase_config=firebase_config_data)
+    return render_template('auth/login.html',
+                           firebase_config=_browser_firebase_config())
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -829,6 +880,14 @@ def signup():
     # If user is already logged in, redirect to home
     if 'user' in session:
         return redirect(url_for('home'))
+
+    def page(**context):
+        # Every render needs the browser Firebase config, including the ones
+        # that come back carrying a validation error - otherwise the federated
+        # sign-in button disappears the moment you get something wrong.
+        return render_template('auth/signup.html',
+                               firebase_config=_browser_firebase_config(),
+                               **context)
 
     if request.method == 'POST':
         fullname = request.form.get('fullname')
@@ -839,26 +898,25 @@ def signup():
 
         # Basic validation
         if not all([fullname, email, password, confirm_password]):
-            return render_template('auth/signup.html', error="All fields are required")
+            return page(error="All fields are required")
 
         if password != confirm_password:
-            return render_template('auth/signup.html', error="Passwords do not match")
+            return page(error="Passwords do not match")
 
         if len(password) < 6:
-            return render_template('auth/signup.html', error="Password must be at least 6 characters")
+            return page(error="Password must be at least 6 characters")
 
         if not terms:
-            return render_template('auth/signup.html', error="You must agree to the terms and conditions")
+            return page(error="You must agree to the terms and conditions")
 
         # Create user in Firebase
         result = firebase_config.create_user(email, password, fullname)
 
         if result['success']:
-            return render_template('auth/signup.html', success="Account created successfully! Please login.")
-        else:
-            return render_template('auth/signup.html', error=result.get('error', 'Failed to create account'))
+            return page(success="Account created successfully! Please login.")
+        return page(error=result.get('error', 'Failed to create account'))
 
-    return render_template('auth/signup.html')
+    return page()
 
 
 @app.route('/forgot-password', methods=['GET', 'POST'])

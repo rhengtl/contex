@@ -639,15 +639,26 @@ Defaults shown; full list in `.env.example`.
 | `preprocess.py` | EXIF rotation, deskew, low-DPI upscale, alpha flatten. |
 | `tex_store.py` | Token-addressed, TTL-expiring store for results and previews. |
 | `app.py` | The conversion route, terms gate, status API, preview, history. |
+| `templates/base.html` | The application shell every page extends. |
+| `templates/home.html` | The workspace: give it a page, or read the result. |
+| `templates/history.html` | Past conversions, saved and session. |
 | `templates/legal/terms.html` | Terms of Service — complete, unreviewed. |
 | `templates/legal/privacy.html` | Privacy Policy — complete, unreviewed. |
-| `templates/partials/convert_section.html` | The single conversion UI. |
+| `templates/partials/header.html` | Header and the mobile drawer. |
+| `templates/partials/footer.html` | Footer — what ConTeX is, and the legal links. |
+| `templates/partials/convert_section.html` | The single conversion UI, both states. |
 | `templates/partials/terms_gate.html` | The agreement checkbox. |
-| `templates/partials/modals.html` | Legal, AI-outage, camera and canvas dialogs. |
 | `templates/partials/qa_notice.html` | Pre-upload privacy disclosure. |
-| `static/scripts.js` | Input plumbing, gate, camera, canvas, preview, history. |
+| `templates/partials/processing.html` | What you see while a conversion runs. |
+| `templates/partials/dialog_legal.html` | Terms / Privacy, on every page. |
+| `templates/partials/dialogs_convert.html` | AI outage, camera, canvas, confirm. |
+| `static/scripts.js` | Input plumbing, gate, dialogs, camera, canvas, preview, history. |
+| `static/css/tailwind.src.css` | The design system: tokens, base, components. |
+| `tailwind.config.js` | Palette, type, radii, motion. |
+| `build_css.py` | Builds `static/css/app.css`. Run after changing any class. |
+| `brand/` | The logo masters and the script that derives the served assets. |
 | `bench/score_qa.py` | Before/after scoring for the conversion layer. |
-| `test_ai_qa.py` | 127-check verification suite (no API key needed). |
+| `test_ai_qa.py` | 159-check verification suite (no API key needed). |
 
 ---
 

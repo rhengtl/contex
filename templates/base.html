@@ -1,0 +1,91 @@
+{# ---------------------------------------------------------------------------
+   The application shell.
+
+   Every page extends this. Before it existed there were four independent
+   documents each carrying their own <head>, which is why they had drifted
+   apart: the home page set its body font one way and the three auth pages
+   another, only one of the four had a background colour, and none of them had
+   a favicon, a description or a social card.
+
+   Blocks a page may fill:
+     title            <title> text, before the site name
+     description      the meta description and og:description
+     body_class       extra classes on <body>
+     main             the page itself
+     dialogs          extra dialogs beyond the legal one every page needs
+     page_data        extra keys on window.pageData
+     head             anything else in <head>
+   --------------------------------------------------------------------------- #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}{% endblock %}{% if self.title() %} &middot; {% endif %}ConTeX</title>
+    <meta name="description" content="{% block description %}Turn any page - handwritten, printed, photographed or typed - into LaTeX. ConTeX reads the text and the mathematics together and gives you a .tex file and the rendered PDF.{% endblock %}">
+    <meta name="theme-color" content="#F4F1EB">
+
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="ConTeX">
+    <meta property="og:title" content="{% block og_title %}{{ self.title() or 'ConTeX' }}{% endblock %}">
+    <meta property="og:description" content="{{ self.description() }}">
+    <meta property="og:image" content="{{ url_for('static', filename='img/og-card.png', _external=True) }}">
+    <meta name="twitter:card" content="summary_large_image">
+
+    {# The stylesheet is built ahead of time (see tailwind.config.js) and
+       stamped with the file's mtime, so it is taken from cache with no
+       request at all until it actually changes. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    {# Three faces: Poppins for everything you operate, Spectral for display.
+       Both have metric-matched stand-ins in the stylesheet, so display=swap
+       costs no layout shift - the text is already occupying the right space
+       before the real fonts arrive. #}
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap" rel="stylesheet">
+
+    <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
+    {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen font-poppins antialiased {% block body_class %}{% endblock %}">
+
+    <a class="sr-only-focusable" href="#main">Skip to main content</a>
+
+    {% include 'partials/header.html' %}
+
+    <main id="main" tabindex="-1" class="focus:outline-none">
+        {% block main %}{% endblock %}
+    </main>
+
+    {% include 'partials/footer.html' %}
+
+    {% include 'partials/dialog_legal.html' %}
+    {% block dialogs %}{% endblock %}
+
+    {# Announcements. Deliberately aria-live rather than role="status": the
+       two are equivalent to a screen reader, and the result page is checked
+       elsewhere for the absence of role="status" as the signal that no
+       degraded-quality notice was rendered. #}
+    <div id="toast" aria-live="polite" aria-atomic="true"
+         class="pointer-events-none fixed inset-x-4 bottom-6 z-[80] hidden sm:right-auto sm:max-w-sm">
+        <p id="toast-text"
+           class="w-fit max-w-full rounded-md bg-ink-900 px-4 py-2.5 text-center text-sm text-paper-50 shadow-dialog sm:text-left"></p>
+    </div>
+
+    <script>
+        window.pageData = Object.assign({
+            legalUrls: {
+                terms: {{ url_for('legal', document='terms') | tojson }},
+                privacy: {{ url_for('legal', document='privacy') | tojson }}
+            },
+            isAuthenticated: {{ 'true' if is_authenticated else 'false' }}
+        }, {% block page_data %}{}{% endblock %});
+    </script>
+</body>
+</html>

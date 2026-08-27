@@ -1155,8 +1155,9 @@ def _():
     check('data-document-url' in panel and 'openPdf(this)' in panel,
           'the result page button no longer opens the document as a blob')
 
-    home = _read_template('home.html')
-    check('data-document-url' in home and 'openPdf(this)' in home,
+    # History has its own route now; the button moved with it.
+    saved = _read_template('history.html')
+    check('data-document-url' in saved and 'openPdf(this)' in saved,
           'the saved-history button no longer opens the document as a blob')
 
     script = _script()
@@ -1182,7 +1183,7 @@ def _():
     _fake_firebase.get_user_ocr_history = lambda uid, **k: (
         [dict(item)] if uid == 'uid-tab' else [])
     try:
-        page = client.get('/').get_data(as_text=True)
+        page = client.get('/history').get_data(as_text=True)
     finally:
         _fake_firebase.get_user_ocr_history = real_list
 
@@ -2986,6 +2987,283 @@ def _():
               f'the blob created at character {position} neither releases the '
               'one it replaces nor goes through showPreview, so reloading '
               'that preview leaks a copy')
+
+
+# ---------------------------------------------------------------------------
+# The interface
+#
+# These guard the shape of the redesign rather than its appearance: which page
+# a thing lives on, whether it can be operated without a mouse, and whether it
+# tells the truth. Wording and colour are free to change; the properties below
+# are not.
+# ---------------------------------------------------------------------------
+
+ALL_PAGES = ('/', '/history', '/login', '/signup', '/forgot-password')
+
+
+@test('every page is built from the one shell')
+def _():
+    # The four pages used to be independent documents, each with its own
+    # <head>, which is why they had drifted: one set its body font one way and
+    # the others another, only one had a background colour, and not one had a
+    # favicon or a description. Anything that has to be on every page is
+    # checked on every page.
+    client = client_for_tests()
+    for path in ALL_PAGES:
+        page = client.get(path).get_data(as_text=True)
+        for needed, why in (
+                ('img/contex-mark', 'the logo'),
+                ('img/favicon', 'a favicon'),
+                ('name="description"', 'a meta description'),
+                ('og:image', 'a social card'),
+                ('Skip to main content', 'a skip link'),
+                ('id="main"', 'a main landmark'),
+                ('<footer', 'the footer'),
+                ('id="legal-modal"', 'a way to read the legal documents')):
+            check(needed in page, f'{path} has no {why}')
+
+
+@test('the workspace is the converter, not a page about the converter')
+def _():
+    page = client_for_tests().get('/').get_data(as_text=True)
+    check('id="convert-form"' in page and 'id="convert-drop-area"' in page,
+          'the upload control is not on the workspace')
+    # The hero, the About section and the History section used to sit on this
+    # route, each a full viewport tall, with the converter third of four.
+    for gone, what in (('id="about"', 'the About section'),
+                       ('id="home"', 'the hero section'),
+                       ('id="history"', 'the history section')):
+        check(gone not in page, f'{what} is back on the workspace')
+    check('min-h-[90vh]' not in page and 'landscape:min-h-screen' not in page,
+          'the viewport-height sections are back')
+
+
+@test('history is its own route and is not also on the workspace')
+def _():
+    item = {'uid': 'uid-route', 'id': 'doc-route', 'fileName': 'saved.png',
+            'ocrType': 'convert', 'result': GOOD_TEX, 'timestamp': None}
+    _history_items[('uid-route', 'doc-route')] = item
+    client = client_for_tests()
+    with client.session_transaction() as session:
+        session['user'] = {'uid': 'uid-route', 'email': 'r@example.com'}
+
+    real_list = _fake_firebase.get_user_ocr_history
+    _fake_firebase.get_user_ocr_history = lambda uid, **k: (
+        [dict(item)] if uid == 'uid-route' else [])
+    try:
+        history = client.get('/history')
+        workspace = client.get('/').get_data(as_text=True)
+    finally:
+        _fake_firebase.get_user_ocr_history = real_list
+
+    check(history.status_code == 200, history.status_code)
+    body = history.get_data(as_text=True)
+    check('saved.png' in body, 'the saved conversion is not listed')
+    for action in ('/history/doc-route/download', 'copyHistory',
+                   'toggleHistoryPreview', 'openPdf'):
+        check(action in body, f'{action} is missing from the history page')
+    check('saved.png' not in workspace,
+          'history is being rendered on the workspace as well')
+
+
+@test('the result replaces the input panel instead of stacking under it')
+def _():
+    # The finished document used to appear below the upload control that
+    # produced it, inside the same card, so the thing you came back for was
+    # under a control you had already finished with.
+    flask_app.convert.convert = scripted_convert()
+    client = accept_terms(client_for_tests())
+    client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
+                content_type='multipart/form-data')
+    page = client.get('/').get_data(as_text=True)
+    check('id="preview-panel"' in page, 'the result is not shown')
+    check('id="convert-form"' not in page,
+          'the upload form is still on the page above the result')
+    check('Convert another' in page, 'there is no way back to a fresh upload')
+
+
+@test('the processing screen claims no progress it cannot know')
+def _():
+    # The server does not report how far through a document it is, so anything
+    # on this screen that implied it would be measuring nothing.
+    page = client_for_tests().get('/').get_data(as_text=True)
+    start = page.index('id="processing"')
+    screen = page[start:page.index('</div>', page.index('processing-note'))]
+    check('id="processing-elapsed"' in screen,
+          'the processing screen does not show how long it has been running')
+    for faked in ('role="progressbar"', '<progress', 'aria-valuenow', '%'):
+        check(faked not in screen,
+              f'the processing screen contains {faked!r} - it cannot know that')
+
+    body = _js_function(_script(), 'showProcessing')
+    check(body, 'showProcessing is gone from scripts.js')
+    check('setInterval' in body,
+          'the elapsed time is no longer a real running count')
+
+
+@test('the drop area can be used without a mouse')
+def _():
+    # It was a <div> with a click handler: not focusable, not announced, and
+    # unusable from a keyboard. It is now a label for the file input, so the
+    # input is focusable and takes its name from the label's text.
+    panel = _read_template('partials/convert_section.html')
+    check('<label for="convert-file-upload" id="convert-drop-area"' in panel,
+          'the drop area is not a label for the file input')
+    check('class="sr-only"' in panel.split('id="convert-file-upload"')[1][:300]
+          or 'class="sr-only"' in panel.split('convert-drop-area')[1][:900],
+          'the file input is hidden in a way that cannot take focus')
+    check('dropArea.addEventListener(\'click\'' not in _script(),
+          'a click handler is opening the picker a second time')
+
+
+@test('no control on any page is a decoration')
+def _():
+    # The sign-up page shipped two social buttons with no click handler and no
+    # Firebase config behind them, and two legal links that were href="#".
+    client = client_for_tests()
+    for path in ALL_PAGES:
+        page = client.get(path).get_data(as_text=True)
+        check('href="#"' not in page, f'{path} has a link that goes nowhere')
+        check('coming soon' not in page.lower(),
+              f'{path} offers something that does not exist yet')
+
+    signup = client.get('/signup').get_data(as_text=True)
+    for button in re.findall(r'<button[^>]*>', signup):
+        wired = ('onclick=' in button or 'type="submit"' in button
+                 or 'id="google-signup"' in button)
+        check(wired, f'a button on the sign-up page does nothing: {button[:70]}')
+
+
+@test('every colour the markup asks for actually exists')
+def _():
+    # bg-forest-100 appeared 23 times across the templates and scripts.js while
+    # the palette started at forest-400, so every one of those classes
+    # generated no CSS at all and the styling silently did nothing.
+    #
+    # A class Tailwind could not build is not in the built stylesheet, so this
+    # catches an undefined colour. It also catches the other way of getting the
+    # same silent nothing: adding a class and forgetting to run build_css.py.
+    root = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(root, 'static', 'css', 'app.css'),
+              encoding='utf-8') as handle:
+        css = handle.read()
+
+    sources = []
+    for folder, _, names in os.walk(os.path.join(root, 'templates')):
+        sources += [os.path.join(folder, n) for n in names if n.endswith('.html')]
+    sources.append(os.path.join(root, 'static', 'scripts.js'))
+
+    palette = r'(?:ink|paper|forest|burgundy|cream|caution|alarm|affirm)'
+    prefix = (r'(?:bg|text|border|ring|outline|decoration|accent|divide|fill'
+              r'|stroke|from|via|to|shadow|placeholder|caret)')
+    variant = (r'(?:hover|focus|focus-visible|focus-within|active|disabled'
+               r'|group-hover|first|last|odd|even|sm|md|lg|xl|print'
+               r'|motion-reduce|landscape|portrait):')
+    pattern = re.compile(
+        r'\b((?:' + variant + r')*' + prefix + '-' + palette
+        + r'-\d{2,3}(?:/\d{1,3})?)\b')
+
+    missing = {}
+    for path in sources:
+        with open(path, encoding='utf-8') as handle:
+            for name in set(pattern.findall(handle.read())):
+                # Tailwind keeps the variant in the class name and escapes
+                # both ':' and '/', so hover:bg-burgundy-100 is written as
+                # .hover\:bg-burgundy-100:hover - the whole name has to be
+                # reconstructed, not just the colour part of it.
+                escaped = name.replace(':', chr(92) + ':')
+                escaped = escaped.replace('/', chr(92) + '/')
+                if '.' + escaped not in css:
+                    missing.setdefault(name, []).append(
+                        os.path.basename(path))
+    check(not missing,
+          'colour classes that generate no CSS: '
+          + ', '.join(f'{k} ({", ".join(v)})' for k, v in sorted(missing.items())))
+
+
+@test('the brand assets the pages reference are actually served')
+def _():
+    client = client_for_tests()
+    page = client.get('/').get_data(as_text=True)
+    referenced = set(re.findall(r'/static/(img/[A-Za-z0-9._-]+)', page))
+    check(referenced, 'the pages reference no images at all')
+    for name in sorted(referenced):
+        response = client.get('/static/' + name)
+        check(response.status_code == 200, f'{name} is referenced but 404s')
+        check(len(response.get_data()) > 500, f'{name} is served empty')
+
+
+@test('the tab icon has rounded corners at every size it ships')
+def _():
+    # The favicons are generated (brand/make_assets.py), so the rounding is a
+    # property of a build step rather than of anything in the source tree - the
+    # kind of thing that comes back square the next time someone regenerates
+    # them. CORNER there is 3/16, chosen because it lands on a whole pixel at
+    # 16, 32 and 48, so every size rounds by the same proportion.
+    root = os.path.dirname(os.path.abspath(__file__))
+    corner = 3 / 16
+
+    icons = [('favicon.ico', None), ('favicon-32.png', 32)]
+    for name, only in icons:
+        path = os.path.join(root, 'static', 'img', name)
+        source = Image.open(path)
+        sizes = (sorted(source.ico.sizes()) if name.endswith('.ico')
+                 else [(only, only)])
+        check(sizes, f'{name} carries no image at all')
+
+        for size in sizes:
+            side = size[0]
+            image = (source.ico.getimage(size) if name.endswith('.ico')
+                     else source).convert('RGBA')
+            alpha = image.split()[3].load()
+            radius = round(side * corner)
+
+            corners = [alpha[0, 0], alpha[side - 1, 0],
+                       alpha[0, side - 1], alpha[side - 1, side - 1]]
+            check(max(corners) == 0,
+                  f'{name} at {side}px still has square corners: {corners}')
+
+            # Rounded, not shrunk: the middle of every edge must still reach
+            # the icon's boundary.
+            edges = [alpha[side // 2, 0], alpha[side // 2, side - 1],
+                     alpha[0, side // 2], alpha[side - 1, side // 2]]
+            check(min(edges) == 255,
+                  f'{name} at {side}px is inset rather than rounded: {edges}')
+            check(alpha[side // 2, side // 2] == 255,
+                  f'{name} at {side}px is transparent in the middle')
+
+            # Smooth, not stepped: the top edge has to ramp in through at
+            # least one partial value, and never step backwards.
+            ramp = [alpha[x, 0] for x in range(radius + 1)]
+            check(any(0 < v < 255 for v in ramp),
+                  f'{name} at {side}px has a hard-edged corner: {ramp}')
+            check(all(b >= a for a, b in zip(ramp, ramp[1:])),
+                  f'{name} at {side}px does not ramp cleanly: {ramp}')
+
+    # iOS masks a home-screen icon itself, so rounding that one too would show
+    # as a pale seam inside the system's own rounding.
+    apple = Image.open(os.path.join(root, 'static', 'img',
+                                    'apple-touch-icon.png'))
+    check(apple.mode == 'RGB',
+          'the apple touch icon gained transparency - iOS masks it already')
+
+
+@test('the application never uses a browser dialog of its own')
+def _():
+    # window.confirm was the one dialog that looked and behaved like nothing
+    # else in the application - browser chrome, browser buttons, no relation to
+    # anything on screen. Clearing the canvas now asks in the app's own dialog.
+    # Comments stripped first: this file explains in prose why
+    # window.confirm was removed, and prose is not a call.
+    script = re.sub(r'/\*.*?\*/', '', _script(), flags=re.S)
+    script = re.sub(r'(?m)^\s*//.*$', '', script)
+    for native in ('window.confirm(', 'window.alert(', 'window.prompt(',
+                   'if (!confirm(', '= confirm(', chr(39) + 'alert(' + chr(39),
+                   'alert("'):
+        check(native not in script, f'a native dialog is back: {native}')
+    check('confirmAction(' in script and 'id="confirm-modal"'
+          in _read_template('partials/dialogs_convert.html'),
+          'the confirmation dialog is gone')
 
 
 # ---------------------------------------------------------------------------

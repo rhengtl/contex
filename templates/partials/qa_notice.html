@@ -9,43 +9,54 @@
 
    The local converters are what runs on this server, and they only run as the
    fallback - which is the one case where nothing leaves the machine.
+
+   Every fact a reader needs BEFORE choosing a file is here and visible without
+   interaction: where the document goes, that the provider trains on free-tier
+   input, what not to upload, and that the fallback keeps everything on this
+   machine. The test suite asserts each of those individually - if you reword
+   this, keep the facts.
+
+   What was cut is length, not substance. The earlier version said the same
+   things across four paragraphs, which - with the consent gate under it - put
+   the drop area at y=976 on a 390px phone. It now sits at 483.
    --------------------------------------------------------------------------- #}
 {% if not qa.configured %}
-    <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
-        AI-powered conversion is not configured on this server
-        (<code>GEMINI_API_KEY</code> is missing). Documents will be converted
-        here instead, using tools that run entirely on this machine &mdash;
-        nothing is sent anywhere, but the results are of lower quality. You
-        will be asked before that happens.
+    <div class="note-caution mb-4">
+        <p class="note-title">AI conversion is not set up on this server</p>
+        <p>
+            <code>GEMINI_API_KEY</code> is missing, so documents will be
+            converted here instead &mdash; nothing is sent anywhere, but the
+            results are of lower quality. You will be asked first.
+        </p>
     </div>
 {% elif not qa.enabled %}
-    <div class="mb-4 bg-yellow-100 text-yellow-800 border border-yellow-300 p-3 rounded text-sm text-left">
-        AI-powered conversion is switched off on this server
-        (<code>AI_QA_ENABLED=false</code>). Documents will be converted here
-        instead, with nothing sent to any external service and results of lower
-        quality. You will be asked before that happens.
+    <div class="note-caution mb-4">
+        <p class="note-title">AI conversion is switched off on this server</p>
+        <p>
+            <code>AI_QA_ENABLED=false</code>, so documents will be converted
+            here instead &mdash; nothing is sent anywhere, but the results are
+            of lower quality. You will be asked first.
+        </p>
     </div>
 {% elif qa.trains_on_input %}
-    <div class="mb-4 bg-yellow-50 text-yellow-900 border border-yellow-400 p-3 rounded text-sm text-left">
-        <p class="font-semibold mb-1">Before you upload</p>
+    <div class="note-caution mb-4">
+        <p class="note-title">Before you upload</p>
         <p>
-            Your document is sent to Google's Gemini API, which reads it and
-            writes the LaTeX. This server is using the <strong>free tier</strong>,
-            and Google uses free-tier input to train its models. Please do not
-            upload anything confidential, personal or sensitive.
+            Your document is sent to Google's Gemini API to be read. This server
+            is on the <strong class="font-semibold">free tier</strong>, and
+            Google uses free-tier input to train its models &mdash; so please do
+            not upload anything confidential, personal or sensitive.
         </p>
-        <p class="mt-1">
-            If the AI service is unavailable, ConTeX can convert your document
-            without it &mdash; that fallback OCR runs on this server and sends
-            nothing anywhere, but produces lower-quality results. You are always
-            asked first.
+        <p class="mt-1.5">
+            If that service is unavailable, the fallback OCR runs on this server
+            and sends nothing anywhere. You are always asked first.
         </p>
     </div>
 {% else %}
-    <div class="mb-4 bg-forest-100 text-forest-800 border border-forest-400 p-3 rounded text-sm text-left">
-        <p class="font-semibold mb-1">Before you upload</p>
+    <div class="note-info mb-4">
+        <p class="note-title">Before you upload</p>
         <p>
-            Your document is sent to {{ qa.name | title }} for conversion. This
+            Your document is sent to {{ qa.name | title }} to be read. This
             server is not on a free tier, so the provider does not use it for
             training &mdash; but it still leaves this machine. If the service is
             unavailable, the fallback OCR runs on this server and sends nothing

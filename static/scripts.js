@@ -11,7 +11,10 @@
      5. Camera              full-screen capture at the sensor's own resolution
      6. Writing canvas      an expandable sheet, pen / eraser / pan
      7. Output              PDF preview, copy, download
-     8. History             the same three actions on a past conversion
+     8. History              the same three actions on a past conversion
+     9. Dialogs              one implementation, so no two can behave
+                             differently from one another
+    10. Chrome               mobile navigation, toasts, drag and drop
    =========================================================================== */
 
 var pageData = window.pageData || {};
@@ -63,7 +66,20 @@ function chooseInput(target, which, label) {
     const nameLabel = document.getElementById(group.nameLabel);
     if (nameLabel) nameLabel.textContent = label;
     const display = document.getElementById(group.nameDisplay);
-    if (display) display.classList.remove('hidden');
+    if (display) display.classList.replace('hidden', 'flex');
+
+    revealSubmit();
+}
+
+/* On a phone the Convert button sits below the fold while the input controls
+   are on screen, so choosing a file leaves the next step out of sight. Only
+   scrolls when it actually is out of sight, and only as far as it has to. */
+function revealSubmit() {
+    const button = document.getElementById('convert-submit');
+    if (!button) return;
+    const box = button.getBoundingClientRect();
+    if (box.bottom <= window.innerHeight - 8) return;
+    button.scrollIntoView({ block: 'end', behavior: 'smooth' });
 }
 
 function hidePreview(id) {
@@ -118,7 +134,7 @@ function clearConvertFile() {
     hidePreview(group.cameraPreview);
     hidePreview(group.drawPreview);
     const display = document.getElementById(group.nameDisplay);
-    if (display) display.classList.add('hidden');
+    if (display) display.classList.replace('flex', 'hidden');
 }
 
 function hasFileChosen() {
@@ -192,9 +208,158 @@ function lockControls(locked) {
     const controls = document.getElementById('convert-controls');
     if (!controls) return;
     controls.disabled = locked;
-    controls.classList.toggle('opacity-50', locked);
+    controls.classList.toggle('opacity-40', locked);
     controls.classList.toggle('pointer-events-none', locked);
 }
+
+
+/* ---------------------------------------------------------------------------
+   9. Dialogs
+
+   Every dialog in the application goes through these, so they can no longer
+   differ from one another. Each one previously opened itself by removing
+   .hidden and assigning style.display directly, and not one of them could be
+   closed with Escape, kept focus inside itself, or gave focus back to whatever
+   had opened it.
+   --------------------------------------------------------------------------- */
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), '
+    + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+let openDialogs = [];
+
+function openDialog(id) {
+    const dialog = document.getElementById(id);
+    if (!dialog) return null;
+    if (openDialogs.some(function (entry) { return entry.dialog === dialog; })) {
+        return dialog;
+    }
+
+    openDialogs.push({ dialog: dialog, restoreTo: document.activeElement });
+
+    dialog.classList.remove('hidden');
+    // .dialog centres itself through .is-open; the full-bleed camera and
+    // canvas surfaces are laid out by their own utilities and only need the
+    // display switched on.
+    dialog.classList.add(dialog.classList.contains('dialog') ? 'is-open' : 'flex');
+
+    // The page behind must not scroll while something is over it.
+    document.documentElement.style.overflow = 'hidden';
+
+    const first = dialog.querySelector('[data-dialog-initial]')
+        || dialog.querySelector(FOCUSABLE);
+    if (first) {
+        // After the class change, so the element is actually visible by the
+        // time it is asked to take focus.
+        requestAnimationFrame(function () { first.focus(); });
+    }
+    return dialog;
+}
+
+function closeDialog(id) {
+    const dialog = document.getElementById(id);
+    if (!dialog) return;
+    const index = openDialogs.findIndex(function (entry) {
+        return entry.dialog === dialog;
+    });
+    const entry = index >= 0 ? openDialogs.splice(index, 1)[0] : null;
+
+    dialog.classList.remove('is-open', 'flex');
+    dialog.classList.add('hidden');
+
+    if (!openDialogs.length) {
+        document.documentElement.style.overflow = '';
+    }
+    if (entry && entry.restoreTo && entry.restoreTo.focus) {
+        entry.restoreTo.focus();
+    }
+}
+
+function topDialog() {
+    return openDialogs.length ? openDialogs[openDialogs.length - 1] : null;
+}
+
+/* Ask before doing something that cannot be undone.
+
+   Replaces window.confirm(), which was the one dialog in this application that
+   looked and behaved like none of the others. */
+let confirmHandler = null;
+
+function confirmAction(title, body, label, onConfirm) {
+    const accept = document.getElementById('confirm-accept');
+    const cancel = document.getElementById('confirm-cancel');
+    if (!accept || !cancel) {
+        // No dialog on this page: do not silently swallow the action.
+        onConfirm();
+        return;
+    }
+    setText('confirm-title', title);
+    setText('confirm-body', body);
+    accept.textContent = label;
+    confirmHandler = onConfirm;
+    openDialog('confirm-modal');
+}
+
+function resolveConfirm(accepted) {
+    const handler = confirmHandler;
+    confirmHandler = null;
+    closeDialog('confirm-modal');
+    if (accepted && handler) handler();
+}
+
+/* Escape and a backdrop click both mean "close", but what closing means
+   differs: dismissing the outage dialog has to record that the conversion was
+   cancelled, not just hide the box. */
+function dismissDialog(id) {
+    if (id === 'confirm-modal') { resolveConfirm(false); return; }
+    if (id === 'legal-modal') { closeLegal(); return; }
+    if (id === 'ai-modal') { cancelConversion(); return; }
+    if (id === 'camera-modal') { closeCameraModal(); return; }
+    if (id === 'draw-modal') { closeDrawModal(); return; }
+    closeDialog(id);
+}
+
+document.addEventListener('keydown', function (event) {
+    const top = topDialog();
+
+    if (event.key === 'Escape') {
+        if (top) {
+            event.preventDefault();
+            dismissDialog(top.dialog.id);
+        } else if (isSidebarOpen()) {
+            event.preventDefault();
+            toggleSidebar();
+        }
+        return;
+    }
+
+    if (event.key !== 'Tab' || !top) return;
+
+    // Keep focus inside the dialog. Without this, tabbing walks straight out
+    // into the page behind it, which is still there and still full of
+    // controls the reader cannot see.
+    const items = Array.prototype.filter.call(
+        top.dialog.querySelectorAll(FOCUSABLE),
+        function (element) { return element.offsetParent !== null; });
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+});
+
+/* A click on the backdrop itself - not on the panel sitting on it. */
+document.addEventListener('click', function (event) {
+    const target = event.target;
+    if (!target.classList || !target.classList.contains('dialog')) return;
+    const top = topDialog();
+    if (top && top.dialog === target) dismissDialog(target.id);
+});
 
 
 /* ---------------------------------------------------------------------------
@@ -211,14 +376,13 @@ function openLegal(which) {
     if (!modal || !body) return;
 
     if (title) title.textContent = LEGAL_TITLES[which] || 'Legal';
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    openDialog('legal-modal');
 
     if (legalCache[which]) {
         body.innerHTML = legalCache[which];
         return;
     }
-    body.innerHTML = '<p class="text-sm text-forest-600">Loading&hellip;</p>';
+    body.innerHTML = '<p class="text-sm text-ink-500">Loading&hellip;</p>';
 
     const urls = pageData.legalUrls || {};
     fetch(urls[which] || ('/legal/' + which))
@@ -231,16 +395,14 @@ function openLegal(which) {
             body.innerHTML = html;
         })
         .catch(function () {
-            body.innerHTML = '<p class="text-sm text-red-700">This document '
-                + 'could not be loaded. Please try again.</p>';
+            body.innerHTML = '<div class="note-alarm"><p class="note-title">'
+                + 'This document could not be loaded</p><p>Please check your '
+                + 'connection and try again.</p></div>';
         });
 }
 
 function closeLegal() {
-    const modal = document.getElementById('legal-modal');
-    if (!modal) return;
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
+    closeDialog('legal-modal');
 }
 
 
@@ -272,9 +434,7 @@ function setupAvailabilityGate() {
             .then(function (response) { return response.json(); })
             .then(function (status) {
                 if (status && status.available) {
-                    pendingSubmit = true;
-                    setSubmitting(true, 'Converting…');
-                    form.submit();
+                    startConversion('Converting your document');
                 } else {
                     setSubmitting(false);
                     showAiModal(status);
@@ -323,15 +483,11 @@ function showAiModal(status) {
     setText('ai-modal-checked', status.checked_at
         ? ('Checked at ' + status.checked_at) : '');
 
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    openDialog('ai-modal');
 }
 
 function hideAiModal() {
-    const modal = document.getElementById('ai-modal');
-    if (!modal) return;
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
+    closeDialog('ai-modal');
 }
 
 /* Re-check, so a warning cannot outlive the outage that produced it. */
@@ -344,10 +500,8 @@ function recheckAi() {
         .then(function (status) {
             if (status && status.available) {
                 hideAiModal();
-                toast('AI conversion is available again. Converting…');
-                pendingSubmit = true;
-                setSubmitting(true, 'Converting…');
-                document.getElementById('convert-form').submit();
+                toast('AI conversion is available again.');
+                startConversion('Converting your document');
             } else {
                 showAiModal(status);
                 toast('Still unavailable.');
@@ -363,9 +517,11 @@ function continueWithFallback() {
     const flag = document.getElementById('allow-fallback');
     if (flag) flag.value = '1';
     hideAiModal();
-    pendingSubmit = true;
-    setSubmitting(true, 'Converting without AI…');
-    document.getElementById('convert-form').submit();
+    // Named for what it is. Someone who agreed to the lower-quality path
+    // should be able to see, while they wait, that that is what is running.
+    startConversion('Converting without AI',
+                    'The AI service is unavailable, so this is being converted '
+                    + 'on the server. Quality will be lower.');
 }
 
 function cancelConversion() {
@@ -390,6 +546,117 @@ function setSubmitting(busy, label) {
 
 
 /* ---------------------------------------------------------------------------
+   The processing screen
+
+   A conversion runs inside an ordinary form POST that can take anything from
+   ten seconds to several minutes. Before this existed, the submit button
+   relabelled itself and the browser then sat on a motionless page for the
+   whole of that time, on the one action the application is for.
+
+   There is no progress bar here on purpose. The server does not report how far
+   through a document it is, so a bar drawn on this screen would be measuring
+   nothing at all. Everything shown instead is true: which file is being read,
+   how long it has actually been running, and an honest range for how long that
+   usually takes.
+
+   The browser keeps painting the current document until the response to the
+   POST arrives, so this stays up for exactly as long as the conversion does
+   and is then replaced by the result.
+   --------------------------------------------------------------------------- */
+
+let processingTimer = null;
+let processingStartedAt = 0;
+
+/* Said once, when the elapsed time has passed the point where the honest
+   expectation set at the start no longer covers it. */
+const PROCESSING_LONG_MS = 120000;
+const PROCESSING_LONG_NOTE =
+    'Still working. Long or dense documents take longer, and the conversion '
+    + 'is not lost - please keep this tab open.';
+
+function chosenFileName() {
+    const group = INPUT_TARGETS.convert;
+    const kinds = ['file', 'camera', 'draw'];
+    for (let i = 0; i < kinds.length; i += 1) {
+        const element = document.getElementById(group[kinds[i]]);
+        if (element && element.getAttribute('name') === 'file'
+                && element.files && element.files.length) {
+            return element.files[0].name;
+        }
+    }
+    return '';
+}
+
+function formatElapsed(ms) {
+    const total = Math.floor(ms / 1000);
+    return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+}
+
+function showProcessing(detail) {
+    const screen = document.getElementById('processing');
+    if (!screen) return;
+
+    setText('processing-detail', detail);
+
+    processingStartedAt = Date.now();
+    setText('processing-elapsed', '0:00');
+    clearInterval(processingTimer);
+    processingTimer = setInterval(function () {
+        const elapsed = Date.now() - processingStartedAt;
+        setText('processing-elapsed', formatElapsed(elapsed));
+        if (elapsed >= PROCESSING_LONG_MS) {
+            const note = document.getElementById('processing-note');
+            if (note && note.textContent !== PROCESSING_LONG_NOTE) {
+                note.textContent = PROCESSING_LONG_NOTE;
+            }
+        }
+    }, 1000);
+
+    screen.classList.remove('hidden');
+    screen.classList.add('flex');
+    document.documentElement.style.overflow = 'hidden';
+}
+
+function hideProcessing() {
+    const screen = document.getElementById('processing');
+    clearInterval(processingTimer);
+    processingTimer = null;
+    if (!screen) return;
+    screen.classList.add('hidden');
+    screen.classList.remove('flex');
+    if (!openDialogs.length) document.documentElement.style.overflow = '';
+}
+
+/* Submit for real, with the screen up. */
+function startConversion(headline, detail) {
+    const form = document.getElementById('convert-form');
+    if (!form) return;
+    pendingSubmit = true;
+    if (headline) setText('processing-title', headline);
+    showProcessing(detail || describeConversion());
+    form.submit();
+}
+
+function describeConversion() {
+    const name = chosenFileName();
+    return name
+        ? 'Reading ' + name + ' and writing the LaTeX for it.'
+        : 'Reading your page and writing the LaTeX for it.';
+}
+
+/* Coming back to this page through the browser's history restores it from the
+   back/forward cache exactly as it was left - which, right after a conversion
+   was started, is with the processing screen up over a page that is no longer
+   doing anything. */
+window.addEventListener('pageshow', function (event) {
+    if (!event.persisted) return;
+    pendingSubmit = false;
+    hideProcessing();
+    setSubmitting(false);
+});
+
+
+/* ---------------------------------------------------------------------------
    5. Camera
 
    Full-screen preview, native-resolution capture. The preview is cropped to
@@ -403,10 +670,8 @@ let cameraFacing = 'environment';
 
 function openCameraModal(target) {
     activeTarget = target || 'convert';
-    const modal = document.getElementById('camera-modal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    modal.style.display = 'block';
+    if (!document.getElementById('camera-modal')) return;
+    openDialog('camera-modal');
     startCamera();
 }
 
@@ -436,8 +701,9 @@ function startCamera() {
         })
         .catch(function (err) {
             if (error) {
-                error.textContent = 'Could not access the camera: ' + err.message
-                    + '. Check that this page has camera permission.';
+                error.textContent = 'Could not use the camera: ' + err.message
+                    + '. Check that this page has camera permission, then try '
+                    + 'again - or write the page by hand instead.';
                 error.classList.remove('hidden');
             }
         });
@@ -456,11 +722,7 @@ function stopCameraTracks() {
 }
 
 function closeCameraModal() {
-    const modal = document.getElementById('camera-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.style.display = 'none';
-    }
+    closeDialog('camera-modal');
     const video = document.getElementById('camera-stream');
     stopCameraTracks();
     if (video) video.srcObject = null;
@@ -524,10 +786,8 @@ let inkBounds = null;           // rough extent of drawn strokes, in sheet coord
 
 function openDrawModal(target) {
     activeTarget = target || 'convert';
-    const modal = document.getElementById('draw-modal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    if (!document.getElementById('draw-modal')) return;
+    openDialog('draw-modal');
 
     if (!sheet) createSheet(SHEET_START_W, SHEET_START_H);
     // Wait for layout so the canvas can be sized to the space it actually has.
@@ -538,10 +798,7 @@ function openDrawModal(target) {
 }
 
 function closeDrawModal() {
-    const modal = document.getElementById('draw-modal');
-    if (!modal) return;
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
+    closeDialog('draw-modal');
     hideBrushCursor();
 }
 
@@ -640,9 +897,11 @@ function setTool(next) {
             const button = document.getElementById(pair[1]);
             if (!button) return;
             const active = (pair[0] === next);
-            button.className = 'px-3 py-2 rounded text-sm '
-                + (active ? 'bg-cream-100 text-forest-900 font-medium'
-                          : 'bg-forest-600 text-cream-100');
+            // Component classes, so the toolbar cannot drift away from every
+            // other control in the application. Written as whole literal
+            // strings because that is what Tailwind's scanner reads.
+            button.className = active ? 'toolbtn-active' : 'toolbtn';
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
     const hint = document.getElementById('canvas-hint');
     if (hint) {
@@ -663,11 +922,12 @@ function updateBrushCursorStyle() {
     cursor.style.marginLeft = (-diameter / 2) + 'px';
     cursor.style.marginTop = (-diameter / 2) + 'px';
     if (tool === 'eraser') {
+        // burgundy-400 and paper, against the ink-900 canvas surround.
         cursor.style.borderColor = '#BF5C72';
-        cursor.style.background = 'rgba(255,255,255,0.35)';
+        cursor.style.background = 'rgba(251,250,248,0.32)';
     } else {
-        cursor.style.borderColor = '#2B4C3F';
-        cursor.style.background = 'rgba(43,76,63,0.15)';
+        cursor.style.borderColor = '#FBFAF8';
+        cursor.style.background = 'rgba(251,250,248,0.18)';
     }
     cursor.classList.toggle('hidden', tool === 'pan');
 }
@@ -873,13 +1133,16 @@ function setupCanvas() {
 }
 
 function clearCanvas() {
-    if (!confirm('Clear everything you have written? This cannot be undone.')) {
-        return;
-    }
-    createSheet(SHEET_START_W, SHEET_START_H);
-    resizeView();
-    render();
-    toast('Canvas cleared.');
+    confirmAction(
+        'Clear the canvas?',
+        'Everything you have written will be thrown away. This cannot be undone.',
+        'Clear everything',
+        function () {
+            createSheet(SHEET_START_W, SHEET_START_H);
+            resizeView();
+            render();
+            toast('Canvas cleared.');
+        });
 }
 
 /* Find the true extent of the ink, so a mostly-empty sheet is not exported. */
@@ -1049,7 +1312,7 @@ function fillPages(container, pageUrl, total) {
     container.innerHTML = '';
     for (let number = 1; number <= total; number += 1) {
         const image = document.createElement('img');
-        image.className = 'w-full bg-white shadow-sm border border-gray-300';
+        image.className = 'pagesheet';
         image.alt = 'Page ' + number + ' of ' + total;
         image.loading = number === 1 ? 'eager' : 'lazy';
         image.src = pageUrl + (pageUrl.indexOf('?') === -1 ? '?' : '&')
@@ -1205,7 +1468,7 @@ function toggleHistoryPreview(docId, button) {
 function showPagePreview(panel, pagesUrl, pageUrl) {
     panel.innerHTML = '';
     const note = document.createElement('p');
-    note.className = 'p-4 text-sm text-forest-600';
+    note.className = 'p-4 text-sm text-ink-500';
     note.textContent = 'Compiling…';
     panel.appendChild(note);
 
@@ -1213,9 +1476,9 @@ function showPagePreview(panel, pagesUrl, pageUrl) {
         panel.innerHTML = '';
         if (!outcome.ok) {
             const box = document.createElement('div');
-            box.className = 'p-4 text-sm bg-red-50 text-red-800 text-left';
+            box.className = 'note-alarm m-3';
             const heading = document.createElement('p');
-            heading.className = 'font-semibold mb-1';
+            heading.className = 'note-title';
             heading.textContent = 'The document could not be rendered';
             const reason = document.createElement('p');
             reason.textContent = outcome.reason;
@@ -1225,7 +1488,7 @@ function showPagePreview(panel, pagesUrl, pageUrl) {
             return;
         }
         const pages = document.createElement('div');
-        pages.className = 'max-h-[60vh] overflow-y-auto bg-gray-100 p-3 space-y-3';
+        pages.className = 'pagestack max-h-[60vh]';
         panel.appendChild(pages);
         fillPages(pages, pageUrl, outcome.pages);
     });
@@ -1244,8 +1507,9 @@ function setText(id, value) {
 let toastTimer = null;
 function toast(message) {
     const element = document.getElementById('toast');
-    if (!element) return;
-    element.textContent = message;
+    const text = document.getElementById('toast-text');
+    if (!element || !text) return;
+    text.textContent = message;
     element.classList.remove('hidden');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
@@ -1253,17 +1517,35 @@ function toast(message) {
     }, 2600);
 }
 
+
+/* ---------------------------------------------------------------------------
+   10. Chrome
+   --------------------------------------------------------------------------- */
+
+function isSidebarOpen() {
+    const sidebar = document.getElementById('mobile-sidebar');
+    return !!sidebar && !sidebar.classList.contains('translate-x-full');
+}
+
 function toggleSidebar() {
     const sidebar = document.getElementById('mobile-sidebar');
     const overlay = document.getElementById('sidebar-overlay');
+    const button = document.getElementById('menu-button');
     if (!sidebar || !overlay) return;
 
-    if (sidebar.classList.contains('translate-x-full')) {
-        sidebar.classList.remove('translate-x-full');
-        overlay.classList.remove('hidden');
-    } else {
-        sidebar.classList.add('translate-x-full');
-        overlay.classList.add('hidden');
+    const willOpen = !isSidebarOpen();
+    sidebar.classList.toggle('translate-x-full', !willOpen);
+    overlay.classList.toggle('hidden', !willOpen);
+    document.documentElement.style.overflow = willOpen ? 'hidden' : '';
+    if (button) button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+
+    if (willOpen) {
+        const first = sidebar.querySelector(FOCUSABLE);
+        if (first) requestAnimationFrame(function () { first.focus(); });
+    } else if (button) {
+        // Give the keyboard back to the control that opened it, rather than
+        // dropping focus to the top of the document.
+        button.focus();
     }
 }
 
@@ -1279,19 +1561,20 @@ function setupConvertDragDrop() {
     const fileInput = document.getElementById('convert-file-upload');
     if (!dropArea || !fileInput) return;
 
-    dropArea.addEventListener('click', function () { fileInput.click(); });
+    // No click handler: the drop area is a <label> for the file input, so the
+    // browser opens the picker itself. Adding one here would open it twice.
 
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function (name) {
         dropArea.addEventListener(name, preventDefaults, false);
     });
     ['dragenter', 'dragover'].forEach(function (name) {
         dropArea.addEventListener(name, function () {
-            dropArea.classList.add('border-forest-700', 'bg-forest-100/50');
+            dropArea.classList.add('is-dragging');
         }, false);
     });
     ['dragleave', 'drop'].forEach(function (name) {
         dropArea.addEventListener(name, function () {
-            dropArea.classList.remove('border-forest-700', 'bg-forest-100/50');
+            dropArea.classList.remove('is-dragging');
         }, false);
     });
 
@@ -1317,6 +1600,11 @@ function setupConvertDragDrop() {
    --------------------------------------------------------------------------- */
 
 window.addEventListener('DOMContentLoaded', function () {
+    const accept = document.getElementById('confirm-accept');
+    const cancel = document.getElementById('confirm-cancel');
+    if (accept) accept.addEventListener('click', function () { resolveConfirm(true); });
+    if (cancel) cancel.addEventListener('click', function () { resolveConfirm(false); });
+
     setupTermsGate();
     setupAvailabilityGate();
     setupConvertDragDrop();
@@ -1327,12 +1615,14 @@ window.addEventListener('DOMContentLoaded', function () {
         loadPreview();
     }
 
-    if (pageData.showConvertResult || pageData.hasConvertResult
-            || pageData.hasConvertError) {
-        setTimeout(function () {
-            const section = document.getElementById('convert');
-            if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
+    // The workspace no longer scrolls itself anywhere. The result and the
+    // error both render at the top of the page now, in the place the input
+    // panel occupied, so there is nothing to scroll to. Moving focus is still
+    // worth doing: it puts a screen reader and a keyboard on what actually
+    // changed instead of back at the top of the document.
+    if (pageData.hasConvertResult || pageData.hasConvertError) {
+        const main = document.getElementById('main');
+        if (main) main.focus();
     }
 });
 
@@ -1342,10 +1632,22 @@ window.addEventListener('DOMContentLoaded', function () {
    -----------------------------------------------------------------------
    Guests get a temporary history held in sessionStorage:
      - it survives the Post/Redirect/Get hop after a conversion,
-     - it is wiped on a page refresh or a fresh visit,
+     - it is wiped when the page is refreshed,
      - the browser drops it entirely when the tab closes.
    Signed-in users never use this path; their history comes from Firestore,
    rendered server-side.
+
+   It now spans two routes: entries are WRITTEN on the workspace, where a
+   conversion lands, and RENDERED on /history. So "should this be kept?" can
+   no longer be answered by "is this the page that just converted something",
+   the way it was when both jobs happened on the same page - moving between
+   the two would have thrown the list away every time.
+
+   What the Privacy Policy promises a guest is that results are cleared when
+   they refresh or close the tab. That is now implemented literally, by asking
+   the browser what kind of navigation this was, rather than approximated by
+   clearing on every load that was not the redirect after a conversion. A
+   refresh still wipes it; walking between Convert and History no longer does.
 
    Each entry keeps the result's token as well as its text, so Download and
    Preview work on it for as long as the server still holds the document.
@@ -1377,11 +1679,64 @@ window.addEventListener('DOMContentLoaded', function () {
         } catch (e) { /* nothing to do */ }
     }
 
+    /* The same shape the server renders a saved conversion with - '%d %b %Y,
+       %H:%M' in app.py - so the two kinds of history entry do not disagree
+       about what a date looks like. */
+    function formatWhen(value) {
+        if (!value) return '';
+        var when = new Date(value);
+        if (isNaN(when.getTime())) return value;   // an entry from before this
+        try {
+            return when.toLocaleString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: false
+            });
+        } catch (e) {
+            return when.toISOString().slice(0, 16).replace('T', ' ');
+        }
+    }
+
+    /* True only for an actual reload - F5, the reload button, location.reload.
+       An ordinary link, a typed URL and the back button all report their own
+       navigation types and are not this. */
+    function isReload() {
+        try {
+            var entries = performance.getEntriesByType('navigation');
+            if (entries && entries.length) return entries[0].type === 'reload';
+            /* The old interface, for browsers without the Level 2 timeline. */
+            return !!(performance.navigation
+                      && performance.navigation.type === 1);
+        } catch (e) {
+            return false;
+        }
+    }
+
     // A signed-in user must never see leftovers from an earlier guest session
     // in the same tab.
     if (data.isAuthenticated) {
         clear();
         return;
+    }
+
+    // keepGuestHistory is true on the redirect right after a conversion, which
+    // must never be treated as a refresh even though the browser has just
+    // loaded the page again.
+    if (!data.keepGuestHistory && isReload()) {
+        clear();
+    }
+
+    var items = read();
+
+    // The workspace writes; /history only reads.
+    if (data.latestEntry && data.latestEntry.result) {
+        items.unshift({
+            fileName: data.latestEntry.fileName,
+            result: data.latestEntry.result,
+            token: data.latestEntry.token || null,
+            at: new Date().toISOString()
+        });
+        items = items.slice(0, MAX_ITEMS);
+        write(items);
     }
 
     window.addEventListener('DOMContentLoaded', function () {
@@ -1390,100 +1745,81 @@ window.addEventListener('DOMContentLoaded', function () {
         var clearBtn = document.getElementById('guest-history-clear');
         if (!list) { return; }
 
-        // keepGuestHistory is true only on the redirect right after a
-        // conversion. Anything else - F5, a typed URL, a fresh tab - starts
-        // empty.
-        var items = data.keepGuestHistory ? read() : [];
-        if (!data.keepGuestHistory) { clear(); }
-
-        if (data.latestEntry && data.latestEntry.result) {
-            items.unshift({
-                fileName: data.latestEntry.fileName,
-                result: data.latestEntry.result,
-                token: data.latestEntry.token || null,
-                at: new Date().toLocaleString()
-            });
-            items = items.slice(0, MAX_ITEMS);
-            write(items);
+        function action(label, className, onClick) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = className;
+            button.textContent = label;
+            button.addEventListener('click', onClick);
+            return button;
         }
 
         function render() {
             list.innerHTML = '';
-            if (!items.length) {
-                if (empty) { empty.classList.remove('hidden'); }
-                if (clearBtn) { clearBtn.classList.add('hidden'); }
-                return;
-            }
-            if (empty) { empty.classList.add('hidden'); }
-            if (clearBtn) { clearBtn.classList.remove('hidden'); }
+            var any = items.length > 0;
+            list.classList.toggle('hidden', !any);
+            if (empty) { empty.classList.toggle('hidden', any); }
+            if (clearBtn) { clearBtn.classList.toggle('hidden', !any); }
+            if (!any) { return; }
 
             items.forEach(function (item, index) {
                 var li = document.createElement('li');
-                li.className = 'border border-gray-300 rounded-lg p-3 bg-white';
+                li.className = 'p-4 sm:p-5';
 
                 var head = document.createElement('div');
-                head.className = 'flex items-center justify-between gap-2 flex-wrap';
-                var name = document.createElement('span');
-                name.className = 'text-sm text-forest-700 truncate font-medium';
+                head.className = 'flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1';
+                var name = document.createElement('h2');
+                name.className = 'min-w-0 flex-1 truncate font-poppins text-[0.9375rem] font-medium text-ink-900';
                 name.textContent = item.fileName || 'document';
-                var when = document.createElement('span');
-                when.className = 'text-xs text-forest-500';
-                when.textContent = item.at || '';
+                var when = document.createElement('time');
+                when.className = 'flex-shrink-0 text-xs tabular-nums text-ink-400';
+                when.dateTime = item.at || '';
+                when.textContent = formatWhen(item.at);
                 head.appendChild(name);
                 head.appendChild(when);
                 li.appendChild(head);
 
                 var actions = document.createElement('div');
-                actions.className = 'mt-2 flex flex-wrap gap-2';
+                actions.className = 'mt-3 flex flex-wrap gap-2';
 
                 if (item.token) {
                     var download = document.createElement('a');
                     download.href = '/download-converted-tex?token='
                         + encodeURIComponent(item.token);
-                    download.innerHTML = '<button type="button" class="bg-forest-800 '
-                        + 'px-3 py-1.5 rounded text-cream-100 text-sm '
-                        + 'hover:bg-forest-700 transition-colors">Download .tex</button>';
+                    download.className = 'btn-secondary btn-sm';
+                    download.textContent = 'Download .tex';
                     actions.appendChild(download);
                 }
 
-                var copy = document.createElement('button');
-                copy.type = 'button';
-                copy.className = 'bg-forest-800 px-3 py-1.5 rounded text-cream-100 '
-                    + 'text-sm hover:bg-forest-700 transition-colors';
-                copy.textContent = 'Copy LaTeX';
-                copy.addEventListener('click', function () {
-                    writeClipboard(item.result, copy);
-                });
-                actions.appendChild(copy);
+                actions.appendChild(action('Copy LaTeX', 'btn-secondary btn-sm',
+                    function (event) {
+                        writeClipboard(item.result, event.currentTarget);
+                    }));
 
                 var previewId = 'guest-preview-' + index;
                 if (item.token) {
-                    var preview = document.createElement('button');
-                    preview.type = 'button';
-                    preview.className = 'bg-cream-100 border border-forest-600 px-3 '
-                        + 'py-1.5 rounded text-forest-800 text-sm hover:bg-forest-100 '
-                        + 'transition-colors';
-                    preview.textContent = 'Preview PDF';
-                    preview.addEventListener('click', function () {
-                        var panel = document.getElementById(previewId);
-                        if (!panel) return;
-                        if (!panel.classList.contains('hidden')) {
-                            panel.classList.add('hidden');
-                            panel.innerHTML = '';
-                            preview.textContent = 'Preview PDF';
-                            return;
-                        }
-                        panel.classList.remove('hidden');
-                        preview.textContent = 'Hide preview';
-                        var token = encodeURIComponent(item.token);
-                        showPagePreview(panel,
-                                        '/preview/pages?token=' + token,
-                                        '/preview/page.png?token=' + token);
-                    });
-                    actions.appendChild(preview);
+                    actions.appendChild(action('Preview PDF', 'btn-quiet btn-sm',
+                        function (event) {
+                            var button = event.currentTarget;
+                            var panel = document.getElementById(previewId);
+                            if (!panel) return;
+                            if (!panel.classList.contains('hidden')) {
+                                panel.classList.add('hidden');
+                                panel.innerHTML = '';
+                                button.textContent = 'Preview PDF';
+                                return;
+                            }
+                            panel.classList.remove('hidden');
+                            button.textContent = 'Hide preview';
+                            var token = encodeURIComponent(item.token);
+                            showPagePreview(panel,
+                                            '/preview/pages?token=' + token,
+                                            '/preview/page.png?token=' + token);
+                        }));
 
                     var open = document.createElement('a');
                     open.href = '/preview.pdf?token=' + encodeURIComponent(item.token);
+                    open.className = 'btn-quiet btn-sm';
                     open.setAttribute(
                         'data-document-url',
                         '/preview/document?token=' + encodeURIComponent(item.token));
@@ -1492,30 +1828,28 @@ window.addEventListener('DOMContentLoaded', function () {
                     });
                     open.target = '_blank';
                     open.rel = 'noopener';
-                    open.innerHTML = '<button type="button" class="bg-cream-100 '
-                        + 'border border-forest-600 px-3 py-1.5 rounded '
-                        + 'text-forest-800 text-sm hover:bg-forest-100 '
-                        + 'transition-colors">Open PDF in new tab</button>';
+                    open.textContent = 'Open PDF in new tab';
                     actions.appendChild(open);
                 }
                 li.appendChild(actions);
 
                 var panel = document.createElement('div');
                 panel.id = previewId;
-                panel.className = 'hidden mt-3 border border-gray-300 rounded overflow-hidden';
+                panel.className = 'mt-3 hidden overflow-hidden rounded-md border border-paper-300';
                 li.appendChild(panel);
 
                 var source = document.createElement('details');
-                source.className = 'mt-2';
+                source.className = 'disclosure mt-3';
                 var summary = document.createElement('summary');
-                summary.className = 'cursor-pointer text-xs text-forest-700';
                 summary.textContent = 'LaTeX source';
+                var body = document.createElement('div');
+                body.className = 'p-3';
                 var pre = document.createElement('pre');
-                pre.className = 'mt-2 bg-forest-100 p-3 rounded text-xs '
-                    + 'whitespace-pre-wrap font-mono max-h-40 overflow-y-auto';
+                pre.className = 'tex-source max-h-40';
                 pre.textContent = item.result;
+                body.appendChild(pre);
                 source.appendChild(summary);
-                source.appendChild(pre);
+                source.appendChild(body);
                 li.appendChild(source);
 
                 list.appendChild(li);
@@ -1527,6 +1861,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 items = [];
                 clear();
                 render();
+                toast('Session history cleared.');
             });
         }
 

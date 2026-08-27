@@ -1,256 +1,60 @@
-<!-- templates/home.html -->
-<!DOCTYPE html>
+{# ---------------------------------------------------------------------------
+   The workspace.
 
-<html lang="en">
-<head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ConTeX App</title>
-    <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
-</head>
-<body class="bg-forest-100/50 min-h-screen font-poppins">
-    <header class="flex fixed top-0 left-0 w-full z-50 justify-between items-center bg-forest-800 px-4 md:px-10 py-3 h-[10vh] landscape:h-auto landscape:min-h-[12vh]">
-        <span>
-            <img src="" alt="">
-            <p class="text-cream-100 font-bold text-xl">
-                ConTeX
-            </p>
-        </span>
+   This route is the converter. It used to be a four-screen scroll - a hero,
+   then the converter, then About, then History - which put the only thing
+   anyone comes here for below the fold and the finished document below the
+   control that produced it.
 
-        <!-- Desktop Navigation -->
-        <nav class="hidden md:block">
-            <ul class="flex justify-between items-center gap-5">
-                <li><a href="#home" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Home</a></li>
-                <li><a href="#convert" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">Convert</a></li>
-                <li><a href="#about" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">About</a></li>
-                <li><a href="#history" class="px-4 py-2 rounded-full bg-forest-600 text-cream-100 hover:bg-forest-700 font-medium transition-all duration-300 block">History</a></li>
-                {% if session.get('user') %}
-                    <li><span class="px-4 py-2 text-cream-100 font-medium">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span></li>
-                    <li><a href="{{ url_for('logout') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Logout</a></li>
-                {% else %}
-                    <li><a href="{{ url_for('login') }}" class="px-4 py-2 rounded-full bg-burgundy-600 text-cream-100 hover:bg-burgundy-500 font-medium transition-all duration-300 block">Login</a></li>
-                {% endif %}
-            </ul>
-        </nav>
+   Now the page has two states and nothing else: give it a page, or look at
+   the document it made. History moved to its own route, About moved into the
+   footer.
+   --------------------------------------------------------------------------- #}
+{% extends 'base.html' %}
 
-        <!-- Mobile Menu Button -->
-        <button id="mobile-menu-btn" class="md:hidden text-cream-100 focus:outline-none" onclick="toggleSidebar()">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path>
-            </svg>
-        </button>
-    </header>
+{% block title %}{% if convert_result %}{{ convert_result.file_name or 'Converted document' }}{% endif %}{% endblock %}
 
-    <!-- Mobile Sidebar -->
-    <div id="mobile-sidebar" class="fixed inset-y-0 right-0 w-64 bg-forest-900 transform translate-x-full transition-transform duration-300 ease-in-out z-50 md:hidden shadow-xl flex flex-col">
-        <div class="flex justify-end p-4">
-            <button id="close-sidebar-btn" class="text-cream-100 focus:outline-none" onclick="toggleSidebar()">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            </button>
-        </div>
-        <nav class="flex flex-col items-center gap-6 mt-10">
-            <a href="#home" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Home</a>
-            <a href="#convert" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">Convert</a>
-            <a href="#about" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">About</a>
-            <a href="#history" class="text-cream-100 text-xl hover:text-forest-400 transition-colors" onclick="toggleSidebar()">History</a>
-            {% if session.get('user') %}
-                <span class="text-cream-100 text-lg">Hi, {{ session['user']['displayName'] or session['user']['email'] }}!</span>
-                <a href="{{ url_for('logout') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Logout</a>
-            {% else %}
-                <a href="{{ url_for('login') }}" class="text-burgundy-400 text-xl hover:text-burgundy-300 transition-colors font-semibold" onclick="toggleSidebar()">Login</a>
-            {% endif %}
-        </nav>
-    </div>
+{% block main %}
+    {% include 'partials/convert_section.html' %}
+{% endblock %}
 
-    <!-- Overlay for sidebar -->
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+{% block dialogs %}
+    {% include 'partials/dialogs_convert.html' %}
+    {% include 'partials/processing.html' %}
+{% endblock %}
 
-    <main class="flex flex-col items-center text-center pt-[10vh] landscape:pt-[15vh]">
-        <section id="home" class="flex flex-col justify-center items-center min-h-[90vh] landscape:min-h-screen landscape:py-10 px-4">
-            <h1 class="text-4xl text-forest-800 font-bold py-3 landscape:text-3xl landscape:py-1">ConTeX</h1>
-            <p class="text-lg text-forest-600 mb-8 landscape:mb-4 landscape:text-base">Write by hand. Convert with ConTeX.<br>
-                Turn any document &mdash; handwritten or printed &mdash; into LaTeX.</p>
+{% block page_data %}{
+    showConvertResult: {{ 'true' if show_convert_result else 'false' }},
+    hasConvertResult: {{ 'true' if convert_result else 'false' }},
+    hasConvertError: {{ 'true' if convert_error or convert_blocked else 'false' }},
 
-            <div class="bg-cream-100 px-7 py-6 rounded-lg outline outline-2 outline-forest-600 shadow-lg w-full max-w-xl flex flex-col items-center mb-8">
-                <span class="text-forest-600 mb-3 text-sm text-center">
-                    One converter. Give it a page any way you like &mdash; prose and
-                    mathematics are recognised together and assembled into a single
-                    <code>.tex</code> file.
-                </span>
-                <ul class="text-sm text-forest-600 text-left list-none space-y-1 flex flex-col items-start">
-                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Images, PDFs and Word documents</li>
-                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Camera capture and handwriting on a canvas</li>
-                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Equations kept in their place in the text</li>
-                    <li class="flex items-center"><span class="text-green-600 mr-2">&#10003;</span>Checked against your original, then rendered to PDF</li>
-                </ul>
-            </div>
+    /* Terms gate */
+    termsVersion: {{ terms_version | tojson }},
+    hasAcceptedTerms: {{ 'true' if has_accepted_terms else 'false' }},
+    acceptTermsUrl: {{ url_for('accept_terms') | tojson }},
 
-            <a href="#convert" class="bg-forest-800 px-10 py-3 rounded-xl text-cream-100 landscape:py-2 landscape:px-6">Get Started</a>
-        </section>
+    /* AI availability, as of this render. Re-checked before every
+       conversion so a stale warning is never what the user acts on. */
+    aiStatusUrl: {{ url_for('ai_status_route') | tojson }},
+    ai: {{ ai | tojson }},
 
-        {% include 'partials/convert_section.html' %}
+    acceptedExtensions: {{ accepted_extensions | tojson }},
 
-        <section id="about" class="flex flex-col justify-center items-center min-h-[70vh] w-[95%] md:w-full landscape:py-10 px-2">
-            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-full p-4 md:p-8 text-left">
-                <h2 class="text-2xl font-bold text-forest-800 mb-3 text-center">About ConTeX</h2>
-                <p class="text-sm text-forest-700 mb-3">
-                    ConTeX reads a document and writes the LaTeX for it. You give it a
-                    page &mdash; scanned, photographed, typed or handwritten &mdash; and
-                    it returns a <code>.tex</code> file you can download, copy, or read
-                    as a rendered PDF.
-                </p>
-                <p class="text-sm text-forest-700 mb-3">
-                    Conversion is AI-powered by default. If the AI service is
-                    unavailable, ConTeX can still convert your document using tools
-                    that run entirely on this server &mdash; but it will tell you first,
-                    and let you decide whether to wait instead. It will never quietly
-                    hand you a lower-quality result.
-                </p>
-                <p class="text-sm text-forest-600">
-                    Read the
-                    <button type="button" class="underline text-burgundy-600 hover:text-burgundy-500" onclick="openLegal('terms')">Terms of Service</button>
-                    and
-                    <button type="button" class="underline text-burgundy-600 hover:text-burgundy-500" onclick="openLegal('privacy')">Privacy Policy</button>.
-                </p>
-            </div>
-        </section>
+    /* Guest history is written here, on the page the conversion lands on,
+       and rendered on /history. True only on the redirect that immediately
+       follows a conversion - false on a refresh or a fresh visit, which is
+       what wipes it. */
+    keepGuestHistory: {{ 'true' if keep_guest_history else 'false' }},
 
-        <!-- =====================================================
-             History
-             Signed in : rendered from Firestore, persists forever.
-             Guest     : rendered by scripts.js from sessionStorage,
-                         wiped on refresh and when the tab closes.
-
-             Both kinds of entry offer the same three actions as a
-             fresh conversion: download, copy and PDF preview.
-             ===================================================== -->
-        <section id="history" class="flex flex-col justify-center items-center bg-transparent w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
-            <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg max-w-3xl w-[95%] md:w-full p-4 md:p-8 text-left">
-                <h2 class="text-2xl font-bold text-forest-800 mb-1">History</h2>
-
-                {% if is_authenticated %}
-                    <p class="text-sm text-forest-600 mb-4">
-                        Saved to your account &mdash; available whenever you log back in.
-                    </p>
-
-                    {% if history %}
-                        <ul class="space-y-3">
-                            {% for item in history %}
-                                <li class="border border-gray-300 rounded-lg p-3 bg-white" data-history-id="{{ item.id }}">
-                                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                                        <span class="text-sm text-forest-700 truncate font-medium">{{ item.fileName }}</span>
-                                        <span class="text-xs text-forest-500">
-                                            {% if item.timestamp %}{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}{% endif %}
-                                        </span>
-                                    </div>
-
-                                    {% if item.truncated %}
-                                        <p class="mt-2 text-xs text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2">
-                                            This document was too long to store in full, so the saved
-                                            copy is truncated and cannot be rendered.
-                                        </p>
-                                    {% endif %}
-
-                                    <div class="mt-2 flex flex-wrap gap-2">
-                                        <a href="{{ url_for('history_download', doc_id=item.id) }}">
-                                            <button type="button" class="bg-forest-800 px-3 py-1.5 rounded text-cream-100 text-sm hover:bg-forest-700 transition-colors">Download .tex</button>
-                                        </a>
-                                        <button type="button" onclick="copyHistory('{{ item.id }}', this)"
-                                                class="bg-forest-800 px-3 py-1.5 rounded text-cream-100 text-sm hover:bg-forest-700 transition-colors">Copy LaTeX</button>
-                                        <button type="button" onclick="toggleHistoryPreview('{{ item.id }}', this)"
-                                                {% if item.truncated %}disabled{% endif %}
-                                                class="bg-cream-100 border border-forest-600 px-3 py-1.5 rounded text-forest-800 text-sm hover:bg-forest-100 transition-colors disabled:opacity-40">Preview PDF</button>
-                                        {% if not item.truncated %}
-                                            <a href="{{ url_for('history_preview', doc_id=item.id) }}"
-                                               data-document-url="{{ url_for('preview_document', doc=item.id) }}"
-                                               onclick="return openPdf(this)"
-                                               target="_blank" rel="noopener">
-                                                <button type="button" class="bg-cream-100 border border-forest-600 px-3 py-1.5 rounded text-forest-800 text-sm hover:bg-forest-100 transition-colors">Open PDF in new tab</button>
-                                            </a>
-                                        {% endif %}
-                                    </div>
-
-                                    <div id="history-preview-{{ item.id }}"
-                                         data-pages-url="{{ url_for('preview_pages', doc=item.id) }}"
-                                         data-page-url="{{ url_for('preview_page', doc=item.id) }}"
-                                         class="hidden mt-3 border border-gray-300 rounded overflow-hidden"></div>
-                                </li>
-                            {% endfor %}
-                        </ul>
-                    {% else %}
-                        <p id="auth-history-empty" class="text-forest-600">
-                            No saved conversions yet. Convert a document and it will appear here.
-                        </p>
-                    {% endif %}
-                {% else %}
-                    <p class="text-sm text-forest-600 mb-4">
-                        You are browsing as a guest. Results stay in this tab only and are cleared
-                        when you refresh or close it.
-                        <a href="{{ url_for('login') }}" class="text-burgundy-600 hover:text-burgundy-500 font-medium">Log in</a>
-                        to save them to your account.
-                    </p>
-
-                    <ul id="guest-history-list" class="space-y-3"></ul>
-                    <p id="guest-history-empty" class="text-forest-600">
-                        Nothing yet in this session.
-                    </p>
-                    <button type="button" id="guest-history-clear"
-                            class="hidden mt-4 px-4 py-2 bg-forest-800 text-cream-100 rounded-lg hover:bg-forest-700 transition-colors">
-                        Clear session history
-                    </button>
-                {% endif %}
-            </div>
-        </section>
-
-    </main>
-
-    {% include 'partials/modals.html' %}
-
-    <script>
-        window.pageData = {
-            showConvertResult: {{ 'true' if show_convert_result else 'false' }},
-            hasConvertResult: {{ 'true' if convert_result else 'false' }},
-            hasConvertError: {{ 'true' if convert_error or convert_blocked else 'false' }},
-
-            // Terms gate
-            termsVersion: {{ terms_version | tojson }},
-            hasAcceptedTerms: {{ 'true' if has_accepted_terms else 'false' }},
-            acceptTermsUrl: {{ url_for('accept_terms') | tojson }},
-
-            // AI availability, as of this render. Re-checked before every
-            // conversion so a stale warning is never what the user acts on.
-            aiStatusUrl: {{ url_for('ai_status_route') | tojson }},
-            ai: {{ ai | tojson }},
-
-            legalUrls: {
-                terms: {{ url_for('legal', document='terms') | tojson }},
-                privacy: {{ url_for('legal', document='privacy') | tojson }}
-            },
-            acceptedExtensions: {{ accepted_extensions | tojson }},
-
-            // History wiring (see scripts.js)
-            isAuthenticated: {{ 'true' if is_authenticated else 'false' }},
-            // True only on the redirect that immediately follows a conversion.
-            // False on a refresh or a fresh visit, which is what wipes guest history.
-            keepGuestHistory: {{ 'true' if keep_guest_history else 'false' }},
-            // The result to append to guest history on this load, if any. The
-            // token is kept with it so a guest's older entries can still be
-            // previewed and downloaded, not just re-read as text.
-            latestEntry:
-                {% if not is_authenticated and convert_result %}
-                    { fileName: {{ (convert_result.file_name or 'document') | tojson }},
-                      result: {{ convert_result.tex | tojson }},
-                      token: {{ convert_token | tojson }} }
-                {% else %}
-                    null
-                {% endif %}
-        };
-    </script>
-</body>
-</html>
+    /* The result to append to guest history on this load, if any. The token
+       is kept with it so a guest's older entries can still be previewed and
+       downloaded, not just re-read as text. */
+    latestEntry:
+        {% if not is_authenticated and convert_result %}
+            { fileName: {{ (convert_result.file_name or 'document') | tojson }},
+              result: {{ convert_result.tex | tojson }},
+              token: {{ convert_token | tojson }} }
+        {% else %}
+            null
+        {% endif %}
+}{% endblock %}

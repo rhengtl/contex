@@ -1,0 +1,171 @@
+{# ---------------------------------------------------------------------------
+   Dialogs that belong to the converter, and are therefore only on the page
+   that has one:
+
+     ai-modal       the AI-unavailable warning, with an explicit choice
+                    between waiting and continuing on the local fallback
+     camera-modal   full-screen capture
+     draw-modal     the expandable writing canvas
+   --------------------------------------------------------------------------- #}
+
+<!-- AI unavailable --------------------------------------------------------- -->
+<div id="ai-modal" class="dialog" role="dialog" aria-modal="true"
+     aria-labelledby="ai-modal-title" data-dialog>
+    <div class="dialog-panel max-w-xl">
+        <div class="dialog-head">
+            <h2 id="ai-modal-title" class="dialog-title">
+                AI-powered conversion is currently unavailable
+            </h2>
+        </div>
+
+        <div class="dialog-body space-y-4 text-left text-sm text-ink-700">
+            <p id="ai-modal-reason" class="font-medium text-ink-900"></p>
+
+            <dl class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <dt class="eyebrow mb-1">Affected service</dt>
+                    <dd id="ai-modal-services" class="text-ink-700"></dd>
+                </div>
+                <div>
+                    <dt class="eyebrow mb-1">Expected recovery</dt>
+                    <dd>
+                        <span id="ai-modal-recovery" class="text-ink-700"></span>
+                        <span id="ai-modal-recovery-source" class="mt-1 block text-xs text-ink-400"></span>
+                    </dd>
+                </div>
+            </dl>
+
+            <div class="note-caution">
+                <p class="note-title">If you continue without AI</p>
+                <p>
+                    Your document can still be converted on this server, but the
+                    result will be of lower quality. In particular:
+                </p>
+                <ul class="mt-1.5 list-disc space-y-0.5 pl-5">
+                    <li>complex document structure may not be reconstructed accurately;</li>
+                    <li>unclear or difficult handwriting may produce poor results;</li>
+                    <li>mathematics is more likely to be misread;</li>
+                    <li>Word documents are converted directly and lose only LaTeX polish.</li>
+                </ul>
+                <p class="mt-1.5">
+                    Do not expect the same quality as an AI-powered conversion.
+                </p>
+            </div>
+
+            <p class="text-xs text-ink-400" id="ai-modal-checked"></p>
+        </div>
+
+        <div class="dialog-foot">
+            <button type="button" onclick="recheckAi()" id="ai-modal-recheck"
+                    class="btn-quiet mr-auto" data-dialog-initial>Check again</button>
+            <button type="button" onclick="cancelConversion()" class="btn-secondary">Cancel and wait</button>
+            <button type="button" onclick="continueWithFallback()" class="btn-danger">Continue without AI</button>
+        </div>
+    </div>
+</div>
+
+<!-- Camera ----------------------------------------------------------------- -->
+{# Full-screen by design. A document photographed through a letterboxed
+   preview is a document the user could not line up, and misalignment costs
+   more accuracy than any amount of UI polish buys back. The preview fills the
+   screen with object-fit: cover, but capture always uses the camera's native
+   frame - cropping the preview must never crop the document. #}
+<div id="camera-modal" role="dialog" aria-modal="true" aria-label="Take a photo"
+     class="on-dark fixed inset-0 z-[70] hidden bg-black">
+    <video id="camera-stream" autoplay playsinline muted
+           class="absolute inset-0 h-full w-full object-cover"></video>
+
+    <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div class="h-[72%] w-[88%] rounded-lg border-2 border-white/40"></div>
+    </div>
+
+    <div class="absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-4">
+        <button type="button" onclick="closeCameraModal()"
+                class="btn-on-dark btn-sm bg-black/55" data-dialog-initial>Cancel</button>
+        <p class="rounded-md bg-black/50 px-3 py-1.5 text-center text-xs text-white/90">
+            Fill the frame with your page
+        </p>
+        <button type="button" id="camera-switch" onclick="switchCamera()"
+                class="btn-on-dark btn-sm bg-black/55">Flip</button>
+    </div>
+
+    <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 p-6">
+        <p id="camera-error"
+           class="hidden max-w-md rounded-md bg-alarm-700 px-3 py-2 text-center text-sm text-white"></p>
+        <button type="button" onclick="capturePhoto()"
+                class="h-[4.5rem] w-[4.5rem] rounded-full bg-white ring-4 ring-white/40
+                       transition-transform active:scale-95">
+            <span class="sr-only">Capture photo</span>
+        </button>
+    </div>
+</div>
+
+<!-- Writing canvas --------------------------------------------------------- -->
+{# An expandable workspace rather than a fixed box. The canvas the user draws
+   on is a window onto a much larger sheet: panning moves the window, and the
+   sheet grows when a stroke approaches its edge, so nobody has to decide how
+   much room they need before they start writing. #}
+<div id="draw-modal" role="dialog" aria-modal="true" aria-label="Write or draw"
+     class="on-dark fixed inset-0 z-[70] hidden flex-col bg-ink-900">
+
+    <div class="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+        <div class="flex items-center gap-1" role="group" aria-label="Tool">
+            <button type="button" id="tool-pen" onclick="setTool('pen')" class="toolbtn-active">Pen</button>
+            <button type="button" id="tool-eraser" onclick="setTool('eraser')" class="toolbtn">Eraser</button>
+            <button type="button" id="tool-pan" onclick="setTool('pan')" class="toolbtn">Pan</button>
+        </div>
+
+        <label for="brush-size" class="flex items-center gap-2.5 text-sm text-paper-100">
+            <span id="size-label" class="whitespace-nowrap tabular-nums">Size 3</span>
+            <input type="range" id="brush-size" min="1" max="60" value="3"
+                   class="w-24 accent-paper-100 sm:w-40">
+        </label>
+
+        <div class="flex items-center gap-1">
+            <button type="button" onclick="clearCanvas()" class="toolbtn-danger">Clear all</button>
+            <button type="button" onclick="closeDrawModal()" class="toolbtn" data-dialog-initial>Cancel</button>
+            <button type="button" onclick="saveDrawing()" class="toolbtn-active">Use this</button>
+        </div>
+    </div>
+
+    <div id="canvas-wrap" class="relative flex-1 overflow-hidden bg-ink-900">
+        <canvas id="draw-canvas" class="absolute inset-0 block touch-none"></canvas>
+        {# Follows the pointer and is exactly the size of the tool's footprint,
+           so the user can see what a stroke will cover before making it.
+           left-0 top-0 anchors it to the canvas corner, because the transform
+           that follows the pointer is measured from there. #}
+        <div id="brush-cursor" class="pointer-events-none absolute left-0 top-0 z-10 hidden rounded-full border-2"></div>
+
+        <p class="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-8rem)] rounded bg-ink-900 px-2.5 py-1.5 text-xs text-paper-100">
+            <span id="canvas-hint">Drag to write. Hold space, use the middle button, or two fingers to pan.</span>
+        </p>
+        <p class="pointer-events-none absolute bottom-2 right-2 rounded bg-ink-900 px-2.5 py-1.5 text-xs tabular-nums text-paper-100">
+            <span id="canvas-size"></span>
+        </p>
+    </div>
+</div>
+
+<!-- Confirm ---------------------------------------------------------------- -->
+{# Clearing the canvas throws away everything written on it and cannot be
+   undone, so it asks first. It used to ask with window.confirm(), which is the
+   one dialog in the application that looked and behaved like none of the
+   others - a browser chrome box with the browser's own buttons, no relation to
+   anything else on screen. #}
+{# z-[85], not the .dialog default of z-60: this one is opened from the writing
+   canvas, which is z-70. See the layer scale in tailwind.src.css. #}
+<div id="confirm-modal" class="dialog z-[85]" role="dialog" aria-modal="true"
+     aria-labelledby="confirm-title" data-dialog>
+    <div class="dialog-panel max-w-md">
+        <div class="dialog-head">
+            <h2 id="confirm-title" class="dialog-title">Are you sure?</h2>
+        </div>
+        <div class="dialog-body">
+            <p id="confirm-body" class="text-sm leading-relaxed text-ink-700"></p>
+        </div>
+        <div class="dialog-foot">
+            <button type="button" id="confirm-cancel" class="btn-secondary"
+                    data-dialog-initial>Cancel</button>
+            <button type="button" id="confirm-accept" class="btn-danger">Confirm</button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,100 @@
+{# ---------------------------------------------------------------------------
+   The header.
+
+   Two links and an account control. The old one carried five filled pills -
+   Home, Convert, About, History and Login all competing at equal weight in a
+   bar 10vh tall - and an <img src=""> where the logo should have been.
+
+   The current page is marked with a rule under its label rather than a filled
+   pill, so the bar stays quiet and you can still tell where you are.
+   --------------------------------------------------------------------------- #}
+{% set user = session.get('user') %}
+{% set here = request.endpoint %}
+
+<header class="sticky top-0 z-40 border-b border-paper-300 bg-paper-100/95 backdrop-blur-sm">
+    <div class="wrap flex h-16 items-center justify-between gap-4">
+
+        <a href="{{ url_for('home') }}"
+           class="flex flex-shrink-0 items-center gap-2.5 rounded-sm"
+           aria-label="ConTeX home">
+            {# The mark as drawn, on the paper ground it was drawn for. #}
+            <img src="{{ url_for('static', filename='img/contex-mark.png') }}"
+                 alt="" width="32" height="32" class="h-8 w-8" decoding="async">
+            {# The wordmark drops the E the way the TeX logo does. The letters
+               are real text - selectable, searchable, and copied correctly -
+               and the link's aria-label is what assistive technology reads,
+               so the shifted glyph never reaches it as a separate word. #}
+            <span class="font-display text-[1.3rem] leading-none text-ink-900">ConT<span
+                  class="inline-block translate-y-[0.16em]">e</span>X</span>
+        </a>
+
+        <nav class="hidden items-center gap-7 md:flex" aria-label="Main">
+            <a href="{{ url_for('home') }}" class="nav-link"
+               {% if here == 'home' %}aria-current="page"{% endif %}>Convert</a>
+            <a href="{{ url_for('history_page') }}" class="nav-link"
+               {% if here == 'history_page' %}aria-current="page"{% endif %}>History</a>
+
+            <span class="h-5 w-px bg-paper-300" aria-hidden="true"></span>
+
+            {% if user %}
+                <span class="max-w-[16ch] truncate text-sm text-ink-500"
+                      title="{{ user.email }}">{{ user.displayName or user.email }}</span>
+                <a href="{{ url_for('logout') }}" class="btn-secondary btn-sm">Sign out</a>
+            {% elif here != 'login' %}
+                <a href="{{ url_for('login') }}" class="btn-secondary btn-sm">Sign in</a>
+            {% endif %}
+        </nav>
+
+        <button type="button" id="menu-button" onclick="toggleSidebar()"
+                aria-controls="mobile-sidebar" aria-expanded="false"
+                class="btn-quiet -mr-2 px-2 md:hidden">
+            <span class="sr-only">Menu</span>
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16"/>
+            </svg>
+        </button>
+    </div>
+</header>
+
+<!-- Mobile navigation ------------------------------------------------------ -->
+<div id="sidebar-overlay" onclick="toggleSidebar()"
+     class="fixed inset-0 z-50 hidden bg-ink-900/50 md:hidden"></div>
+
+<div id="mobile-sidebar" role="dialog" aria-modal="true" aria-label="Menu"
+     class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] translate-x-full flex-col
+            border-l border-paper-300 bg-paper-50 transition-transform duration-200 md:hidden">
+    <div class="flex h-16 flex-shrink-0 items-center justify-between border-b border-paper-300 px-5">
+        <span class="font-display text-lg text-ink-900">Menu</span>
+        <button type="button" onclick="toggleSidebar()" class="dialog-close">
+            <span class="sr-only">Close menu</span>
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18"/>
+            </svg>
+        </button>
+    </div>
+
+    <nav class="flex flex-col gap-1 p-4" aria-label="Main">
+        <a href="{{ url_for('home') }}" onclick="toggleSidebar()"
+           class="rounded-md px-3 py-3 text-[0.9375rem] font-medium transition
+                  {% if here == 'home' %}bg-forest-50 text-forest-800{% else %}text-ink-700 hover:bg-paper-200{% endif %}">Convert</a>
+        <a href="{{ url_for('history_page') }}" onclick="toggleSidebar()"
+           class="rounded-md px-3 py-3 text-[0.9375rem] font-medium transition
+                  {% if here == 'history_page' %}bg-forest-50 text-forest-800{% else %}text-ink-700 hover:bg-paper-200{% endif %}">History</a>
+    </nav>
+
+    <div class="mt-auto border-t border-paper-300 p-4">
+        {% if user %}
+            <p class="mb-3 truncate text-sm text-ink-500">
+                Signed in as <span class="font-medium text-ink-900">{{ user.displayName or user.email }}</span>
+            </p>
+            <a href="{{ url_for('logout') }}" class="btn-secondary btn-block">Sign out</a>
+        {% else %}
+            <p class="mb-3 text-sm text-ink-500">
+                Sign in to keep your conversions after this tab closes.
+            </p>
+            <a href="{{ url_for('login') }}" class="btn-primary btn-block">Sign in</a>
+        {% endif %}
+    </div>
+</div>

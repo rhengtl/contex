@@ -1,5 +1,35 @@
 /* Source for static/css/app.css - see tailwind.config.js for the build command.
-   Edit this file, never app.css, which is generated. */
+   Edit this file, never app.css, which is generated.
+
+   ---------------------------------------------------------------------------
+   THE DESIGN SYSTEM
+   ---------------------------------------------------------------------------
+   ConTeX reads a page and writes the LaTeX for it. The interface is therefore
+   built to look like what it produces: paper, ink, hairline rules, real
+   typographic hierarchy, and as little furniture as the job allows. Surfaces
+   are separated by tone and a 1px rule rather than by shadows; the only two
+   shadows in the system are for things that genuinely float (dialogs, the
+   sticky header once the page has moved under it).
+
+   Every colour pairing below was measured rather than eyeballed:
+
+     ink-900 / ink-700 / ink-500 / ink-400  on paper-50, -100 and -200
+     forest-800 / -700, burgundy-600 / -700 on paper-50 and -100
+     caution / alarm / affirm 700 on their own 100, and on paper-100
+
+   all clear WCAG AA for body text (>= 4.5:1), and paper-400 clears 3:1 against
+   paper-50 and paper-100 for form and button boundaries.
+
+   Two pairings do NOT clear and are forbidden rather than fudged:
+     ink-400 on paper-200   (4.45:1)  -> use ink-500 there
+     paper-400 on paper-200 (2.81:1)  -> use a solid fill, not a border
+   paper-200 is the inset surface - code blocks, the preview gutter, chips -
+   so in practice this only means captions inside a code block are ink-500.
+
+   Type: Spectral for display, Poppins for everything you operate. That split
+   is the product - the serif is the typeset document, the sans is the tool
+   that made it.
+   --------------------------------------------------------------------------- */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,30 +44,99 @@
     }
 
     html {
-        /* the home page's nav anchors (#convert, #about, #history) rely on this */
         scroll-behavior: smooth;
+        /* The sticky header must not cover the thing an anchor scrolls to. */
+        scroll-padding-top: 5rem;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        background-color: theme('colors.paper.100');
+        color: theme('colors.ink.700');
+        font-family: theme('fontFamily.poppins');
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+    }
+
+    /* Headings are the display face by default, so no template has to
+       remember to ask for it. */
+    h1, h2, h3, h4 {
+        font-family: theme('fontFamily.display');
+        color: theme('colors.ink.900');
+        font-weight: 600;
+        letter-spacing: -0.011em;
+        line-height: 1.2;
+        text-wrap: balance;
+    }
+
+    code, pre, kbd, samp {
+        font-family: theme('fontFamily.mono');
+        font-size: 0.9em;
+    }
+
+    /* One focus indicator for the whole application. :focus-visible rather
+       than :focus, so it appears for keyboard and assistive-technology users
+       without ringing every mouse click. Previously nothing in this app had a
+       focus style at all except the two auth inputs. */
+    :focus-visible {
+        outline: 2px solid theme('colors.forest.800');
+        outline-offset: 2px;
+        border-radius: 2px;
+    }
+
+    /* Inside a dark surface the forest ring disappears; invert it there. */
+    .on-dark :focus-visible,
+    .on-dark:focus-visible {
+        outline-color: theme('colors.paper.50');
+    }
+
+    ::selection {
+        background-color: theme('colors.forest.200');
+        color: theme('colors.ink.900');
+    }
+
+    [hidden] {
+        display: none !important;
+    }
+
+    /* Motion is used to explain a change of state, never to decorate. When a
+       reader has asked their system for less of it, they get none: no
+       animation, no transition, and no smooth scrolling either - which the
+       previous stylesheet applied unconditionally. */
+    @media (prefers-reduced-motion: reduce) {
+        html {
+            scroll-behavior: auto;
+        }
+
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
     }
 }
 
 /* ---------------------------------------------------------------------------
-   Metric-matched stand-in for Poppins.
+   Metric-matched stand-ins.
 
-   Poppins arrives from Google Fonts a moment after the page paints, and until
-   it does the text is set in whatever sans-serif is to hand. Poppins is about
-   10% wider than Arial and has a much taller default line box (1.5em against
-   1.15em), so every line moved when it swapped in - measured as the whole of
-   the home page's 0.1 cumulative layout shift.
+   Both webfonts arrive a moment after the page paints, and until they do the
+   text is set in whatever local face is to hand. Poppins is about 10% wider
+   than Arial and has a much taller default line box (1.5em against 1.15em), so
+   every line moved when it swapped in - measured as the whole of the home
+   page's 0.1 cumulative layout shift.
 
-   These overrides make the stand-in occupy exactly the space Poppins will, so
-   the swap changes the letterforms and nothing else. The numbers were measured
-   in the browser against this font at each weight rather than copied from a
-   table: size-adjust is the width ratio, and the ascent and descent are
-   Poppins' own 1.05 and 0.35 divided by that ratio, so the line box comes out
-   the same height.
+   These overrides make each stand-in occupy exactly the space the real font
+   will, so the swap changes the letterforms and nothing else. The numbers were
+   measured in the browser against these fonts at each weight rather than
+   copied from a table: size-adjust is the width ratio, and the ascent and
+   descent are the real font's own values divided by that ratio, so the line
+   box comes out the same height.
 
-   Several locals because Arial is not on every platform. Any one that resolves
-   gets the adjustment; if none do, the stack falls through to an unadjusted
-   sans-serif, which is exactly the behaviour there was before.
+   Several locals each, because no one font is on every platform. Any one that
+   resolves gets the adjustment; if none do, the stack falls through to an
+   unadjusted generic, which is exactly the behaviour there was before.
    --------------------------------------------------------------------------- */
 @font-face {
     font-family: 'Poppins Fallback';
@@ -61,4 +160,513 @@
     ascent-override: 98.83%;
     descent-override: 32.94%;
     line-gap-override: 0%;
+}
+
+/* Spectral's stand-in is split across two families rather than one, because
+   the two serifs that are actually installed on real machines are 16% apart in
+   width: giving Times New Roman Georgia's numbers would leave the heading a
+   sixth too wide until the real font arrived. Each stand-in therefore carries
+   its own measurements, and the font stack tries them in order - if Georgia is
+   not installed the first family resolves to nothing and the browser moves on
+   to the Times-tuned one. Both reproduce Spectral's advance width exactly
+   (measured: 6229.8px for the sample string, against 6229.8px adjusted).
+
+   Liberation Serif is grouped with Times New Roman deliberately: it was drawn
+   to be metrically compatible with it. */
+@font-face {
+    font-family: 'Spectral Fallback';
+    font-style: normal;
+    font-weight: 600;
+    src: local('Georgia'), local('Georgia Bold');
+    size-adjust: 88.20%;
+    ascent-override: 120.19%;
+    descent-override: 52.16%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Spectral Fallback Times';
+    font-style: normal;
+    font-weight: 600;
+    src: local('Times New Roman'), local('Times New Roman Bold'),
+         local('Liberation Serif'), local('Liberation Serif Bold');
+    size-adjust: 105.55%;
+    ascent-override: 100.43%;
+    descent-override: 43.58%;
+    line-gap-override: 0%;
+}
+
+@layer components {
+
+    /* -----------------------------------------------------------------------
+       Page furniture
+       ----------------------------------------------------------------------- */
+
+    /* One container width for the whole application, so no two pages disagree
+       about where the left margin is. */
+    .wrap {
+        @apply mx-auto w-full max-w-5xl px-5 sm:px-6 lg:px-8;
+    }
+
+    .wrap-narrow {
+        @apply mx-auto w-full max-w-3xl px-5 sm:px-6 lg:px-8;
+    }
+
+    /* A hairline. The system's default separator. */
+    .rule {
+        @apply border-0 border-t border-paper-300;
+    }
+
+    /* Small caps label above a heading - the editorial equivalent of an
+       eyebrow, used to say what kind of thing follows. */
+    .eyebrow {
+        @apply font-poppins text-[0.6875rem] font-semibold uppercase
+               tracking-[0.14em] text-ink-400;
+    }
+
+    .lede {
+        @apply max-w-measure text-[0.9375rem] leading-relaxed text-ink-500;
+    }
+
+    /* -----------------------------------------------------------------------
+       Surfaces
+       ----------------------------------------------------------------------- */
+
+    .card {
+        @apply rounded-lg border border-paper-300 bg-paper-50;
+    }
+
+    /* Raised: for the one thing on a page that is the point of the page. */
+    .card-lift {
+        @apply rounded-lg border border-paper-300 bg-paper-50 shadow-lift;
+    }
+
+    /* -----------------------------------------------------------------------
+       Buttons
+
+       Four ranks, and they mean something:
+         primary   the one action this view exists for. Never two on a screen.
+         secondary a real alternative to the primary action
+         quiet     a supporting action; reads as text until you approach it
+         danger    destroys or discards something
+       ----------------------------------------------------------------------- */
+
+    .btn {
+        @apply inline-flex select-none items-center justify-center gap-2
+               rounded-md border border-transparent px-4 py-2.5 text-sm
+               font-medium leading-none transition
+               disabled:cursor-not-allowed disabled:opacity-45
+               min-h-[2.75rem];
+        /* 44px is the smallest comfortable touch target and the padding above
+           only reaches 41px, so the floor is set explicitly - as a utility,
+           because a raw declaration here would not survive @apply btn. */
+    }
+
+    .btn-primary {
+        @apply btn border-forest-800 bg-forest-800 text-paper-50
+               hover:border-forest-700 hover:bg-forest-700
+               active:bg-forest-800;
+    }
+
+    .btn-secondary {
+        @apply btn border-paper-400 bg-paper-50 text-ink-900
+               hover:border-forest-800 hover:bg-forest-50;
+    }
+
+    .btn-quiet {
+        @apply btn border-transparent bg-transparent text-ink-500
+               hover:bg-paper-200 hover:text-ink-900;
+    }
+
+    .btn-danger {
+        @apply btn border-burgundy-600 bg-burgundy-600 text-paper-50
+               hover:border-burgundy-700 hover:bg-burgundy-700;
+    }
+
+    .btn-sm {
+        @apply px-3 py-2 text-[0.8125rem] min-h-[2.5rem];
+    }
+
+    .btn-lg {
+        @apply px-7 py-3.5 text-base min-h-[3.25rem];
+    }
+
+    .btn-block {
+        @apply w-full;
+    }
+
+    /* On a dark surface - the camera, the processing screen - the ranks
+       invert. The canvas toolbar has its own pair, .toolbtn / .toolbtn-active,
+       because scripts.js rewrites those by assigning className. */
+    .btn-on-dark {
+        @apply btn border-paper-50/25 bg-paper-50/10 text-paper-50
+               hover:border-paper-50/50 hover:bg-paper-50/20;
+    }
+
+    /* -----------------------------------------------------------------------
+       Links
+       ----------------------------------------------------------------------- */
+
+    .link {
+        @apply rounded-sm font-medium text-forest-800 underline
+               underline-offset-2 decoration-forest-800/35
+               hover:decoration-forest-800;
+    }
+
+    .link-quiet {
+        @apply rounded-sm text-ink-500 underline underline-offset-2
+               decoration-ink-400/40 hover:text-ink-900
+               hover:decoration-ink-900;
+    }
+
+    /* Header navigation. The current page is marked with a rule under the
+       label rather than a filled pill, so the header stays quiet and you can
+       still tell where you are - which the old five-filled-pills bar could
+       not. */
+    .nav-link {
+        @apply relative rounded-sm px-1 py-2 text-sm font-medium text-ink-500
+               transition hover:text-ink-900;
+    }
+
+    .nav-link[aria-current="page"] {
+        @apply text-ink-900;
+    }
+
+    .nav-link[aria-current="page"]::after {
+        content: '';
+        @apply absolute inset-x-0 -bottom-px block h-0.5 bg-forest-800;
+    }
+
+    /* -----------------------------------------------------------------------
+       Forms
+       ----------------------------------------------------------------------- */
+
+    .field-label {
+        @apply mb-1.5 block text-sm font-medium text-ink-900;
+    }
+
+    .field {
+        @apply block w-full rounded-md border border-paper-400 bg-paper-50
+               px-3.5 py-2.5 text-[0.9375rem] text-ink-900 transition
+               placeholder:text-ink-400
+               hover:border-ink-400
+               focus:border-forest-800 focus:outline-none
+               focus:ring-2 focus:ring-forest-800/25 min-h-[2.75rem];
+    }
+
+    .field-hint {
+        @apply mt-1.5 text-[0.8125rem] text-ink-400;
+    }
+
+    .field-error {
+        @apply mt-1.5 text-[0.8125rem] font-medium text-alarm-700;
+    }
+
+    .checkbox {
+        @apply mt-0.5 h-[1.125rem] w-[1.125rem] flex-shrink-0 rounded-sm
+               border-paper-400 text-forest-800 accent-forest-800;
+    }
+
+    /* -----------------------------------------------------------------------
+       Notices
+
+       One component, four meanings, and the meaning is never carried by
+       colour alone - each variant is introduced by its own heading text.
+       ----------------------------------------------------------------------- */
+
+    .note {
+        @apply rounded-md border px-4 py-3 text-left text-[0.875rem]
+               leading-relaxed;
+    }
+
+    .note-title {
+        @apply mb-1 font-poppins font-semibold;
+    }
+
+    .note-quiet {
+        @apply note border-paper-300 bg-paper-200 text-ink-700;
+    }
+
+    .note-info {
+        @apply note border-forest-200 bg-forest-50 text-ink-700;
+    }
+
+    .note-info .note-title {
+        @apply text-forest-800;
+    }
+
+    .note-caution {
+        @apply note border-caution-500 bg-caution-100 text-caution-700;
+    }
+
+    .note-alarm {
+        @apply note border-alarm-500 bg-alarm-100 text-alarm-700;
+    }
+
+    .note-affirm {
+        @apply note border-affirm-500 bg-affirm-100 text-affirm-700;
+    }
+
+    /* -----------------------------------------------------------------------
+       Small parts
+       ----------------------------------------------------------------------- */
+
+    /* Empty states. Previously a bare sentence; now they say what is missing
+       and offer the action that fills it. */
+    .empty {
+        @apply flex flex-col items-center gap-3 px-6 py-14 text-center;
+    }
+
+    .empty-title {
+        @apply font-display text-lg text-ink-900;
+    }
+
+    .empty-body {
+        @apply max-w-[36ch] text-sm text-ink-500;
+    }
+
+    /* -----------------------------------------------------------------------
+       Dialogs
+
+       Every dialog in the app shares this, so no two can behave differently.
+
+       THE LAYER SCALE. Everything that overlaps something else sits on one of
+       these, and nothing may invent a new one:
+
+         40  the sticky header
+         50  the mobile drawer and its backdrop
+         60  ordinary dialogs - legal, the outage warning
+         70  the full-bleed surfaces - camera, writing canvas
+         85  the confirmation dialog, which is opened FROM the canvas and so
+             has to sit above it. At 60 it opened behind the canvas: visible
+             to the accessibility tree, invisible and unclickable to a person.
+         80  toasts
+         90  the processing screen, which covers everything by definition
+       ----------------------------------------------------------------------- */
+
+    .dialog {
+        @apply fixed inset-0 z-[60] hidden items-center justify-center
+               overflow-y-auto bg-ink-900/60 p-4 backdrop-blur-[2px]
+               sm:p-6;
+    }
+
+    .dialog.is-open {
+        @apply flex animate-fade-in;
+    }
+
+    .dialog-panel {
+        @apply flex max-h-[90vh] w-full flex-col overflow-hidden rounded-lg
+               border border-paper-300 bg-paper-50 shadow-dialog
+               animate-rise-in;
+    }
+
+    .dialog-head {
+        @apply flex flex-shrink-0 items-start justify-between gap-4
+               border-b border-paper-300 px-5 py-4;
+    }
+
+    .dialog-title {
+        @apply font-display text-lg text-ink-900;
+    }
+
+    .dialog-body {
+        @apply flex-1 overflow-y-auto px-5 py-4;
+    }
+
+    .dialog-foot {
+        @apply flex flex-shrink-0 flex-wrap justify-end gap-2 border-t
+               border-paper-300 bg-paper-100 px-5 py-3;
+    }
+
+    .dialog-close {
+        @apply -mr-1 -mt-1 flex h-9 w-9 flex-shrink-0 items-center
+               justify-center rounded-md text-ink-500 transition
+               hover:bg-paper-200 hover:text-ink-900;
+    }
+
+    /* -----------------------------------------------------------------------
+       Long-form documents: the Terms and the Privacy Policy, rendered into
+       the legal dialog. They are long, so they get a real reading measure and
+       real typographic hierarchy rather than a wall of 14px.
+       ----------------------------------------------------------------------- */
+
+    .doc {
+        @apply text-[0.9375rem] leading-relaxed text-ink-700;
+    }
+
+    .doc > * + * {
+        @apply mt-4;
+    }
+
+    .doc h4 {
+        @apply mt-7 text-[1.0625rem] text-ink-900;
+    }
+
+    .doc ul, .doc ol {
+        @apply ml-5 list-outside space-y-1.5;
+    }
+
+    .doc ul { @apply list-disc; }
+    .doc ol { @apply list-decimal; }
+
+    .doc li::marker {
+        @apply text-ink-400;
+    }
+
+    .doc code {
+        @apply rounded-sm bg-paper-200 px-1 py-0.5 text-ink-900;
+    }
+
+    .doc strong {
+        @apply font-semibold text-ink-900;
+    }
+
+    .doc a {
+        @apply link;
+    }
+
+    /* The Privacy Policy carries three data tables. A three-column table does
+       not fit a phone, so each gets its own horizontal scroll container - the
+       dialog itself must never scroll sideways. */
+    .doc-scroll {
+        @apply -mx-1 overflow-x-auto px-1;
+    }
+
+    .doc-table {
+        @apply w-full border-collapse text-left text-xs;
+    }
+
+    .doc-table th,
+    .doc-table td {
+        @apply border border-paper-300 px-2.5 py-2 align-top;
+    }
+
+    .doc-table th {
+        @apply bg-paper-200 font-poppins font-semibold text-ink-900;
+        white-space: nowrap;
+    }
+
+    /* A disclosure that reads as one, without the browser's default marker.
+       Used for the LaTeX source under the rendered document. */
+    .disclosure {
+        @apply rounded-lg border border-paper-300 bg-paper-50;
+    }
+
+    .disclosure > summary {
+        @apply flex cursor-pointer list-none items-center gap-2 px-4 py-3
+               text-sm font-medium text-ink-700 transition hover:text-ink-900;
+    }
+
+    .disclosure > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .disclosure[open] > summary {
+        @apply border-b border-paper-300;
+    }
+
+    .disclosure[open] > summary .disclosure-arrow {
+        transform: rotate(90deg);
+    }
+
+    .disclosure-arrow {
+        @apply h-4 w-4 flex-shrink-0 text-ink-400 transition-transform;
+    }
+
+    /* -----------------------------------------------------------------------
+       The converter's own parts
+       ----------------------------------------------------------------------- */
+
+    /* The drop target. A real <button> in the markup, so it is reachable by
+       keyboard - it used to be a <div> with a click handler. */
+    .dropzone {
+        @apply flex w-full cursor-pointer flex-col items-center justify-center
+               gap-2 rounded-lg border-2 border-dashed border-paper-400
+               bg-paper-100/60 px-6 py-10 text-center transition
+               hover:border-forest-800 hover:bg-forest-50
+               sm:py-14;
+    }
+
+    .dropzone.is-dragging {
+        @apply border-forest-800 bg-forest-100;
+    }
+
+    /* The input this labels is visually hidden, so its focus ring would be
+       drawn on a 1px box in the corner. Draw it here instead. */
+    .dropzone:focus-within {
+        outline: 2px solid theme('colors.forest.800');
+        outline-offset: 2px;
+    }
+
+    /* A disabled fieldset does not grey out a label, and clicking one whose
+       control is disabled does nothing - so it has to stop looking and
+       behaving like something you can press. */
+    fieldset:disabled .dropzone {
+        @apply cursor-not-allowed hover:border-paper-400 hover:bg-paper-100/60;
+    }
+
+    /* Camera and canvas: the two inputs that are not a file. */
+    .method {
+        @apply flex flex-1 flex-col items-center justify-center gap-2
+               rounded-md border border-paper-300 bg-paper-50 px-4 py-4
+               text-center text-sm font-medium text-ink-700 transition
+               hover:border-forest-800 hover:bg-forest-50 hover:text-ink-900
+               min-h-[2.75rem];
+    }
+
+    /* The canvas toolbar's tool buttons, which scripts.js rewrites by
+       assigning className - keep these names in step with setTool(). */
+    .toolbtn {
+        @apply inline-flex items-center justify-center gap-1.5 rounded-md
+               border border-paper-50/25 px-3 py-2 text-sm font-medium
+               text-paper-100 transition hover:bg-paper-50/15
+               min-h-[2.5rem];
+    }
+
+    /* Clear all wipes the sheet. It must not look identical to Cancel. */
+    .toolbtn-danger {
+        @apply inline-flex items-center justify-center gap-1.5 rounded-md
+               border border-burgundy-400/60 px-3 py-2 text-sm font-medium
+               text-burgundy-400 transition hover:bg-burgundy-600
+               hover:text-paper-50 min-h-[2.5rem];
+    }
+
+    .toolbtn-active {
+        @apply inline-flex items-center justify-center gap-1.5 rounded-md
+               border border-paper-50 bg-paper-50 px-3 py-2 text-sm
+               font-semibold text-ink-900 transition min-h-[2.5rem];
+    }
+
+    /* The rendered document. Pages sit on a recessed gutter so each sheet
+       reads as a sheet. */
+    .pagestack {
+        @apply space-y-4 overflow-y-auto bg-paper-200 p-4;
+    }
+
+    .pagesheet {
+        @apply mx-auto block w-full max-w-3xl border border-paper-300
+               bg-white shadow-sm;
+    }
+
+    /* The LaTeX source, which is secondary to the rendered document and
+       presented as such. */
+    .tex-source {
+        @apply max-h-96 overflow-auto whitespace-pre-wrap break-words
+               rounded-md border border-paper-300 bg-paper-200 p-4
+               text-[0.75rem] leading-relaxed text-ink-900;
+    }
+
+    /* -----------------------------------------------------------------------
+       Screen-reader-only text that becomes visible on focus - used for the
+       skip link.
+       ----------------------------------------------------------------------- */
+
+    .sr-only-focusable {
+        @apply sr-only;
+    }
+
+    .sr-only-focusable:focus-visible {
+        @apply not-sr-only fixed left-4 top-4 z-[100] rounded-md bg-forest-800
+               px-4 py-2.5 text-sm font-medium text-paper-50 shadow-dialog;
+    }
 }

@@ -1,0 +1,46 @@
+{# ---------------------------------------------------------------------------
+   The processing screen.
+
+   Previously this state did not exist. The submit button changed its own
+   label and the browser then sat on a frozen page for anything from ten
+   seconds to several minutes with no indication that anything was happening
+   at all - on the one action the whole application is for.
+
+   There is no progress bar here, and that is deliberate. The server does not
+   report how far along a conversion is, so any bar drawn on this screen would
+   be measuring nothing. What it shows instead is all true: which document is
+   being read, how long it has actually been running, and an honest range for
+   how long that usually takes. After two minutes it says so rather than
+   pretending to be nearly finished.
+
+   The browser keeps painting this document until the response to the form
+   POST arrives, so this screen stays up for exactly as long as the conversion
+   does, and is replaced by the result.
+   --------------------------------------------------------------------------- #}
+<div id="processing" aria-live="polite" aria-atomic="true"
+     class="on-dark fixed inset-0 z-[90] hidden flex-col items-center justify-center
+            bg-ink-900 px-6 text-center text-paper-100">
+
+    <img src="{{ url_for('static', filename='img/contex-mark-light.png') }}"
+         alt="" width="112" height="112"
+         class="h-24 w-24 animate-breathe sm:h-28 sm:w-28" decoding="async">
+
+    <h2 id="processing-title" class="mt-8 font-display text-2xl text-paper-50">
+        Converting your document
+    </h2>
+
+    <p id="processing-detail"
+       class="mt-2 max-w-[48ch] text-balance text-[0.9375rem] leading-relaxed text-paper-100/75"></p>
+
+    {# A real measurement, not an estimate: the number of seconds this
+       conversion has actually been running. #}
+    <p class="mt-7 font-display text-3xl tabular-nums text-paper-50">
+        <span id="processing-elapsed">0:00</span>
+    </p>
+    <p class="mt-1 text-xs uppercase tracking-[0.14em] text-paper-100/50">elapsed</p>
+
+    <p id="processing-note" class="mt-8 max-w-[46ch] text-[0.8125rem] leading-relaxed text-paper-100/60">
+        Most single pages take 10&ndash;60 seconds. A long PDF can take a few
+        minutes. Please keep this tab open.
+    </p>
+</div>

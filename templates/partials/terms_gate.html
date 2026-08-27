@@ -10,35 +10,43 @@
    on their Firestore profile); guests are asked once per session.
    --------------------------------------------------------------------------- #}
 <div id="terms-gate" class="mb-4 text-left {% if has_accepted_terms %}hidden{% endif %}">
-    <div class="border-2 border-forest-600 bg-forest-100/60 rounded-lg p-4">
-        <label class="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" id="terms-checkbox" class="mt-1 h-5 w-5 accent-forest-800 flex-shrink-0"
-                   data-version="{{ terms_version }}">
-            <span class="text-sm text-forest-900">
+    <div class="rounded-md border border-forest-600 bg-forest-50 px-4 py-3.5">
+        {# The sentence is NOT a <label>, and the checkbox is not inside one
+           that contains it. It used to be: the two buttons that open the legal
+           documents sat inside the label, so opening the Terms in order to
+           read them before agreeing also silently ticked the box agreeing to
+           them. The checkbox gets its accessible name from aria-labelledby
+           instead, and its own small label supplies a 44px hit area without
+           enclosing anything clickable. #}
+        <div class="flex items-start gap-2">
+            <label for="terms-checkbox" class="-m-3 flex flex-shrink-0 cursor-pointer p-3">
+                <input type="checkbox" id="terms-checkbox" class="checkbox"
+                       data-version="{{ terms_version }}"
+                       aria-labelledby="terms-gate-text"
+                       aria-describedby="terms-gate-hint">
+            </label>
+            <p id="terms-gate-text" class="text-sm leading-relaxed text-ink-900">
                 I agree to the
-                <button type="button" class="underline font-medium text-burgundy-600 hover:text-burgundy-500"
-                        onclick="openLegal('terms')">Terms of Service</button>
+                <button type="button" class="link" onclick="openLegal('terms')">Terms of Service</button>
                 and the
-                <button type="button" class="underline font-medium text-burgundy-600 hover:text-burgundy-500"
-                        onclick="openLegal('privacy')">Privacy Policy</button>,
+                <button type="button" class="link" onclick="openLegal('privacy')">Privacy Policy</button>,
                 and I understand that my document may be sent to a third-party AI
                 service for conversion.
-            </span>
-        </label>
-        <p id="terms-error" class="hidden mt-2 text-sm text-red-700"></p>
-        <p class="mt-2 text-xs text-forest-600">
-            You need to accept this once before uploading, capturing or drawing
-            anything.
+            </p>
+        </div>
+        <p id="terms-error" class="field-error hidden ml-7"></p>
+        <p id="terms-gate-hint" class="ml-7 mt-1.5 text-[0.8125rem] text-ink-500">
+            Accept once to unlock the controls below.
         </p>
     </div>
 </div>
 
 {% if has_accepted_terms %}
-    <p class="mb-4 text-xs text-forest-500 text-left">
+    <p class="mb-4 text-left text-xs text-ink-400">
         You accepted the
-        <button type="button" class="underline hover:text-forest-800" onclick="openLegal('terms')">Terms of Service</button>
+        <button type="button" class="rounded-sm underline underline-offset-2 hover:text-ink-900" onclick="openLegal('terms')">Terms of Service</button>
         and
-        <button type="button" class="underline hover:text-forest-800" onclick="openLegal('privacy')">Privacy Policy</button>
+        <button type="button" class="rounded-sm underline underline-offset-2 hover:text-ink-900" onclick="openLegal('privacy')">Privacy Policy</button>
         (version {{ terms_version }}).
     </p>
 {% endif %}

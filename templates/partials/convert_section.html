@@ -6,93 +6,215 @@
    which engine reads their page, because that was always a question about our
    implementation rather than about their document.
 
+   This file holds BOTH states of the workspace, because they are states and
+   not stacked content: before a conversion you see the input panel, after one
+   you see the document. The old layout kept the upload controls above the
+   result, so the finished document - the thing you came back for - appeared
+   below a control you had already used.
+
    Nothing here is usable until the terms checkbox is ticked; the gate is
    enforced again server-side in convert_route().
    --------------------------------------------------------------------------- #}
-<section id="convert" class="flex justify-center items-center bg-transparent w-[95%] md:w-full min-h-[90vh] landscape:min-h-screen landscape:py-10">
-    <div class="bg-cream-100 rounded-lg outline outline-1 outline-gray-300 shadow-lg {% if convert_result %}max-w-5xl{% else %}max-w-3xl{% endif %} w-full p-4 md:p-8">
+<section id="convert" class="wrap py-5 sm:py-14">
 
-        <h2 class="text-2xl font-bold text-forest-800 mb-1 text-center">Convert to LaTeX</h2>
-        <p class="text-sm text-forest-600 mb-4 text-center">
-            Upload an image, PDF or Word file, take a photo, or write by hand.
-            Text and equations are recognised together and assembled into one
-            <code>.tex</code> file, in the order they appear.
+{% if convert_result %}
+    {# =====================================================================
+       AFTER: the document
+       ===================================================================== #}
+    {% set stats = convert_result.stats %}
+
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div class="min-w-0">
+            <p class="eyebrow">Converted</p>
+            <h1 class="mt-1 truncate text-[1.75rem] sm:text-[2rem]"
+                title="{{ convert_result.file_name or 'document' }}">
+                {{ convert_result.file_name or 'document' }}
+            </h1>
+        </div>
+        <a href="{{ url_for('home') }}" class="btn-quiet flex-shrink-0">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Convert another
+        </a>
+    </div>
+
+    {# ---------------------------------------------------------------
+       The one notice about a degraded conversion, shown once, here, on
+       the finished document. Not during processing: someone watching a
+       progress screen cannot act on "the AI just stopped", and someone
+       about to use the output can.
+       --------------------------------------------------------------- #}
+    {% set notice = stats.fallback_notice if stats else None %}
+    {% if notice %}
+        <div class="{% if notice.partial %}note-alarm{% else %}note-caution{% endif %} mb-5" role="status">
+            <p class="note-title">
+                {% if notice.partial %}Incomplete conversion{% else %}{{ notice.headline }}{% endif %}
+            </p>
+            {% if notice.partial %}<p class="mb-1">{{ notice.headline }}</p>{% endif %}
+            <p>{{ notice.detail }}</p>
+            {% if notice.reason %}
+                <p class="mt-2 text-xs opacity-80">Reason: {{ notice.reason }}</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {# The page / text-block / equation counts and the conversion-path badge
+       used to sit here. The counts described the machinery rather than the
+       document, and the badge only repeated what the notice above already
+       says in plain words. The stats are still produced and stored - nothing
+       here depends on them.
+
+       What survives is the per-page notes: a page that could not be read is
+       missing from the output, and that is not something the user can see by
+       looking at the preview. #}
+    {% if stats and stats.notes %}
+        <div class="note-quiet mb-5">
+            <p class="note-title">Notes on this conversion</p>
+            <ul class="list-disc space-y-0.5 pl-5">
+                {% for note in stats.notes %}<li>{{ note }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {# ---------------------------------------------------------------
+       Output. The preview is the rendered PDF, not the source: what a
+       user needs to check is the document, and reading LaTeX to work out
+       what it will look like is a job for the compiler.
+       --------------------------------------------------------------- #}
+    <div class="card-lift overflow-hidden">
+        <div class="flex flex-wrap items-center gap-2 border-b border-paper-300 bg-paper-50 px-4 py-3">
+            <a href="{{ url_for('download_converted_tex', token=convert_token) }}"
+               class="btn-primary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+                </svg>
+                Download .tex
+            </a>
+            <button type="button" onclick="copyTex('convert-tex', this)" class="btn-secondary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="12" height="12" rx="2"/>
+                    <path d="M6 15H5a2 2 0 01-2-2V5a2 2 0 012-2h8a2 2 0 012 2v1"/>
+                </svg>
+                Copy LaTeX
+            </button>
+            {# Some browsers are set never to display PDFs inline. The
+               rendered document still has to be reachable for them. #}
+            <a id="preview-open" target="_blank" rel="noopener"
+               href="{{ url_for('preview_pdf', token=convert_token) }}"
+               data-document-url="{{ url_for('preview_document', token=convert_token) }}"
+               onclick="return openPdf(this)"
+               class="btn-secondary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h4"/>
+                </svg>
+                Open PDF
+            </a>
+            <button type="button" id="preview-reload" onclick="loadPreview()"
+                    class="btn-quiet btn-sm ml-auto">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 11A8 8 0 006.3 6.3L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0013.7 4.7L20 15.5M20 20v-4.5h-4.5"/>
+                </svg>
+                Reload preview
+            </button>
+        </div>
+
+        {# The preview is built from page images, not from the PDF: a browser
+           hands an application/pdf response to its own viewer, or to a
+           download manager extension, before this page can show it. The real
+           PDF is still one click away, above. #}
+        <div id="preview-panel"
+             data-pages-url="{{ url_for('preview_pages', token=convert_token) }}"
+             data-page-url="{{ url_for('preview_page', token=convert_token) }}"
+             class="bg-paper-200">
+
+            <div id="preview-loading" class="empty">
+                <img src="{{ url_for('static', filename='img/contex-mark.png') }}"
+                     alt="" width="40" height="40" class="h-10 w-10 animate-breathe opacity-70"
+                     loading="lazy" decoding="async">
+                <p id="preview-loading-text" class="empty-body">Compiling your document&hellip;</p>
+            </div>
+
+            <div id="preview-error" class="hidden p-4 text-left">
+                <div class="note-alarm">
+                    <p class="note-title">The document could not be rendered</p>
+                    <p id="preview-error-reason"></p>
+                    <pre id="preview-error-detail"
+                         class="mt-2 hidden max-h-48 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 text-xs"></pre>
+                    <p class="mt-2">
+                        The <code>.tex</code> file itself is unaffected &mdash; you can
+                        still download or copy it above.
+                    </p>
+                </div>
+            </div>
+
+            <div id="preview-pages" class="pagestack hidden max-h-[75vh]"></div>
+        </div>
+    </div>
+
+    {# Secondary to the rendered document, and presented as such. The test
+       suite checks that the preview panel appears before this in the markup,
+       because reading LaTeX to work out what it will look like is the
+       compiler's job, not the reader's. #}
+    <details class="disclosure mt-5">
+        <summary>
+            <svg class="disclosure-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 6l6 6-6 6"/>
+            </svg>
+            LaTeX source
+        </summary>
+        <div class="p-4">
+            <pre id="convert-tex" class="tex-source">{{ convert_result.tex }}</pre>
+        </div>
+    </details>
+
+{% else %}
+    {# =====================================================================
+       BEFORE: the input
+       ===================================================================== #}
+    {# Deliberately short on a phone. Everything here is explanation, and
+       explanation that pushes the drop area below the fold has cost more than
+       it can possibly be worth - which is what the four-line version of this
+       measured at 360px wide. The longer account is in the three steps under
+       the converter and in the footer. #}
+    <div class="mb-6 text-center sm:mb-8">
+        {# The heading says the same thing; on a phone the eyebrow is
+           27px that the drop area needs more. #}
+        <p class="eyebrow hidden sm:block">Handwriting and print to LaTeX</p>
+        <h1 class="mx-auto max-w-[18ch] text-[1.75rem] leading-[1.12] sm:mt-2 sm:text-[2.75rem]">
+            Turn any page into LaTeX
+        </h1>
+        <p class="lede mx-auto mt-2.5 text-balance">
+            Handwritten or printed, photographed or typed. You get the
+            <code class="rounded-sm bg-paper-200 px-1 text-ink-700">.tex</code>
+            and the rendered PDF.
         </p>
+    </div>
+
+    <div class="card-lift mx-auto max-w-3xl p-4 sm:p-7">
 
         {% include 'partials/qa_notice.html' %}
         {% include 'partials/terms_gate.html' %}
 
-        <form id="convert-form" method="POST" enctype="multipart/form-data" action="{{ url_for('convert_route') }}">
-
-            {# Set only when the user has answered the AI-unavailable warning. #}
-            <input type="hidden" id="allow-fallback" name="allow_fallback" value="">
-
-            <fieldset id="convert-controls" {% if not has_accepted_terms %}disabled{% endif %}
-                      class="{% if not has_accepted_terms %}opacity-50 pointer-events-none{% endif %}">
-
-                <div id="convert-drop-area" class="border-2 border-dashed border-forest-400 rounded-lg p-8 text-center transition-colors duration-200 hover:border-forest-600 hover:bg-forest-100/30 cursor-pointer mb-4">
-                    <svg class="mx-auto h-12 w-12 text-forest-500 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                    <p class="text-forest-700 font-medium mb-1">Drop a file here or click to upload</p>
-                    <p class="text-forest-600 text-sm">Images, PDF and Word (.docx)</p>
-                    <input type="file" id="convert-file-upload" name="file"
-                           accept="{{ accepted_extensions | join(',') }}" class="hidden"
-                           onchange="chooseInput('convert', 'file')" />
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                    <div class="bg-cream-100 p-4 rounded-lg outline outline-1 outline-gray-300 shadow-sm flex flex-col items-center text-forest-700 hover:shadow-md transition-shadow">
-                        <button type="button" class="w-full flex flex-col items-center" onclick="openCameraModal('convert')">
-                            <svg class="h-8 w-8 text-forest-600 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z"/>
-                                <circle cx="12" cy="13" r="4"/>
-                            </svg>
-                            <span class="font-medium">Take Photo</span>
-                        </button>
-                        <img id="convert-camera-preview" src="" alt="" class="mt-2 max-w-[140px] hidden rounded-md border border-gray-200">
-                        <input id="convert-camera-upload" type="file" accept="image/*" class="hidden">
-                    </div>
-
-                    <div class="bg-cream-100 p-4 rounded-lg outline outline-1 outline-gray-300 shadow-sm flex flex-col items-center text-forest-700 hover:shadow-md transition-shadow">
-                        <button type="button" class="w-full flex flex-col items-center" onclick="openDrawModal('convert')">
-                            <svg class="h-8 w-8 text-forest-600 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 20h9"/>
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                            </svg>
-                            <span class="font-medium">Write or Draw</span>
-                        </button>
-                        <img id="convert-draw-preview" src="" alt="" class="mt-2 max-w-[140px] hidden rounded-md border border-gray-200">
-                        <input id="convert-draw-upload" type="file" accept="image/png" class="hidden">
-                    </div>
-                </div>
-
-                <div id="convert-file-display" class="hidden mb-4 p-3 bg-forest-100 rounded-lg">
-                    <div class="flex items-center justify-between">
-                        <span class="text-forest-700 text-sm" id="convert-file-name"></span>
-                        <button type="button" onclick="clearConvertFile()" class="text-red-600 hover:text-red-800 text-sm font-medium">Remove</button>
-                    </div>
-                </div>
-
-                <div class="text-center">
-                    <button type="submit" id="convert-submit"
-                            class="bg-forest-800 text-cream-100 px-8 py-3 rounded hover:bg-forest-700 transition-colors font-medium disabled:opacity-50">
-                        Convert
-                    </button>
-                </div>
-            </fieldset>
-        </form>
-
         {% if convert_error %}
-            <div id="convert-error" class="mt-4 bg-red-100 text-red-700 p-3 rounded text-left">{{ convert_error }}</div>
+            <div id="convert-error" class="note-alarm mb-5">
+                <p class="note-title">That did not work</p>
+                <p>{{ convert_error }}</p>
+            </div>
         {% endif %}
 
         {% if convert_blocked %}
             {# The user posted a conversion while the AI was unavailable and had
                not agreed to the fallback. Say so rather than quietly producing
                a lesser document. #}
-            <div class="mt-4 bg-yellow-50 border border-yellow-400 text-yellow-900 p-4 rounded text-left">
-                <p class="font-semibold mb-1">AI-powered conversion is currently unavailable</p>
+            <div class="note-caution mb-5">
+                <p class="note-title">AI-powered conversion is currently unavailable</p>
                 <p>{{ convert_blocked.reason }}</p>
                 {% if convert_blocked.recovery %}
                     <p class="mt-2">{{ convert_blocked.recovery.text }}</p>
@@ -105,104 +227,140 @@
             </div>
         {% endif %}
 
-        {% if convert_result %}
-            {% set stats = convert_result.stats %}
+        <form id="convert-form" method="POST" enctype="multipart/form-data"
+              action="{{ url_for('convert_route') }}">
 
-            {# ---------------------------------------------------------------
-               The one notice about a degraded conversion, shown once, here,
-               on the finished document. Not during processing: someone
-               watching a progress bar cannot act on "the AI just stopped",
-               and someone about to use the output can.
-               --------------------------------------------------------------- #}
-            {% set notice = stats.fallback_notice if stats else None %}
-            {% if notice %}
-                <div class="mt-6 border-l-4 {% if notice.partial %}bg-red-50 border-red-500 text-red-900{% else %}bg-yellow-50 border-yellow-500 text-yellow-900{% endif %} p-4 rounded text-left"
-                     role="status">
-                    <p class="font-bold mb-1">
-                        {% if notice.partial %}
-                            Incomplete conversion
-                        {% else %}
-                            {{ notice.headline }}
-                        {% endif %}
-                    </p>
-                    {% if notice.partial %}<p class="mb-1">{{ notice.headline }}</p>{% endif %}
-                    <p>{{ notice.detail }}</p>
-                    {% if notice.reason %}
-                        <p class="mt-2 text-xs opacity-80">Reason: {{ notice.reason }}</p>
-                    {% endif %}
+            {# Set only when the user has answered the AI-unavailable warning. #}
+            <input type="hidden" id="allow-fallback" name="allow_fallback" value="">
+
+            {# min-w-0 is not decoration. A <fieldset> carries a browser
+               default of min-width: min-content and will not shrink below its
+               widest child, so a long file name made it 50px wider than the
+               form and pushed the page 13px past the edge of a 360px phone. #}
+            <fieldset id="convert-controls" {% if not has_accepted_terms %}disabled{% endif %}
+                      class="min-w-0 {% if not has_accepted_terms %}pointer-events-none opacity-40{% endif %}">
+                <legend class="sr-only">Choose a document to convert</legend>
+
+                {# A <label> for the file input, which is the canonical
+                   accessible upload control: clicking anywhere on it opens the
+                   picker with no JavaScript at all, the input is reachable by
+                   keyboard, and the input takes its accessible name from this
+                   text instead of being announced as an unnamed file control.
+
+                   It used to be a <div> with a click handler - not focusable,
+                   not announced, and unusable without a mouse. #}
+                <label for="convert-file-upload" id="convert-drop-area"
+                       class="dropzone py-8 sm:py-14">
+                    <svg class="h-10 w-10 text-ink-400" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 16V4m0 0L8 8m4-4l4 4"/>
+                        <path d="M4 15v3a3 3 0 003 3h10a3 3 0 003-3v-3"/>
+                    </svg>
+                    <span class="text-[0.9375rem] font-medium text-ink-900">
+                        Drop a page here, or choose a file
+                    </span>
+                    <span class="text-[0.8125rem] text-ink-500">
+                        Images, PDF and Word (.docx) &middot; up to {{ max_upload_mb }} MB
+                    </span>
+                    {# sr-only rather than hidden: a display:none input cannot be
+                       focused, which is what made the old markup impossible to
+                       use from a keyboard. The focus ring is drawn on the label
+                       instead - see .dropzone:focus-within. #}
+                    <input type="file" id="convert-file-upload" name="file"
+                           accept="{{ accepted_extensions | join(',') }}" class="sr-only"
+                           onchange="chooseInput('convert', 'file')">
+                </label>
+
+                <div class="mt-3 flex flex-col gap-3 sm:flex-row">
+                    <div class="flex flex-1 flex-col gap-2">
+                        <button type="button" class="method" onclick="openCameraModal('convert')">
+                            <svg class="h-5 w-5 text-ink-500" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h3l2-3h8l2 3h3a2 2 0 012 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            Take a photo
+                        </button>
+                        <img id="convert-camera-preview" src="" alt=""
+                             class="mx-auto hidden max-h-24 rounded border border-paper-300">
+                        {# Never operated directly: capturePhoto() puts the
+                           blob in. Hidden rather than sr-only so it is not a tab
+                           stop, and a hidden input still submits. #}
+                        <input id="convert-camera-upload" type="file" accept="image/*" class="hidden">
+                    </div>
+
+                    <div class="flex flex-1 flex-col gap-2">
+                        <button type="button" class="method" onclick="openDrawModal('convert')">
+                            <svg class="h-5 w-5 text-ink-500" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                            </svg>
+                            Write or draw
+                        </button>
+                        <img id="convert-draw-preview" src="" alt=""
+                             class="mx-auto hidden max-h-24 rounded border border-paper-300">
+                        {# As above: saveDrawing() puts the blob in. #}
+                        <input id="convert-draw-upload" type="file" accept="image/png" class="hidden">
+                    </div>
                 </div>
-            {% endif %}
 
-            {# The page / text-block / equation counts and the conversion-path
-               badge used to sit here. The counts described the machinery
-               rather than the document, and the badge only repeated what the
-               notice above already says in plain words. The stats are still
-               produced and stored - nothing here depends on them.
-
-               What survives is the per-page notes: a page that could not be
-               read is missing from the output, and that is not something the
-               user can see by looking at the preview. #}
-            {% if stats and stats.notes %}
-                <ul class="mt-3 text-xs text-forest-600 list-disc list-inside text-left">
-                    {% for note in stats.notes %}<li>{{ note }}</li>{% endfor %}
-                </ul>
-            {% endif %}
-
-            {# ---------------------------------------------------------------
-               Output. The preview is the rendered PDF, not the source: what a
-               user needs to check is the document, and reading LaTeX to work
-               out what it will look like is a job for the compiler.
-               --------------------------------------------------------------- #}
-            <div class="mt-6 flex flex-wrap gap-2 justify-center">
-                <a href="{{ url_for('download_converted_tex', token=convert_token) }}">
-                    <button type="button" class="bg-forest-800 px-4 py-2 rounded text-cream-100 hover:bg-forest-700 transition-colors">Download .tex</button>
-                </a>
-                <button type="button" onclick="copyTex('convert-tex', this)"
-                        class="bg-forest-800 px-4 py-2 rounded text-cream-100 hover:bg-forest-700 transition-colors">Copy LaTeX</button>
-                <button type="button" id="preview-reload" onclick="loadPreview()"
-                        class="bg-cream-100 border border-forest-600 px-4 py-2 rounded text-forest-800 hover:bg-forest-100 transition-colors">Reload preview</button>
-                {# Some browsers are set never to display PDFs inline. The
-                   rendered document still has to be reachable for them. #}
-                <a id="preview-open" target="_blank" rel="noopener"
-                   href="{{ url_for('preview_pdf', token=convert_token) }}"
-                   data-document-url="{{ url_for('preview_document', token=convert_token) }}"
-                   onclick="return openPdf(this)">
-                    <button type="button" class="bg-cream-100 border border-forest-600 px-4 py-2 rounded text-forest-800 hover:bg-forest-100 transition-colors">Open PDF in new tab</button>
-                </a>
-            </div>
-
-            <h3 class="mt-6 font-semibold text-forest-800 text-left">Preview</h3>
-            {# The preview is built from page images, not from the PDF: a
-               browser hands an application/pdf response to its own viewer, or
-               to a download manager extension, before this page can show it.
-               The real PDF is still one click away, above. #}
-            <div id="preview-panel"
-                 data-pages-url="{{ url_for('preview_pages', token=convert_token) }}"
-                 data-page-url="{{ url_for('preview_page', token=convert_token) }}"
-                 class="mt-2 border border-gray-300 rounded-lg bg-white overflow-hidden">
-                <div id="preview-loading" class="p-8 text-center text-forest-600 text-sm">
-                    <p id="preview-loading-text">Compiling your document&hellip;</p>
+                <div id="convert-file-display"
+                     class="mt-3 hidden items-center justify-between gap-3 rounded-md border border-forest-200 bg-forest-50 px-3.5 py-3">
+                    <span class="flex min-w-0 items-center gap-2.5 text-sm text-ink-900">
+                        <svg class="h-4 w-4 flex-shrink-0 text-forest-800" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" aria-hidden="true">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        {# min-w-0 as well as truncate: a flex item defaults to
+                           min-width:auto, so without it the name refuses to
+                           shrink below its own text and pushes the row wider
+                           than the screen. Measured: 13px of horizontal page
+                           scroll at 360px with a 24-character filename. #}
+                        <span id="convert-file-name" class="min-w-0 truncate font-medium"></span>
+                    </span>
+                    <button type="button" onclick="clearConvertFile()"
+                            class="btn-quiet btn-sm -my-1 flex-shrink-0 text-burgundy-600 hover:bg-burgundy-100 hover:text-burgundy-700">
+                        Remove
+                    </button>
                 </div>
-                <div id="preview-error" class="hidden p-4 text-left bg-red-50 text-red-800 text-sm">
-                    <p class="font-semibold mb-1">The document could not be rendered</p>
-                    <p id="preview-error-reason"></p>
-                    <pre id="preview-error-detail" class="mt-2 hidden bg-white/70 p-2 rounded text-xs whitespace-pre-wrap max-h-48 overflow-y-auto"></pre>
-                    <p class="mt-2">
-                        The <code>.tex</code> file itself is unaffected &mdash; you can
-                        still download or copy it above.
-                    </p>
-                </div>
-                <div id="preview-pages"
-                     class="hidden max-h-[70vh] overflow-y-auto bg-gray-100 p-3 space-y-3"></div>
-            </div>
 
-            <details class="mt-4 text-left">
-                <summary class="cursor-pointer text-sm text-forest-700 hover:text-forest-900 font-medium">
-                    LaTeX source
-                </summary>
-                <pre id="convert-tex" class="mt-2 bg-forest-100 p-4 rounded text-xs whitespace-pre-wrap font-mono max-h-96 overflow-y-auto text-left">{{ convert_result.tex }}</pre>
-            </details>
-
-        {% endif %}
+                <button type="submit" id="convert-submit" class="btn-primary btn-lg btn-block mt-5">
+                    Convert to LaTeX
+                </button>
+            </fieldset>
+        </form>
     </div>
+
+    {# How it works. Three lines, below the thing they describe, for someone
+       who wants to know what they are about to get. Not a hero: the converter
+       is above this, not below it. #}
+    <ol class="mx-auto mt-12 grid max-w-3xl gap-px overflow-hidden rounded-lg border border-paper-300 bg-paper-300 sm:grid-cols-3">
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step one</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                Give it a page any way you like &mdash; a file, a photo, or your
+                own handwriting on the canvas.
+            </p>
+        </li>
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step two</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                Prose and mathematics are recognised together, so equations stay
+                where they belong in the text.
+            </p>
+        </li>
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step three</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                You get the <code class="rounded-sm bg-paper-200 px-1">.tex</code>
+                and the compiled PDF, so you can check it before you use it.
+            </p>
+        </li>
+    </ol>
+{% endif %}
 </section>

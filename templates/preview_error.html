@@ -2,36 +2,78 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Preview unavailable</title>
 {# This page is rendered inside the preview frame, so it carries its own
-   styling rather than extending the site layout: the frame is a separate
-   document and inherits nothing from the page around it. #}
+   styling rather than extending the application shell: the frame is a separate
+   document and inherits nothing from the page around it. The values below are
+   the design system's own tokens, written out literally for that reason -
+   keep them in step with tailwind.config.js. #}
 <style>
+    :root {
+        --ink-900: #171C1A;
+        --ink-700: #2E3A34;
+        --alarm-700: #8A2C2C;
+        --alarm-500: #C25454;
+        --alarm-100: #FAE7E4;
+        --paper-50: #FBFAF8;
+    }
+
     body {
         margin: 0;
         padding: 1.25rem;
-        background: #fef2f2;
-        color: #7f1d1d;
-        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-                     Roboto, Arial, sans-serif;
+        background: var(--alarm-100);
+        color: var(--alarm-700);
+        font-family: 'Poppins', Georgia, ui-sans-serif, system-ui, -apple-system,
+                     'Segoe UI', Roboto, Arial, sans-serif;
         font-size: 0.875rem;
-        line-height: 1.5;
+        line-height: 1.6;
     }
-    h1 { font-size: 0.95rem; margin: 0 0 0.4rem; font-weight: 600; }
+
+    h1 {
+        font-family: Spectral, Georgia, 'Times New Roman', serif;
+        font-size: 1.0625rem;
+        font-weight: 600;
+        line-height: 1.25;
+        margin: 0 0 0.5rem;
+        color: var(--ink-900);
+    }
+
     p { margin: 0 0 0.75rem; }
+
+    .packages {
+        font-weight: 600;
+        border-left: 2px solid var(--alarm-500);
+        padding-left: 0.6rem;
+    }
+
     pre {
-        background: rgba(255, 255, 255, 0.7);
-        padding: 0.6rem;
-        border-radius: 0.35rem;
+        background: var(--paper-50);
+        border: 1px solid var(--alarm-500);
+        border-radius: 6px;
+        padding: 0.7rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 0.75rem;
+        line-height: 1.5;
         white-space: pre-wrap;
         word-break: break-word;
         max-height: 16rem;
-        overflow-y: auto;
+        overflow: auto;
         margin: 0 0 0.75rem;
+        color: var(--ink-700);
     }
-    .packages { font-weight: 600; }
-    .note { color: #9a3412; }
+
+    code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9em;
+    }
+
+    .note {
+        margin: 0;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--alarm-500);
+        color: var(--ink-700);
+    }
 </style>
 </head>
 <body>

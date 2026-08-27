@@ -1,0 +1,31 @@
+{# ---------------------------------------------------------------------------
+   Terms of Service / Privacy Policy.
+
+   On every page, because every page has a way to open them - including the
+   sign-up form, whose two links used to be href="#" and went nowhere at all.
+   The document is fetched from /legal/<doc> so the reader never loses what
+   they were doing in order to read it.
+   --------------------------------------------------------------------------- #}
+<div id="legal-modal" class="dialog" role="dialog" aria-modal="true"
+     aria-labelledby="legal-title" data-dialog>
+    <div class="dialog-panel max-w-3xl">
+        <div class="dialog-head">
+            <h2 id="legal-title" class="dialog-title">Terms of Service</h2>
+            <button type="button" onclick="closeLegal()" class="dialog-close" data-dialog-initial>
+                <span class="sr-only">Close</span>
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="legal-body" class="dialog-body">
+            <p class="text-sm text-ink-500">Loading&hellip;</p>
+        </div>
+
+        <div class="dialog-foot">
+            <button type="button" onclick="closeLegal()" class="btn-secondary">Close</button>
+        </div>
+    </div>
+</div>
