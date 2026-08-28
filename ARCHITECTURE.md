@@ -442,7 +442,8 @@ hand-written `gt_tex` in `manifest_pages.json`.
 
 ## Setup
 
-Every command below runs from the project root, `d:\Projects\Context_App`.
+Every command below runs from the project root - the directory that holds
+`wsgi.py`.
 
 ### 1. Install dependencies
 
