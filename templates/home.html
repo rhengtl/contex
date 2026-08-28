@@ -31,11 +31,11 @@
     /* Terms gate */
     termsVersion: {{ terms_version | tojson }},
     hasAcceptedTerms: {{ 'true' if has_accepted_terms else 'false' }},
-    acceptTermsUrl: {{ url_for('accept_terms') | tojson }},
+    acceptTermsUrl: {{ url_for('pages.accept_terms') | tojson }},
 
     /* AI availability, as of this render. Re-checked before every
        conversion so a stale warning is never what the user acts on. */
-    aiStatusUrl: {{ url_for('ai_status_route') | tojson }},
+    aiStatusUrl: {{ url_for('convert.ai_status_route') | tojson }},
     ai: {{ ai | tojson }},
 
     acceptedExtensions: {{ accepted_extensions | tojson }},

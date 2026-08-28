@@ -22,7 +22,7 @@ the lowest per-word confidence on each line:
 So a low-confidence run is a reliable *candidate* signal - every maths page was
 caught - but not a classifier, because a table trips it too. That is the right
 shape for this pipeline: nominate cheaply here, transcribe with pix2text, and
-let the AI review reject whatever was not really an equation. It already does
+let the AI review reject whatever was not really an formulas. It already does
 exactly that, marking headings and prose `not_an_equation` unprompted.
 """
 
@@ -370,7 +370,7 @@ def to_tex(items, escape):
     """
     Emit a complete LaTeX document from the assembled items.
 
-    `escape` is textract_fast.escape_tex, passed in rather than imported so
+    `escape` is tesseract.escape_tex, passed in rather than imported so
     this module stays free of OCR dependencies and can be tested on its own.
 
     The structure here is deliberately conservative - paragraphs, headings,

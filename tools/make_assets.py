@@ -7,9 +7,16 @@ render about 14px of actual ink, so every derivative below is cropped to the
 artwork's own bounding box plus a small, equal margin. Nothing is stretched,
 recoloured beyond a flat monochrome swap, or otherwise altered in shape.
 """
+import os
+
 from PIL import Image, ImageChops, ImageDraw
 
-MASTER = 'brand/contex-logo-transparent.png'
+# Paths are resolved from the project root rather than from the working
+# directory, because this script now lives a directory down and would
+# otherwise only work when run from exactly one place.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MASTER = os.path.join(ROOT, 'brand', 'contex-logo-transparent.png')
 INK = (23, 28, 26)          # ink-900
 LIGHT = (244, 241, 235)     # paper-100
 PAPER = (251, 250, 248)     # paper-50
@@ -37,7 +44,9 @@ def tint(image, rgb):
 def save(image, path, size):
     out = image.resize((size, size), Image.LANCZOS)
     out.save(path, optimize=True, compress_level=9)
-    print(f'  {path}  {size}x{size}')
+    # Reported relative to the project root: the absolute path is
+    # noise, and the short form is what the README and the tests use.
+    print(f'  {os.path.relpath(path, ROOT)}  {size}x{size}')
 
 
 # 256, not the master's 512: the largest the mark is ever drawn is the 88px
@@ -48,12 +57,12 @@ def save(image, path, size):
 MARK = 256
 
 # On light surfaces the mark is used exactly as drawn.
-save(mark, 'static/img/contex-mark.png', MARK)
+save(mark, os.path.join(ROOT, 'static', 'img') + '/contex-mark.png', MARK)
 
 # On the dark surfaces (processing overlay, canvas toolbar, footer) the mark is
 # reversed out: the artwork is a single flat colour, so this is the standard
 # monochrome reverse, not a recolouring of a multi-colour logo.
-save(tint(mark, LIGHT), 'static/img/contex-mark-light.png', MARK)
+save(tint(mark, LIGHT), os.path.join(ROOT, 'static', 'img') + '/contex-mark-light.png', MARK)
 
 # Favicons need an opaque ground; a bare black mark disappears on a dark tab
 # strip. Paper is the app's own background, so the tab icon matches the site.
@@ -113,18 +122,18 @@ def round_corners(tile, radius_fraction=CORNER):
 # iOS applies its own mask to a home-screen icon, so this one stays square and
 # opaque: rounding it here would show as a light seam inside the system's
 # rounding. Only the tab icon below is rounded.
-on_paper(180).convert('RGB').save('static/img/apple-touch-icon.png', optimize=True)
+on_paper(180).convert('RGB').save(os.path.join(ROOT, 'static', 'img') + '/apple-touch-icon.png', optimize=True)
 print('  static/img/apple-touch-icon.png  180x180  (square - iOS masks it)')
 
 round_corners(on_paper(32, pad=0.06)).save(
-    'static/img/favicon-32.png', optimize=True)
+    os.path.join(ROOT, 'static', 'img') + '/favicon-32.png', optimize=True)
 print(f'  static/img/favicon-32.png  32x32  radius {round(32 * CORNER)}px')
 
 # Each size is drawn and rounded at its own resolution rather than letting the
 # encoder shrink one 48px tile, so the 16px frame - the one a tab actually
 # shows - gets a mask built for 16px.
 frames = [round_corners(on_paper(n, pad=0.06)) for n in (48, 32, 16)]
-frames[0].save('static/img/favicon.ico', append_images=frames[1:],
+frames[0].save(os.path.join(ROOT, 'static', 'img') + '/favicon.ico', append_images=frames[1:],
                sizes=[(48, 48), (32, 32), (16, 16)])
 print('  static/img/favicon.ico  '
       + ', '.join(f'{n}px r{round(n * CORNER)}' for n in (48, 32, 16)))
@@ -137,5 +146,5 @@ inner = 300
 card.paste(mark.resize((inner, inner), Image.LANCZOS),
            ((1200 - inner) // 2, (630 - inner) // 2),
            mark.resize((inner, inner), Image.LANCZOS))
-card.save('static/img/og-card.png', optimize=True)
+card.save(os.path.join(ROOT, 'static', 'img') + '/og-card.png', optimize=True)
 print('  static/img/og-card.png  1200x630')

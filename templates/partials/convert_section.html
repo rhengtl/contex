@@ -31,7 +31,7 @@
                 {{ convert_result.file_name or 'document' }}
             </h1>
         </div>
-        <a href="{{ url_for('home') }}" class="btn-quiet flex-shrink-0">
+        <a href="{{ url_for('pages.home') }}" class="btn-quiet flex-shrink-0">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
                 <path d="M12 5v14M5 12h14"/>
@@ -85,7 +85,7 @@
        --------------------------------------------------------------- #}
     <div class="card-lift overflow-hidden">
         <div class="flex flex-wrap items-center gap-2 border-b border-paper-300 bg-paper-50 px-4 py-3">
-            <a href="{{ url_for('download_converted_tex', token=convert_token) }}"
+            <a href="{{ url_for('output.download_converted_tex', token=convert_token) }}"
                class="btn-primary btn-sm">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -104,8 +104,8 @@
             {# Some browsers are set never to display PDFs inline. The
                rendered document still has to be reachable for them. #}
             <a id="preview-open" target="_blank" rel="noopener"
-               href="{{ url_for('preview_pdf', token=convert_token) }}"
-               data-document-url="{{ url_for('preview_document', token=convert_token) }}"
+               href="{{ url_for('output.preview_pdf', token=convert_token) }}"
+               data-document-url="{{ url_for('output.preview_document', token=convert_token) }}"
                data-action="open-pdf"
                class="btn-secondary btn-sm">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -129,8 +129,8 @@
            download manager extension, before this page can show it. The real
            PDF is still one click away, above. #}
         <div id="preview-panel"
-             data-pages-url="{{ url_for('preview_pages', token=convert_token) }}"
-             data-page-url="{{ url_for('preview_page', token=convert_token) }}"
+             data-pages-url="{{ url_for('output.preview_pages', token=convert_token) }}"
+             data-page-url="{{ url_for('output.preview_page', token=convert_token) }}"
              class="bg-paper-200">
 
             <div id="preview-loading" class="empty">
@@ -228,7 +228,7 @@
         {% endif %}
 
         <form id="convert-form" method="POST" enctype="multipart/form-data"
-              action="{{ url_for('convert_route') }}">
+              action="{{ url_for('convert.convert_route') }}">
 
             {# Set only when the user has answered the AI-unavailable warning. #}
             <input type="hidden" id="allow-fallback" name="allow_fallback" value="">

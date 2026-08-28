@@ -1,4 +1,4 @@
-# ai_qa.py
+# ai.py
 """
 The AI half of the conversion pipeline.
 
@@ -29,11 +29,11 @@ import re
 
 from PIL import Image
 
-import ai_status
-import latex_tools
-import llm_providers
-import preprocess
-from llm_providers import (LlmError, LlmModelError, LlmQuotaError,
+from contex.services.llm import availability
+from contex.pipeline import latex
+from contex.services import llm
+from contex.pipeline import preprocess
+from contex.services.llm import (LlmError, LlmModelError, LlmQuotaError,
                            media_part, text_part)
 
 # Vision pipelines downscale images to a long edge of roughly this size, so
@@ -66,21 +66,21 @@ def _bool_env(name, default=True):
 
 def enabled():
     """AI conversion runs when a provider is configured and is switched on."""
-    return _bool_env('AI_QA_ENABLED', True) and llm_providers.is_configured()
+    return _bool_env('AI_QA_ENABLED', True) and llm.is_configured()
 
 
 def provider_info():
     """Describe the active provider for the UI (never includes credentials)."""
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     models = provider.models()
     return {
         'name': provider.name,
         # Per-pipeline models; 'model' stays for callers that want just one.
         'models': models,
-        'model': models.get(llm_providers.ROLE_DOCUMENT),
+        'model': models.get(llm.ROLE_DOCUMENT),
         'configured': provider.is_configured(),
         'enabled': enabled(),
-        'available': llm_providers.available(),
+        'available': llm.available(),
         # Drives the disclosure notice shown above the upload controls.
         'trains_on_input': provider.trains_on_free_input(),
     }
@@ -212,12 +212,12 @@ def _validate_and_repair(convo, tex, calls_left, report):
     Bounded deliberately: the point of this layer is fidelity, not chasing a
     compiler. If it still does not validate we keep the text anyway and say so.
     """
-    problems = latex_tools.static_validate(tex)
+    problems = latex.static_validate(tex)
     compile_result = {'attempted': False, 'ok': False, 'engine': None,
                       'errors': '', 'missing_packages': [], 'reason': None}
 
     if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-        compile_result = latex_tools.compile_tex(tex, want_pdf=True)
+        compile_result = latex.compile_tex(tex, want_pdf=True)
         if compile_result['attempted'] and not compile_result['ok']:
             detail = compile_result['errors'] or compile_result['reason'] or ''
             if compile_result['missing_packages']:
@@ -231,13 +231,13 @@ def _validate_and_repair(convo, tex, calls_left, report):
                 _REPAIR_PROMPT.format(problems='\n'.join(problems)))])
             repaired = fenced_latex(reply)
             if repaired:
-                still = latex_tools.static_validate(repaired)
+                still = latex.static_validate(repaired)
                 if not still:
                     report.append('Fixed a LaTeX validation error.')
                     # Re-check: reporting the pre-repair compile result would
                     # tell the user a working document does not build.
                     if _bool_env('AI_QA_ENABLE_COMPILE', True):
-                        compile_result = latex_tools.compile_tex(
+                        compile_result = latex.compile_tex(
                             repaired, want_pdf=True)
                     return repaired, compile_result
         except LlmError:
@@ -264,7 +264,7 @@ class Rotation:
     model again. That is deliberate: free-tier quota comes back without warning
     and nothing should keep a user on the fourth-choice model because the first
     was busy an hour ago. The one exception is a model the provider explicitly
-    told us to stay away from until a stated time - see ai_status.hard_blocked.
+    told us to stay away from until a stated time - see availability.hard_blocked.
 
     `pinned()` builds a throwaway round for one speculative call: a single
     model, and a quota error that changes nothing anywhere. convert.py sends a
@@ -284,8 +284,8 @@ class Rotation:
         return rotation
 
     def __init__(self, role=None):
-        self.role = role or llm_providers.ROLE_DOCUMENT
-        self.provider = llm_providers.get_provider()
+        self.role = role or llm.ROLE_DOCUMENT
+        self.provider = llm.get_provider()
         self.chain = self.provider.model_chain(self.role)
         self.cursor = 0
         self.exhausted = not self.chain
@@ -323,8 +323,8 @@ class Rotation:
 
             # The provider named a time to come back; honour it rather than
             # spending a round trip to be told the same thing again.
-            if ai_status.hard_blocked(model):
-                record = ai_status.record_for(model) or {}
+            if availability.hard_blocked(model):
+                record = availability.record_for(model) or {}
                 last = LlmQuotaError(record.get('message')
                                      or f'{model} is rate limited.')
                 self._advance()
@@ -333,7 +333,7 @@ class Rotation:
 
             # A model already believed to be out gets one quick confirmation
             # instead of three attempts with backoff.
-            attempts = 1 if ai_status.record_for(model) else None
+            attempts = 1 if availability.record_for(model) else None
 
             try:
                 convo = self.provider.start(system, model=model, role=self.role,
@@ -341,7 +341,7 @@ class Rotation:
                 reply = convo.ask(parts)
             except LlmQuotaError as exc:
                 if self.records:
-                    ai_status.record_model_outage(
+                    availability.record_model_outage(
                         model, str(exc), retry_after=exc.retry_after,
                         scope=exc.scope, provider=self.provider.name)
                 last = exc
@@ -349,9 +349,9 @@ class Rotation:
                 self._announce(model, exc)
             except LlmModelError as exc:
                 if self.records:
-                    ai_status.record_model_outage(
+                    availability.record_model_outage(
                         model, str(exc),
-                        retry_after=ai_status._MODEL_ERROR_SECONDS,
+                        retry_after=availability._MODEL_ERROR_SECONDS,
                         scope='model', provider=self.provider.name,
                         from_provider=False)
                 last = exc
@@ -361,7 +361,7 @@ class Rotation:
                 # A rejected key or an unreachable network dooms every model,
                 # so rotating would repeat the same failure three more times.
                 if self.records:
-                    ai_status.record_outage(str(exc),
+                    availability.record_outage(str(exc),
                                             provider=self.provider.name)
                 self.exhausted = True
                 self.fatal = exc
@@ -372,7 +372,7 @@ class Rotation:
                 # on the fallback path after the service came back. A
                 # speculative round clears too: a success is unambiguous good
                 # news however it was obtained.
-                ai_status.clear_model(model)
+                availability.clear_model(model)
                 return convo, reply
 
         raise last or LlmError('No usable model is configured for this server.')
@@ -390,9 +390,9 @@ class Rotation:
 
 def first_usable_model(role):
     """The best model for this role that is not currently known to be out."""
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     chain = provider.model_chain(role)
-    usable = ai_status.usable_models(chain)
+    usable = availability.usable_models(chain)
     return (usable or chain or [None])[0]
 
 
@@ -571,7 +571,7 @@ def convert_page(file_bytes, filename, validate=True, outline=None,
 
     try:
         convo, reply, provider = ask_first_usable(
-            system, llm_providers.ROLE_DOCUMENT, ask, rotation=rotation)
+            system, llm.ROLE_DOCUMENT, ask, rotation=rotation)
     except LlmError as exc:
         return _blank_result('', 'failed', str(exc))
     except Exception as exc:
@@ -615,31 +615,31 @@ def finalise_document(tex):
                      'errors': '', 'missing_packages': [], 'reason': None}, findings
 
     if not enabled():
-        problems = latex_tools.static_validate(tex)
+        problems = latex.static_validate(tex)
         compile_result = {'attempted': False, 'ok': False, 'engine': None,
                           'errors': '', 'missing_packages': [],
                           'reason': None}
         if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-            compile_result = latex_tools.compile_tex(tex, want_pdf=True)
+            compile_result = latex.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     try:
         # No call is made here - _validate_and_repair only asks if the document
         # is actually broken - so there is nothing to rotate on. Just avoid
         # opening on a model already known to be out of quota.
         convo = provider.start(
-            _FIX_SYSTEM, role=llm_providers.ROLE_DOCUMENT,
-            model=first_usable_model(llm_providers.ROLE_DOCUMENT))
+            _FIX_SYSTEM, role=llm.ROLE_DOCUMENT,
+            model=first_usable_model(llm.ROLE_DOCUMENT))
     except LlmError:
         convo = None
 
     if convo is None:
-        problems = latex_tools.static_validate(tex)
+        problems = latex.static_validate(tex)
         compile_result = {'attempted': False, 'ok': False, 'engine': None,
                           'errors': '', 'missing_packages': [], 'reason': None}
         if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
-            compile_result = latex_tools.compile_tex(tex, want_pdf=True)
+            compile_result = latex.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
     try:

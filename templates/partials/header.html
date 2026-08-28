@@ -14,7 +14,7 @@
 <header class="sticky top-0 z-40 border-b border-paper-300 bg-paper-100/95 backdrop-blur-sm">
     <div class="wrap flex h-16 items-center justify-between gap-4">
 
-        <a href="{{ url_for('home') }}"
+        <a href="{{ url_for('pages.home') }}"
            class="flex flex-shrink-0 items-center gap-2.5 rounded-sm"
            aria-label="ConTeX home">
             {# The mark as drawn, on the paper ground it was drawn for. #}
@@ -29,9 +29,9 @@
         </a>
 
         <nav class="hidden items-center gap-7 md:flex" aria-label="Main">
-            <a href="{{ url_for('home') }}" class="nav-link"
+            <a href="{{ url_for('pages.home') }}" class="nav-link"
                {% if here == 'home' %}aria-current="page"{% endif %}>Convert</a>
-            <a href="{{ url_for('history_page') }}" class="nav-link"
+            <a href="{{ url_for('pages.history_page') }}" class="nav-link"
                {% if here == 'history_page' %}aria-current="page"{% endif %}>History</a>
 
             <span class="h-5 w-px bg-paper-300" aria-hidden="true"></span>
@@ -39,9 +39,9 @@
             {% if user %}
                 <span class="max-w-[16ch] truncate text-sm text-ink-500"
                       title="{{ user.email }}">{{ user.displayName or user.email }}</span>
-                <a href="{{ url_for('logout') }}" class="btn-secondary btn-sm">Sign out</a>
+                <a href="{{ url_for('auth.logout') }}" class="btn-secondary btn-sm">Sign out</a>
             {% elif here != 'login' %}
-                <a href="{{ url_for('login') }}" class="btn-secondary btn-sm">Sign in</a>
+                <a href="{{ url_for('auth.login') }}" class="btn-secondary btn-sm">Sign in</a>
             {% endif %}
         </nav>
 
@@ -76,10 +76,10 @@
     </div>
 
     <nav class="flex flex-col gap-1 p-4" aria-label="Main">
-        <a href="{{ url_for('home') }}" data-action="toggle-sidebar"
+        <a href="{{ url_for('pages.home') }}" data-action="toggle-sidebar"
            class="rounded-md px-3 py-3 text-[0.9375rem] font-medium transition
                   {% if here == 'home' %}bg-forest-50 text-forest-800{% else %}text-ink-700 hover:bg-paper-200{% endif %}">Convert</a>
-        <a href="{{ url_for('history_page') }}" data-action="toggle-sidebar"
+        <a href="{{ url_for('pages.history_page') }}" data-action="toggle-sidebar"
            class="rounded-md px-3 py-3 text-[0.9375rem] font-medium transition
                   {% if here == 'history_page' %}bg-forest-50 text-forest-800{% else %}text-ink-700 hover:bg-paper-200{% endif %}">History</a>
     </nav>
@@ -89,12 +89,12 @@
             <p class="mb-3 truncate text-sm text-ink-500">
                 Signed in as <span class="font-medium text-ink-900">{{ user.displayName or user.email }}</span>
             </p>
-            <a href="{{ url_for('logout') }}" class="btn-secondary btn-block">Sign out</a>
+            <a href="{{ url_for('auth.logout') }}" class="btn-secondary btn-block">Sign out</a>
         {% else %}
             <p class="mb-3 text-sm text-ink-500">
                 Sign in to keep your conversions after this tab closes.
             </p>
-            <a href="{{ url_for('login') }}" class="btn-primary btn-block">Sign in</a>
+            <a href="{{ url_for('auth.login') }}" class="btn-primary btn-block">Sign in</a>
         {% endif %}
     </div>
 </div>

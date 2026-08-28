@@ -1,10 +1,10 @@
-# textract_fast.py
+# tesseract.py
 import pytesseract
 from PIL import Image
 import os
 import shutil
 
-import preprocess
+from contex.pipeline import preprocess
 
 # Attempt to import pdf2image
 try:
@@ -235,7 +235,7 @@ def generate_tex_source(text):
 
     This is the fixed-format output of the Tesseract pipeline: it preserves the
     words, not the structure of the page. Headings, equations and tables are
-    what the AI path recovers; see ai_qa.convert_page().
+    what the AI path recovers; see ai.convert_page().
     """
     # T1 font encoding is what makes accented and Latin-1 characters typeset
     # instead of aborting the compile.

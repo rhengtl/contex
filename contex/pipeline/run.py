@@ -41,13 +41,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
 
-import ai_qa
-import ai_status
-import docx_input
-import latex_tools
-import layout
-import preprocess
-import textract_fast
+from contex.pipeline.recognise import ai
+from contex.services.llm import availability
+from contex.pipeline.recognise import word
+from contex.pipeline import latex
+from contex.pipeline.latex import assemble
+from contex.pipeline import preprocess
+from contex.pipeline.recognise import tesseract
 
 _IMAGE_TYPES = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif',
                 '.webp'}
@@ -210,7 +210,7 @@ def _warm_formula_model():
 
     def load():
         try:
-            importlib.import_module('equation')
+            importlib.import_module('contex.pipeline.recognise.formulas')
         except Exception as exc:
             print(f'Notice: the formula model could not be preloaded ({exc}).')
 
@@ -229,30 +229,30 @@ def _recognize_regions(page, boxes, lines):
     a handwritten page, exactly that happened to "This idea changed how physics
     was understood."
     """
-    import equation
+    from contex.pipeline.recognise import formulas
 
     found, salvaged = [], []
     for box in boxes:
         try:
-            box = equation.tighten(page, box)
-            latex = equation.recognize(page.crop(box))
+            box = formulas.tighten(page, box)
+            latex = formulas.recognize(page.crop(box))
         except Exception as exc:
             print(f'Notice: formula recognition failed for one region ({exc}).')
             continue
         if not latex:
             continue
 
-        if layout.looks_like_equation(latex):
+        if assemble.looks_like_equation(latex):
             found.append({'index': len(found) + 1, 'latex': latex, 'box': box})
             continue
 
         # Not mathematics. If the text engine read this region, its answer
         # stands and there is nothing to salvage. If it did not, the formula
         # model's reading is all we have.
-        covered = any(layout._overlap(box, line['box']) >= 0.5 for line in lines)
+        covered = any(assemble._overlap(box, line['box']) >= 0.5 for line in lines)
         if covered:
             continue
-        recovered = layout.unwrap_text(latex)
+        recovered = assemble.unwrap_text(latex)
         if recovered:
             salvaged.append({'text': recovered, 'box': box, 'uncertain': True})
     return found, salvaged
@@ -263,27 +263,27 @@ def analyse_page(page):
     Run both converters over one already-conditioned page.
 
     Returns (items, equations, notes) where `items` is the interleaved reading
-    order produced by layout.assemble().
+    order produced by assemble.assemble().
     """
     notes = []
 
     try:
-        lines = textract_fast.extract_lines(page)
+        lines = tesseract.extract_lines(page)
     except Exception as exc:
         print(f'Notice: text extraction failed ({exc}).')
         lines, notes = [], notes + ['The text engine could not read this page.']
 
     try:
-        import equation
-        formula_model = equation.is_model_loaded()
+        from contex.pipeline.recognise import formulas
+        formula_model = formulas.is_model_loaded()
     except Exception:
         formula_model = False
 
     equations, salvaged = [], []
     if formula_model:
-        import equation
-        boxes = equation.segment_boxes(page, allow_empty=True)
-        nominated, _rejected = layout.nominate(lines, boxes, page.size[0])
+        from contex.pipeline.recognise import formulas
+        boxes = formulas.segment_boxes(page, allow_empty=True)
+        nominated, _rejected = assemble.nominate(lines, boxes, page.size[0])
         equations, salvaged = _recognize_regions(page, nominated, lines)
     else:
         notes.append('The formula model is not loaded, so equations were not '
@@ -300,7 +300,7 @@ def analyse_page(page):
         notes.append(f'{len(salvaged)} line(s) could not be read by the text '
                      'engine and were recovered approximately.')
 
-    return layout.assemble(lines, equations), equations, notes
+    return assemble.assemble(lines, equations), equations, notes
 
 
 def _local_document(pages, first_number=1, equation_offset=0):
@@ -342,7 +342,7 @@ def _local_document(pages, first_number=1, equation_offset=0):
         all_items.extend(items)
         offset += height
 
-    tex = layout.to_tex(all_items, textract_fast.escape_tex)
+    tex = assemble.to_tex(all_items, tesseract.escape_tex)
     return tex, all_equations, all_items, notes
 
 
@@ -410,7 +410,7 @@ def _result(tex, summary, qa, items=None):
     """
     compiled = (qa or {}).get('compile') or {}
     pdf = compiled.pop('pdf', None)
-    if pdf and compiled.get('source_sha') != latex_tools.source_sha(tex):
+    if pdf and compiled.get('source_sha') != latex.source_sha(tex):
         pdf = None
     return {'tex': tex, 'items': items or [], 'summary': summary,
             'qa': qa, 'pdf': pdf}
@@ -429,15 +429,15 @@ def _convert_docx(file_bytes, filename, use_ai, unavailable=''):
     content. The one weak spot on either path is Word's equations, which are
     stored as OMML and reach us with their layout flattened.
     """
-    blocks, notes = docx_input.extract(file_bytes)
+    blocks, notes = word.extract(file_bytes)
     summary = {'pages': 1, 'total_pages': 1, 'text_blocks': len(blocks),
                'uncertain_lines': 0, 'notes': list(notes),
                'fallback_notice': None, 'ai_pages': 0, 'fallback_pages': 0}
 
     if use_ai:
-        result = ai_qa.convert_page(None, filename,
-                                    outline=docx_input.outline(blocks),
-                                    rotation=ai_qa.Rotation())
+        result = ai.convert_page(None, filename,
+                                    outline=word.outline(blocks),
+                                    rotation=ai.Rotation())
         if result['status'] not in ('failed', 'skipped') and result['tex']:
             summary['path'] = 'ai'
             summary['ai_pages'] = 1
@@ -454,12 +454,12 @@ def _convert_docx(file_bytes, filename, use_ai, unavailable=''):
         reason=(unavailable or 'The AI service was unavailable.'))
     summary['fallback_pages'] = 1
 
-    tex = docx_input.to_tex(blocks)
+    tex = word.to_tex(blocks)
     summary['path'] = 'converters'
     summary['equations'] = len(_MATH_ENV.findall(tex))
     findings = []
     compile_result = _compile_only(tex)
-    report = ai_qa.blank_review(
+    report = ai.blank_review(
         tex, 'skipped',
         'This document was built directly from the Word file, without AI.')
     report['compile'] = compile_result
@@ -505,10 +505,10 @@ def _ai_workers(count):
 def _convert_one(data, name, rotation):
     """One speculative page conversion that can never raise into the pool."""
     try:
-        return ai_qa.convert_page(data, name, validate=False, rotation=rotation)
+        return ai.convert_page(data, name, validate=False, rotation=rotation)
     except Exception as exc:                       # pragma: no cover - defensive
         print(f'Notice: a page conversion failed unexpectedly ({exc}).')
-        return ai_qa.blank_review('', 'failed', str(exc))
+        return ai.blank_review('', 'failed', str(exc))
 
 
 def _convert_units(units, rotation, single):
@@ -543,7 +543,7 @@ def _convert_units(units, rotation, single):
         with ThreadPoolExecutor(max_workers=workers) as pool:
             pending = {
                 pool.submit(_convert_one, data, name,
-                            ai_qa.Rotation.pinned(model, rotation.role)): number
+                            ai.Rotation.pinned(model, rotation.role)): number
                 for number, data, name in units}
             for future in as_completed(pending):
                 done[pending[future]] = future.result()
@@ -558,7 +558,7 @@ def _convert_units(units, rotation, single):
                 return results, number, reason
             # Sequential, through the real round: this is where a quota error
             # is believed and allowed to move the conversion onto another model.
-            page = ai_qa.convert_page(data, name, validate=single,
+            page = ai.convert_page(data, name, validate=single,
                                       rotation=rotation)
         if not _usable(page):
             return results, number, (page['message']
@@ -592,7 +592,7 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
     # if that runs out of quota part way through, carries whichever model took
     # over to the remaining pages instead of re-probing the exhausted one ten
     # times. A new conversion builds a new round and starts at the top again.
-    rotation = ai_qa.Rotation() if use_ai else None
+    rotation = ai.Rotation() if use_ai else None
 
     # A lone unit is validated inside the call, where the conversation still
     # has the page attached and can repair against it. Several units are
@@ -619,11 +619,11 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
 
     if use_ai and failed_at is None and ai_documents:
         # Everything came from the model.
-        tex = latex_tools.merge_documents(ai_documents)
+        tex = latex.merge_documents(ai_documents)
         if single:
             compile_result = single_compile
         else:
-            tex, compile_result, extra = ai_qa.finalise_document(tex)
+            tex, compile_result, extra = ai.finalise_document(tex)
             findings.extend(extra)
         summary = _summarise_tex(tex, pages=len(units))
         summary.update({'path': 'ai', 'notes': notes, 'fallback_notice': None,
@@ -650,8 +650,8 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
         if not ai_documents:
             raise
         print(f'Notice: the local fallback could not run ({exc}).')
-        tex = latex_tools.merge_documents(ai_documents)
-        tex, compile_result, extra = ai_qa.finalise_document(tex)
+        tex = latex.merge_documents(ai_documents)
+        tex, compile_result, extra = ai.finalise_document(tex)
         findings.extend(extra)
         summary = _summarise_tex(tex, pages=ai_pages)
         summary.update({
@@ -687,7 +687,7 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
                     f'especially complex layout, tables and unclear '
                     f'handwriting. Pages 1 to {ai_pages} are unaffected.'),
             reason=reason, from_page=start, total=total)
-        tex = latex_tools.merge_documents(ai_documents + [local_tex])
+        tex = latex.merge_documents(ai_documents + [local_tex])
         path = 'mixed'
     else:
         notice = _notice(
@@ -725,7 +725,7 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
     }
     # The notice belongs to the result, shown once. Repeating it as the QA
     # status message printed it twice on the same page.
-    report = ai_qa.blank_review(
+    report = ai.blank_review(
         tex, 'partial' if ai_documents else 'skipped', '')
     report['compile'] = compile_result
     report['findings'] = findings
@@ -737,13 +737,13 @@ def _convert_pages(file_bytes, filename, use_ai, unavailable=''):
 
 def _compile_only(tex):
     """Local validation with no API involved at all."""
-    if latex_tools.static_validate(tex):
+    if latex.static_validate(tex):
         return {'attempted': False, 'ok': False, 'engine': None, 'errors': '',
                 'missing_packages': [], 'pdf': None, 'source_sha': None,
                 'reason': 'The LaTeX did not validate.'}
     # want_pdf: this is the only compile of the document on the local path, so
     # keeping its output is what saves the preview a second one. See _result.
-    return latex_tools.compile_tex(tex, want_pdf=True)
+    return latex.compile_tex(tex, want_pdf=True)
 
 
 # ---------------------------------------------------------------------------
@@ -764,7 +764,7 @@ def convert(file_bytes, filename, allow_fallback=False):
     """
     _check_input(filename)
 
-    status = ai_status.check()
+    status = availability.check()
     use_ai = bool(status['available'])
     if not use_ai and not allow_fallback:
         raise FallbackNotAuthorized(status)
@@ -773,6 +773,6 @@ def convert(file_bytes, filename, allow_fallback=False):
         _warm_formula_model()
 
     unavailable = '' if use_ai else (status.get('reason') or '')
-    if docx_input.is_docx(filename):
+    if word.is_docx(filename):
         return _convert_docx(file_bytes, filename, use_ai, unavailable)
     return _convert_pages(file_bytes, filename, use_ai, unavailable)

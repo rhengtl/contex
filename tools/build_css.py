@@ -28,8 +28,13 @@ import re
 import subprocess
 import sys
 
-SRC = os.path.join('static', 'css', 'tailwind.src.css')
-OUT = os.path.join('static', 'css', 'app.css')
+# Paths are resolved from the project root rather than from the working
+# directory, because this script now lives a directory down and would
+# otherwise only work when run from exactly one place.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+SRC = os.path.join(ROOT, 'static', 'css', 'tailwind.src.css')
+OUT = os.path.join(ROOT, 'static', 'css', 'app.css')
 
 
 def _kb(count):
@@ -39,7 +44,8 @@ def _kb(count):
 def build():
     result = subprocess.run(
         ['npx', '--yes', 'tailwindcss@3', '-i', SRC, '-o', OUT],
-        capture_output=True, text=True, shell=(os.name == 'nt'))
+        cwd=ROOT, capture_output=True, text=True,
+        shell=(os.name == 'nt'))
     if result.returncode != 0:
         sys.stderr.write(result.stdout + result.stderr)
         raise SystemExit('tailwind build failed')

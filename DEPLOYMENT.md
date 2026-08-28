@@ -220,7 +220,7 @@ service is ever seriously abused, a shared limit belongs in front of it.
 
 A generated result — the `.tex`, its compiled PDF, the page images — is written
 to local disk under a random token, and the token is recorded in the visitor's
-session cookie (`tex_store.py`). With more than one Cloud Run instance, a
+session cookie (`data/results.py`). With more than one Cloud Run instance, a
 request that lands on instance B cannot see a result written on instance A, and
 the user sees *"That download link has expired or does not belong to this
 session."*
@@ -228,14 +228,14 @@ session."*
 `--session-affinity` is the mitigation and it is **best-effort**, not a
 guarantee: Cloud Run drops affinity when an instance is recycled or scaled
 down. The complete fix is to move the store to Cloud Storage or Firestore,
-which is a real change to `tex_store.py` rather than a flag.
+which is a real change to `data/results.py` rather than a flag.
 
 Until then: the results are short-lived by design (one hour) and the failure is
 visible and honest rather than silent or wrong.
 
 ### Rate limiting is per process
 
-`_rate_limited()` in `app.py` counts requests inside one Python process. Under
+`_rate_limited()` in `web/` counts requests inside one Python process. Under
 gunicorn with 2 workers a caller effectively gets twice the allowance, and with
 several Cloud Run instances it multiplies again. It stops a script hammering
 one instance. It is not a defence against a distributed attacker.
@@ -259,7 +259,7 @@ this project does not have.
 
 ### LaTeX sandboxing is two layers, and one of them is platform-specific
 
-`latex_tools.py` refuses any generated document containing a primitive that
+`pipeline/latex/` refuses any generated document containing a primitive that
 reads files, writes files or runs commands, and separately puts kpathsea in
 paranoid mode via the environment. The kpathsea half works on TeX Live (the
 container) and is ignored by MiKTeX (Windows development). The source-level
@@ -308,7 +308,7 @@ the honest version of why:
 | `torch` | 2.7.0 | 2.13.0 |
 | `datasets` | 3.6.0 | 5.0.1 |
 
-`equation.py` loads `breezedeus/pix2text-mfr` through `optimum 1.17.1`, which
+`pipeline/recognise/formulas.py` loads `breezedeus/pix2text-mfr` through `optimum 1.17.1`, which
 is from February 2024. Moving `transformers` from 4.x to 5.x is not a bump; it
 is a migration of `optimum` as well, and the thing at risk is the measured
 quality of the local fallback (93–95% on the benchmark corpus). The exposure is
@@ -327,7 +327,7 @@ simply be dropped: it is a hard, non-optional dependency of `optimum 1.17.1`.
 ## Running the checks
 
 ```bash
-python test_ai_qa.py          # the full suite, no API key needed
+python tests/test_contex.py          # the full suite, no API key needed
 npm install && npm run test:rules   # Firestore rules against the emulator
 docker build -t contex .      # the production image
 ```

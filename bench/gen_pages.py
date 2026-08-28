@@ -22,7 +22,7 @@ import sys
 BENCH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(BENCH))  # the app package lives one level up
 
-import latex_tools  # noqa: E402
+from contex.pipeline import latex  # noqa: E402
 
 IMG = os.path.join(BENCH, 'img_pages')
 
@@ -142,7 +142,7 @@ H(x) = \begin{cases}
 
 
 def build():
-    engine = latex_tools.find_engine()
+    engine = latex.find_engine()
     if not engine:
         print('No LaTeX engine found; cannot render pages.')
         return 1
@@ -157,7 +157,7 @@ def build():
 
     for name, body in PAGES:
         source = _PREAMBLE + '\\begin{document}\n' + body.strip() + '\n\\end{document}\n'
-        result = latex_tools.compile_tex(source, want_pdf=True)
+        result = latex.compile_tex(source, want_pdf=True)
         if not result['ok']:
             print(f"  {name}: FAILED to compile - {result['errors'][:200]}")
             continue

@@ -3,7 +3,7 @@ Formula recognition: breezedeus/pix2text-mfr (TrOCR) on ONNX Runtime.
 
 Part of the local fallback, used when the AI is unavailable. convert.py calls
 segment_boxes() to find the formula regions on a page, then tighten() and
-recognize() to read each one; layout.py places the results back where their
+recognize() to read each one; assemble.py places the results back where their
 boxes sat.
 """
 
@@ -15,7 +15,7 @@ from PIL import Image
 from transformers import TrOCRProcessor
 from optimum.onnxruntime import ORTModelForVision2Seq
 
-import preprocess
+from contex.pipeline import preprocess
 
 # Load model and processor once
 try:

@@ -19,52 +19,81 @@ import sys
 import tempfile
 import types
 
+# The suite lives in tests/, so the project root has to be on the path before
+# anything from contex can be imported.
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 # --- Isolate the app from its heavy/optional dependencies ------------------
+#
+# Two stubs, installed into sys.modules before contex is imported so that the
+# real modules are never loaded:
+#
+#   the formula model   loading pix2text-mfr through ONNX Runtime takes
+#                       seconds and hundreds of megabytes, for a component
+#                       whose behaviour these tests script anyway
+#   Firebase            so the suite touches no network and no real project
+#
+# Firebase now needs three stubs where it needed one, because the module that
+# was firebase_config is now services/accounts.py (who someone is),
+# data/users.py (their profile) and data/history.py (their conversions).
+
 _recognized = {}
+_history_items = {}
+_accepted_terms = {}
+_saved_history = []
 
 
 def _fake_process_image_list(file_bytes):
     return _recognized.get('equations', [{'index': 1, 'latex': 'x^2'}])
 
 
-_fake_equation = types.ModuleType('equation')
-_fake_equation.is_model_loaded = lambda: True
-_fake_equation.process_image = lambda data: 'x^2'
-_fake_equation.process_image_list = _fake_process_image_list
-_fake_equation.segment_boxes = lambda img, max_regions=None, allow_empty=False: (
+_fake_formulas = types.ModuleType('contex.pipeline.recognise.formulas')
+_fake_formulas.is_model_loaded = lambda: True
+_fake_formulas.process_image = lambda data: 'x^2'
+_fake_formulas.process_image_list = _fake_process_image_list
+_fake_formulas.segment_boxes = lambda img, max_regions=None, allow_empty=False: (
     _recognized.get('boxes', []))
-_fake_equation.recognize = lambda crop: _recognized.get('latex', 'x^{2}')
-_fake_equation.tighten = lambda img, box: box
-sys.modules['equation'] = _fake_equation
+_fake_formulas.recognize = lambda crop: _recognized.get('latex', 'x^{2}')
+_fake_formulas.tighten = lambda img, box: box
+sys.modules['contex.pipeline.recognise.formulas'] = _fake_formulas
 
-_saved_history = []
-_fake_firebase = types.ModuleType('firebase_config')
-_fake_firebase.save_ocr_history = lambda uid, name, kind, result, truncated=False: (
+_fake_firebase = types.ModuleType('contex.services.firebase')
+_fake_firebase.db = None
+_fake_firebase.initialize_firebase = lambda: None
+sys.modules['contex.services.firebase'] = _fake_firebase
+
+_fake_accounts = types.ModuleType('contex.services.accounts')
+_fake_accounts.INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password'
+_fake_accounts.verify_id_token = lambda *a, **k: None
+_fake_accounts.get_user_by_uid = lambda *a, **k: None
+_fake_accounts.verify_user = lambda *a, **k: {'success': False}
+_fake_accounts.create_user = lambda *a, **k: {'success': False}
+_fake_accounts.send_password_reset = lambda *a, **k: {'success': True}
+sys.modules['contex.services.accounts'] = _fake_accounts
+
+_fake_users = types.ModuleType('contex.data.users')
+_fake_users.upsert_profile = lambda *a, **k: True
+_fake_users.set_terms_accepted = lambda uid, version: (
+    _accepted_terms.__setitem__(uid, version) or True)
+_fake_users.get_terms_accepted = lambda uid: _accepted_terms.get(uid)
+sys.modules['contex.data.users'] = _fake_users
+
+_fake_history = types.ModuleType('contex.data.history')
+_fake_history.save = lambda uid, name, kind, result, truncated=False: (
     _saved_history.append((uid, name, kind, result))
     or f'doc-{len(_saved_history)}')
-_fake_firebase.get_user_ocr_history = lambda *a, **k: []
-_fake_firebase.get_ocr_history_item = lambda uid, doc_id: _history_items.get(
-    (uid, doc_id))
-_fake_firebase.verify_id_token = lambda *a, **k: None
-_fake_firebase.get_user_by_uid = lambda *a, **k: None
-_fake_firebase.upsert_user_profile = lambda *a, **k: True
-_fake_firebase.verify_user = lambda *a, **k: {'success': False}
-_fake_firebase.create_user = lambda *a, **k: {'success': False}
-_fake_firebase.send_password_reset = lambda *a, **k: {'success': True}
-_fake_firebase.set_terms_accepted = lambda uid, version: _accepted_terms.__setitem__(
-    uid, version) or True
-_fake_firebase.get_terms_accepted = lambda uid: _accepted_terms.get(uid)
-sys.modules['firebase_config'] = _fake_firebase
-
-_history_items = {}
-_accepted_terms = {}
+_fake_history.recent = lambda *a, **k: []
+_fake_history.item = lambda uid, doc_id: _history_items.get((uid, doc_id))
+sys.modules['contex.data.history'] = _fake_history
 
 _SCRATCH = tempfile.mkdtemp(prefix='contex_test_')
 os.environ['UPLOAD_FOLDER'] = _SCRATCH
 os.environ['FLASK_SECRET_KEY'] = 'test-secret'
-# The suite converts far more in five minutes than a person ever would,
-# so the per-caller brake is off by default here and switched on
-# deliberately by the one test that is about it.
+# The suite converts far more in five minutes than a person ever would, so the
+# per-caller brake is off by default here and switched on deliberately by the
+# one test that is about it.
 os.environ.setdefault('RATE_LIMIT_CONVERT', '0')
 os.environ.setdefault('RATE_LIMIT_AUTH', '0')
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used')
@@ -72,17 +101,28 @@ os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used')
 from PIL import Image  # noqa: E402
 import pikepdf  # noqa: E402
 
-import ai_qa  # noqa: E402
-import ai_status  # noqa: E402
-import convert  # noqa: E402
-import docx_input  # noqa: E402
-import latex_tools  # noqa: E402
-import layout  # noqa: E402
-import llm_providers  # noqa: E402
-import preprocess  # noqa: E402
-import tex_store  # noqa: E402
-import textract_fast  # noqa: E402
-import app as flask_app  # noqa: E402
+from contex import app as contex_app  # noqa: E402
+from contex import config  # noqa: E402
+from contex import pipeline  # noqa: E402
+from contex.pipeline import run  # noqa: E402
+from contex.data import results  # noqa: E402
+from contex.pipeline import inputs, preprocess  # noqa: E402
+from contex.pipeline import latex  # noqa: E402
+from contex.pipeline.latex import assemble, engine  # noqa: E402
+from contex.pipeline.recognise import ai, tesseract, word  # noqa: E402
+from contex.services import llm  # noqa: E402
+from contex.services.llm import availability  # noqa: E402
+from contex.web import errors as web_errors_module  # noqa: E402
+from contex.web import output as web_output  # noqa: E402
+from contex.web import pages as web_pages  # noqa: E402
+from contex.web import security  # noqa: E402
+from contex.web import session as web_session  # noqa: E402
+
+#: The suite was written against a single `app` module and reaches into it in
+#: a hundred places. contex.app is the module that builds the application, so
+#: one alias keeps those call sites intact while the code they exercise lives
+#: in its proper module.
+flask_app = contex_app
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +150,8 @@ def check(condition, message):
 # afterwards. Snapshot the real callables now and put them back before each
 # test.
 _REAL_CALLABLES = {
-    (ai_qa, 'convert_page'): ai_qa.convert_page,
-    (convert, 'convert'): convert.convert,
+    (ai, 'convert_page'): ai.convert_page,
+    (pipeline, 'convert'): pipeline.convert,
 }
 
 
@@ -225,7 +265,7 @@ def render_tex_page(body, dpi=150):
     source = (r'\documentclass[12pt]{article}\usepackage[margin=2cm]{geometry}'
               r'\usepackage{amsmath}\pagestyle{empty}\begin{document}'
               + body + r'\end{document}')
-    result = latex_tools.compile_tex(source, want_pdf=True)
+    result = latex.compile_tex(source, want_pdf=True)
     if not result['ok']:
         return None
     try:
@@ -241,7 +281,7 @@ def render_tex_page(body, dpi=150):
 # ---------------------------------------------------------------------------
 # Equation segmentation - the converter's new list output
 # ---------------------------------------------------------------------------
-# equation.py is stubbed for the route tests, so load the real module under a
+# formulas.py is stubbed for the route tests, so load the real module under a
 # different name with its model imports faked out.
 
 def _load_real_equation_module():
@@ -253,12 +293,18 @@ def _load_real_equation_module():
             setattr(module, attr, None)
             sys.modules[name] = module
     sys.modules.setdefault('optimum', types.ModuleType('optimum'))
-    spec = importlib.util.spec_from_file_location('_real_equation', 'equation.py')
+    spec = importlib.util.spec_from_file_location(
+        '_real_formulas',
+        os.path.join(_ROOT, 'contex', 'pipeline', 'recognise', 'formulas.py'))
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Loud, not silent. Swallowing this leaves an empty module behind and
+        # every segmentation test then fails with "no attribute", which says
+        # nothing about the real cause - a wrong path, most likely.
+        raise RuntimeError(
+            f'could not load the real formulas module: {exc!r}') from exc
     return module
 
 
@@ -351,19 +397,19 @@ def _():
 
 @test('static validator accepts a well-formed document')
 def _():
-    check(latex_tools.static_validate(GOOD_TEX) == [],
-          latex_tools.static_validate(GOOD_TEX))
+    check(latex.static_validate(GOOD_TEX) == [],
+          latex.static_validate(GOOD_TEX))
 
 
 @test('static validator catches an unclosed environment')
 def _():
-    check(any('itemize' in issue for issue in latex_tools.static_validate(BROKEN_TEX)),
-          latex_tools.static_validate(BROKEN_TEX))
+    check(any('itemize' in issue for issue in latex.static_validate(BROKEN_TEX)),
+          latex.static_validate(BROKEN_TEX))
 
 
 @test('a valid document compiles')
 def _():
-    result = latex_tools.compile_tex(GOOD_TEX)
+    result = latex.compile_tex(GOOD_TEX)
     if not result['attempted']:
         return skip('no LaTeX engine installed')
     check(result['ok'], result['errors'] or result['reason'])
@@ -394,14 +440,14 @@ def _():
 
 @test('an image is prepared as a media part for the model')
 def _():
-    part = ai_qa.source_part(png_bytes(), 'scan.png')
+    part = ai.source_part(png_bytes(), 'scan.png')
     check(part and part['kind'] == 'media', part)
     check(part['media_type'] == 'image/png', part['media_type'])
 
 
 @test('a PDF is prepared as a document part')
 def _():
-    part = ai_qa.source_part(pdf_bytes(), 'paper.pdf')
+    part = ai.source_part(pdf_bytes(), 'paper.pdf')
     check(part and part['media_type'] == 'application/pdf', part)
 
 
@@ -409,14 +455,14 @@ def _():
 def _():
     for data, name in ((b'', 'x.png'), (b'nonsense', 'x.docx'),
                        (b'nonsense', 'x.png')):
-        check(ai_qa.source_part(data, name) is None, f'{name} was accepted')
+        check(ai.source_part(data, name) is None, f'{name} was accepted')
 
 
 @test('an oversized source is refused so QA is skipped, not attempted')
 def _():
     os.environ['AI_QA_MAX_UPLOAD_MB'] = '1'
     try:
-        check(ai_qa.source_part(b'x' * (2 * 1024 * 1024), 'big.png') is None,
+        check(ai.source_part(b'x' * (2 * 1024 * 1024), 'big.png') is None,
               'oversized file accepted')
     finally:
         del os.environ['AI_QA_MAX_UPLOAD_MB']
@@ -426,7 +472,7 @@ def _():
 # Scripted provider
 # ---------------------------------------------------------------------------
 
-class ScriptedConversation(llm_providers.Conversation):
+class ScriptedConversation(llm.Conversation):
     def __init__(self, provider, model, system, script, thinking=None):
         super().__init__(provider, model, system, thinking)
         self.script = script
@@ -444,14 +490,14 @@ class ScriptedConversation(llm_providers.Conversation):
         return reply
 
 
-class ScriptedProvider(llm_providers.Provider):
+class ScriptedProvider(llm.Provider):
     name = 'scripted'
 
     #: A one-model chain: rotation is exercised separately, and a scripted
     #: provider that silently moved to another model would make every other
     #: test harder to read.
     MODEL_CHAIN = {
-        llm_providers.ROLE_DOCUMENT: ['scripted-document'],
+        llm.ROLE_DOCUMENT: ['scripted-document'],
     }
 
     def __init__(self, script, fail_on_start=None):
@@ -475,15 +521,15 @@ class ScriptedProvider(llm_providers.Provider):
 
 def with_provider(script, fail_on_start=None):
     provider = ScriptedProvider(script, fail_on_start)
-    llm_providers.get_provider = lambda name=None: provider
+    llm.get_provider = lambda name=None: provider
     return provider
 
 
-_REAL_GET_PROVIDER = llm_providers.get_provider
+_REAL_GET_PROVIDER = llm.get_provider
 
 
 def restore_provider():
-    llm_providers.get_provider = _REAL_GET_PROVIDER
+    llm.get_provider = _REAL_GET_PROVIDER
 
 
 def prompt_text(parts):
@@ -524,7 +570,7 @@ def qa_result(tex, status='clean', **extra):
 
 def accept_terms(client):
     """Tick the agreement, the way the page does, so a POST is not refused."""
-    client.post('/accept-terms', data={'version': flask_app.TERMS_VERSION})
+    client.post('/accept-terms', data={'version': web_session.TERMS_VERSION})
     return client
 
 
@@ -562,7 +608,7 @@ def _():
 @test('a conversion is refused until the terms are accepted')
 def _():
     called = []
-    flask_app.convert.convert = lambda *a, **k: called.append(1)
+    pipeline.convert = lambda *a, **k: called.append(1)
     client = client_for_tests()
     response = client.post('/convert',
                            data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -580,7 +626,7 @@ def _():
     check(stale.status_code == 409, stale.status_code)
 
     good = client.post('/accept-terms',
-                       data={'version': flask_app.TERMS_VERSION})
+                       data={'version': web_session.TERMS_VERSION})
     check(good.status_code == 200 and good.get_json()['ok'], good.get_json())
     page = client.get('/').get_data(as_text=True)
     check('You accepted the' in page, 'acceptance was not remembered')
@@ -592,8 +638,8 @@ def _():
     first = client_for_tests()
     with first.session_transaction() as session:
         session['user'] = {'uid': 'uid-terms', 'email': 'a@b.c'}
-    first.post('/accept-terms', data={'version': flask_app.TERMS_VERSION})
-    check(_accepted_terms.get('uid-terms') == flask_app.TERMS_VERSION,
+    first.post('/accept-terms', data={'version': web_session.TERMS_VERSION})
+    check(_accepted_terms.get('uid-terms') == web_session.TERMS_VERSION,
           'acceptance was not persisted to the profile')
 
     # A new session for the same user: their profile answers for them.
@@ -628,7 +674,7 @@ def _():
               f'{name}: served a whole page instead of a fragment')
         check('TO BE SUPPLIED' not in body,
               f'{name}: still contains an unfilled placeholder')
-        check(flask_app.TERMS_VERSION in body,
+        check(web_session.TERMS_VERSION in body,
               f'{name}: does not state which version it is')
         check('not been reviewed by a lawyer' in body,
               f'{name}: does not say it is unreviewed')
@@ -664,9 +710,9 @@ def _():
     privacy = ' '.join(client.get('/legal/privacy').get_data(as_text=True).split())
 
     # Limits quoted to users must be the limits the code enforces.
-    check(f"{flask_app._MAX_UPLOAD_MB} MB" in terms,
-          f'terms quotes an upload limit that is not {flask_app._MAX_UPLOAD_MB} MB')
-    check(str(flask_app.HISTORY_RESULT_LIMIT) in terms.replace(',', ''),
+    check(f"{flask_app.app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)} MB" in terms,
+          f'terms quotes an upload limit that is not {flask_app.app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)} MB')
+    check(str(web_session.HISTORY_RESULT_LIMIT) in terms.replace(',', ''),
           'terms quotes the wrong history truncation limit')
     check('One hour' in privacy or 'one hour' in terms.lower(),
           'the one-hour result retention is not stated')
@@ -702,7 +748,7 @@ def _():
 
 @test('the availability endpoint reports a configured service as usable')
 def _():
-    ai_status.clear_outage()
+    availability.clear_outage()
     body = client_for_tests().get('/api/ai-status').get_json()
     check(body['available'] is True, body)
     check(body['services'] and body['services'][0]['models'],
@@ -714,7 +760,7 @@ def _():
 @test('the availability endpoint reports an outage with what it knows')
 def _():
     try:
-        ai_status.record_outage('Rate limited right now.', retry_after=60,
+        availability.record_outage('Rate limited right now.', retry_after=60,
                                 scope='minute', provider='gemini')
         body = client_for_tests().get('/api/ai-status').get_json()
         check(body['available'] is False, body)
@@ -722,7 +768,7 @@ def _():
         check(body['recovery']['known'] is True, body['recovery'])
         check('retry' in body['recovery']['text'].lower(), body['recovery'])
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a daily quota reports no recovery time rather than guessing one')
@@ -731,20 +777,20 @@ def _():
         # A retry delay does come back with a daily quota, but it says when to
         # retry the request - not when the day's allowance resets. Presenting
         # it as a recovery time would be a fabrication.
-        ai_status.record_outage('Daily allowance used up.', retry_after=41,
+        availability.record_outage('Daily allowance used up.', retry_after=41,
                                 scope='day', provider='gemini')
         body = client_for_tests().get('/api/ai-status').get_json()
         check(body['recovery']['known'] is False, body['recovery'])
         check('No estimated recovery time' in body['recovery']['text'],
               body['recovery'])
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('an outage with no provider retry time says so plainly')
 def _():
     try:
-        ai_status.record_outage('Could not reach the service.',
+        availability.record_outage('Could not reach the service.',
                                 provider='gemini')
         body = client_for_tests().get('/api/ai-status').get_json()
         check(body['recovery']['known'] is False, body['recovery'])
@@ -752,26 +798,26 @@ def _():
               == 'No estimated recovery time is currently available.',
               body['recovery'])
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a remembered outage expires so the app does not stay on the fallback')
 def _():
     import time
     try:
-        ai_status.record_outage('Brief limit.', retry_after=1, scope='minute')
-        check(ai_status.check()['available'] is False, 'outage not remembered')
+        availability.record_outage('Brief limit.', retry_after=1, scope='minute')
+        check(availability.check()['available'] is False, 'outage not remembered')
         time.sleep(1.2)
-        check(ai_status.check()['available'] is True,
+        check(availability.check()['available'] is True,
               'the app stayed on the fallback after the outage passed')
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a successful conversion clears a remembered outage')
 def _():
-    ai_status.record_outage('Stale outage.', retry_after=600, scope='minute')
-    ai_qa.convert_page = lambda data, name, validate=True, outline=None,         rotation=None: {
+    availability.record_outage('Stale outage.', retry_after=600, scope='minute')
+    ai.convert_page = lambda data, name, validate=True, outline=None,         rotation=None: {
         'tex': GOOD_TEX, 'status': 'corrected', 'message': '', 'findings': [],
         'equations': [], 'summary': {},
         'compile': {'attempted': False, 'ok': False, 'engine': None,
@@ -780,10 +826,10 @@ def _():
         'model': 'scripted', 'provider': 'scripted'}
     try:
         # convert_page is what clears it, so drive the real thing through it.
-        ai_status.clear_outage()
-        check(ai_status.check()['available'] is True, 'setup wrong')
+        availability.clear_outage()
+        check(availability.check()['available'] is True, 'setup wrong')
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('an unavailable AI blocks the conversion instead of downgrading it')
@@ -821,7 +867,7 @@ def _():
         with client.session_transaction() as session:
             token = session.get('convert_token')
         check(token, 'the fallback produced nothing')
-        job = tex_store.read(token)
+        job = results.read(token)
         check(job['stats']['path'] == 'converters', job['stats'])
         check(job['stats']['fallback_notice'],
               'the fallback was not disclosed')
@@ -847,7 +893,7 @@ def _():
     def flaky(data, name, validate=True, outline=None, rotation=None):
         calls['n'] += 1
         if calls['n'] > 1:
-            return ai_qa.blank_review('', 'failed', 'Daily allowance used up.')
+            return ai.blank_review('', 'failed', 'Daily allowance used up.')
         return {'tex': GOOD_TEX, 'status': 'corrected', 'message': '',
                 'findings': [], 'equations': [], 'summary': {},
                 'compile': {'attempted': False, 'ok': False, 'engine': None,
@@ -857,8 +903,8 @@ def _():
                           'cache_write': 0},
                 'model': 'scripted', 'provider': 'scripted'}
 
-    ai_qa.convert_page = flaky
-    result = convert.convert(pdf_bytes(pages=2), 'two.pdf')
+    ai.convert_page = flaky
+    result = pipeline.convert(pdf_bytes(pages=2), 'two.pdf')
     stats = result['summary']
     check(stats['path'] == 'mixed', stats)
     check(stats['ai_pages'] == 1 and stats['fallback_pages'] == 1, stats)
@@ -879,7 +925,7 @@ def _():
 
 @test('every input method reaches the one route and returns a .tex')
 def _():
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     for label, payload, name in (
             ('image', png_bytes(), 'scan.png'),
@@ -946,7 +992,7 @@ def _():
 @test('an empty submission is refused before any work happens')
 def _():
     called = []
-    flask_app.convert.convert = lambda *a, **k: called.append(1)
+    pipeline.convert = lambda *a, **k: called.append(1)
     client = accept_terms(client_for_tests())
     response = client.post('/convert', data={'file': (io.BytesIO(b''), '')},
                            content_type='multipart/form-data')
@@ -970,7 +1016,7 @@ def _():
 
 @test('the result page offers preview, copy and download')
 def _():
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     page = client.post('/convert',
                        data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -988,10 +1034,10 @@ def _():
 
 @test('the preview compiles the generated document to a PDF')
 def _():
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -1009,11 +1055,11 @@ def _():
 
 @test('a document that will not compile gives a clear error, not an empty frame')
 def _():
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
     client = client_for_tests()
-    token = tex_store.save({'tex': BROKEN_TEX, 'file_name': 'bad.png',
+    token = results.save({'tex': BROKEN_TEX, 'file_name': 'bad.png',
                             'source': 'convert'})
     with client.session_transaction() as session:
         session['tex_tokens'] = [token]
@@ -1025,7 +1071,7 @@ def _():
 
 @test('a preview token from another session is refused')
 def _():
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     owner = accept_terms(client_for_tests())
     owner.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                content_type='multipart/form-data')
@@ -1053,7 +1099,7 @@ def _():
 @test('a conversion is saved for a signed-in user only')
 def _():
     _saved_history.clear()
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -1089,7 +1135,7 @@ def _():
     check(copied.status_code == 200 and copied.get_json()['tex'] == GOOD_TEX,
           copied.get_json())
 
-    if latex_tools.find_engine():
+    if latex.find_engine():
         preview = client.get('/history/doc-h/preview.pdf')
         check(preview.status_code == 200, preview.status_code)
         check(preview.data[:4] == b'%PDF', 'history preview is not a PDF')
@@ -1100,10 +1146,10 @@ def _():
     # A browser is told to display an inline response and to save an
     # attachment. The .tex is a file the user wants on disk; the PDF is a
     # document they want to look at, and must not be sent as an attachment.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -1128,10 +1174,10 @@ def _():
     # the browser routes it to its own viewer, and a download manager
     # extension saves it instead. Under a type nothing claims, the bytes
     # arrive, and the page labels the blob as a PDF itself.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -1187,13 +1233,13 @@ def _():
     with client.session_transaction() as session:
         session['user'] = {'uid': 'uid-tab', 'email': 't@example.com'}
 
-    real_list = _fake_firebase.get_user_ocr_history
-    _fake_firebase.get_user_ocr_history = lambda uid, **k: (
+    real_list = _fake_history.recent
+    _fake_history.recent = lambda uid, **k: (
         [dict(item)] if uid == 'uid-tab' else [])
     try:
         page = client.get('/history').get_data(as_text=True)
     finally:
-        _fake_firebase.get_user_ocr_history = real_list
+        _fake_history.recent = real_list
 
     # Checked by what the button does, not by what it is called: the wording
     # is free to change, the capability is not.
@@ -1204,7 +1250,7 @@ def _():
           'the history item has no open button')
 
     # And the link has to actually serve the document.
-    if latex_tools.find_engine():
+    if latex.find_engine():
         opened = client.get('/history/doc-tab/preview.pdf')
         check(opened.status_code == 200, opened.status_code)
         check(opened.data[:4] == b'%PDF', 'the opened tab is not a PDF')
@@ -1221,7 +1267,7 @@ def _():
     # the document. None of it is rendered any more. What is still *stored* is
     # what a conversion can be accounted for by afterwards - the stats, and the
     # record of which model produced the document and whether it compiled.
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -1235,7 +1281,7 @@ def _():
     check('Equations found' not in page, 'the detected-equation list is back')
 
     # Still produced, still stored.
-    stored = tex_store.read(token)
+    stored = results.read(token)
     check('text_blocks' in (stored.get('stats') or {}),
           'the stats stopped being produced, which was not the intent')
     check(stored.get('qa'), 'the conversion record stopped being produced')
@@ -1275,7 +1321,7 @@ def _():
 def _():
     _history_items[('uid-t', 'doc-t')] = {
         'uid': 'uid-t', 'fileName': 'huge.png', 'ocrType': 'convert',
-        'result': GOOD_TEX + flask_app._TRUNCATION_MARK}
+        'result': GOOD_TEX + web_session.TRUNCATION_MARK}
     client = client_for_tests()
     with client.session_transaction() as session:
         session['user'] = {'uid': 'uid-t', 'email': 't@example.com'}
@@ -1287,7 +1333,7 @@ def _():
 
 @test('a guest history entry keeps its token so it can be previewed later')
 def _():
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     page = client.post('/convert',
                        data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -1305,7 +1351,7 @@ def _():
 
 @test('a .docx is read structurally, in document order')
 def _():
-    blocks, notes = docx_input.extract(docx_bytes())
+    blocks, notes = word.extract(docx_bytes())
     kinds = [block['kind'] for block in blocks]
     check(kinds[0] == 'title', kinds)
     check('heading' in kinds and 'table' in kinds and 'list' in kinds, kinds)
@@ -1317,7 +1363,7 @@ def _():
 
 @test('a Word equation survives extraction instead of vanishing')
 def _():
-    blocks, _notes = docx_input.extract(docx_bytes())
+    blocks, _notes = word.extract(docx_bytes())
     text = ' '.join(block.get('text', '') for block in blocks)
     check('E=mc2' in text or 'E=mc' in text,
           'the display equation was lost')
@@ -1327,13 +1373,13 @@ def _():
 
 @test('a .docx converts without AI and keeps its content')
 def _():
-    tex = docx_input.to_tex(docx_input.extract(docx_bytes())[0])
+    tex = word.to_tex(word.extract(docx_bytes())[0])
     for needle in ('Relativity', 'Mass and energy', 'speed of light',
                    'tabular', r'\item'):
         check(needle in tex, f'{needle} missing from the offline rendering')
     check(r'100\%' in tex, 'a percent sign was not escaped')
-    check(latex_tools.static_validate(tex) == [],
-          latex_tools.static_validate(tex))
+    check(latex.static_validate(tex) == [],
+          latex.static_validate(tex))
 
 
 @test('the route accepts a .docx end to end')
@@ -1348,7 +1394,7 @@ def _():
         with client.session_transaction() as session:
             token = session.get('convert_token')
         check(token, 'the .docx produced no result')
-        check('Relativity' in tex_store.read(token)['tex'],
+        check('Relativity' in results.read(token)['tex'],
               'the .docx content was lost')
     finally:
         del os.environ['AI_QA_ENABLED']
@@ -1366,22 +1412,22 @@ def _():
     second = ('\\documentclass{article}\n\\usepackage{amsmath}\n'
               '\\usepackage{amssymb}\n\\begin{document}\nPage two.\n'
               '\\end{document}')
-    merged = latex_tools.merge_documents([first, second])
+    merged = latex.merge_documents([first, second])
     check(merged.count('\\documentclass') == 1, merged)
     check(merged.count('\\begin{document}') == 1, merged)
     check(merged.count('\\usepackage{amsmath}') == 1,
           'a package was loaded twice')
     check(merged.count('\\maketitle') == 1, 'a second title page was emitted')
     check('Page one.' in merged and 'Page two.' in merged, 'content was lost')
-    check(latex_tools.static_validate(merged) == [],
-          latex_tools.static_validate(merged))
+    check(latex.static_validate(merged) == [],
+          latex.static_validate(merged))
 
 
 @test('merging one document leaves it untouched')
 def _():
     only = '\\documentclass{article}\n\\begin{document}\nHi.\n\\end{document}'
-    check(latex_tools.merge_documents([only]) == only, 'a lone page was rewritten')
-    check(latex_tools.merge_documents([]) == '', 'empty input produced output')
+    check(latex.merge_documents([only]) == only, 'a lone page was rewritten')
+    check(latex.merge_documents([]) == '', 'empty input produced output')
 
 
 def _page_document(marker):
@@ -1397,20 +1443,20 @@ def _():
     # up to fill the space left by page one, and every boundary after that
     # drifted. The break has to be in the source, not left to the typesetter.
     markers = ('ALPHAPAGE', 'BRAVOPAGE', 'CHARLIEPAGE')
-    merged = latex_tools.merge_documents([_page_document(m) for m in markers])
+    merged = latex.merge_documents([_page_document(m) for m in markers])
     check(merged.count('\\clearpage') == len(markers) - 1,
           f'{merged.count("\\clearpage")} breaks for {len(markers)} pages')
     for marker in markers:
         check(marker in merged, f'{marker} was lost in the merge')
     check(not merged.split('\\begin{document}')[1].lstrip().startswith('\\clearpage'),
           'a break before the first page would emit a blank leading page')
-    check(latex_tools.static_validate(merged) == [],
-          latex_tools.static_validate(merged))
+    check(latex.static_validate(merged) == [],
+          latex.static_validate(merged))
 
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    result = latex_tools.compile_tex(merged, want_pdf=True)
+    result = latex.compile_tex(merged, want_pdf=True)
     check(result['ok'], result.get('reason') or result.get('errors'))
     with pikepdf.open(io.BytesIO(result['pdf'])) as pdf:
         check(len(pdf.pages) == len(markers),
@@ -1435,7 +1481,7 @@ def _plain_page(marker):
 
 def _page_pictures(pdf_bytes):
     """Each rendered page, as a PIL image."""
-    pages, error = latex_tools.render_pages(pdf_bytes, dpi=50)
+    pages, error = latex.render_pages(pdf_bytes, dpi=50)
     return [Image.open(io.BytesIO(png)).convert('RGB') for png in pages], error
 
 
@@ -1456,7 +1502,7 @@ def _():
     # one used to darken the whole document - while only page one carried the
     # light text meant for it, leaving white on white from page two onward.
     for where in (True, False):
-        merged = latex_tools.merge_documents(
+        merged = latex.merge_documents(
             [_coloured_page('PAGEONE', in_preamble=where),
              _plain_page('PAGETWO'), _plain_page('PAGETHREE')])
         head = merged.split('\\begin{document}')[0]
@@ -1465,10 +1511,10 @@ def _():
               'every page rather than the one that asked for it')
         check('\\pagecolor' in merged, 'page one lost its background entirely')
 
-        if not latex_tools.find_engine():
+        if not latex.find_engine():
             skip('no LaTeX engine installed')
             return
-        result = latex_tools.compile_tex(merged, want_pdf=True)
+        result = latex.compile_tex(merged, want_pdf=True)
         check(result['ok'], result.get('reason') or result.get('errors'))
         images, error = _page_pictures(result['pdf'])
         check(not error, error)
@@ -1486,12 +1532,12 @@ def _():
 def _():
     # The half of the bug the reader actually notices: \color is a declaration
     # too, so page one's white text carried on to a page that is now white.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    merged = latex_tools.merge_documents(
+    merged = latex.merge_documents(
         [_coloured_page('PAGEONE'), _plain_page('PAGETWO')])
-    result = latex_tools.compile_tex(merged, want_pdf=True)
+    result = latex.compile_tex(merged, want_pdf=True)
     check(result['ok'], result.get('reason') or result.get('errors'))
     images, error = _page_pictures(result['pdf'])
     check(not error, error)
@@ -1505,7 +1551,7 @@ def _():
     # near the end of a page keeps applying to every page after it. Measured
     # against the same page set on its own, so the comparison is to how that
     # page should look rather than to a guessed threshold.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
     shouting = ('\\documentclass{article}\n\\begin{document}\n'
@@ -1514,8 +1560,8 @@ def _():
              'PAGETWO ordinary body text\n\\end{document}\n')
 
     def second_page_ink(documents):
-        result = latex_tools.compile_tex(
-            latex_tools.merge_documents(documents), want_pdf=True)
+        result = latex.compile_tex(
+            latex.merge_documents(documents), want_pdf=True)
         check(result['ok'], result.get('reason') or result.get('errors'))
         images, error = _page_pictures(result['pdf'])
         check(not error, error)
@@ -1533,7 +1579,7 @@ def _():
 def _():
     # Formatting is confined by grouping each page, but a definition is not
     # formatting: scoping it away would fail every later page that uses it.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
     defines = ('\\documentclass{article}\n\\begin{document}\n'
@@ -1541,8 +1587,8 @@ def _():
                '\\end{document}\n')
     uses = ('\\documentclass{article}\n\\begin{document}\n'
             'Later page says \\mymark\n\\end{document}\n')
-    result = latex_tools.compile_tex(
-        latex_tools.merge_documents([defines, uses]), want_pdf=True)
+    result = latex.compile_tex(
+        latex.merge_documents([defines, uses]), want_pdf=True)
     check(result['ok'],
           'a definition made on one page was scoped away from the next: '
           + (result.get('errors') or '')[:200])
@@ -1556,7 +1602,7 @@ def _():
         return {'kind': 'text', 'text': text, 'page': page, 'par': 1,
                 'block': 1, 'box': (100, top, 500, top + 30)}
 
-    tex = layout.to_tex([box(1, 'One.', 100), box(1, 'Still one.', 140),
+    tex = assemble.to_tex([box(1, 'One.', 100), box(1, 'Still one.', 140),
                          box(2, 'Two.', 1200), box(3, 'Three.', 2400)],
                         lambda value: value)
     check(tex.count('\\clearpage') == 2,
@@ -1566,7 +1612,7 @@ def _():
 
     # A single image is one page and carries no page tag: no break belongs in
     # it, and a stray one would add a blank page to every ordinary conversion.
-    single = layout.to_tex(
+    single = assemble.to_tex(
         [{'kind': 'text', 'text': 'Just prose.', 'par': 1, 'block': 1,
           'box': (100, 100, 500, 130)}], lambda value: value)
     check('\\clearpage' not in single, 'a single-image conversion gained a break')
@@ -1662,15 +1708,15 @@ def _():
 
 @test('the Tesseract pipeline still produces a .tex document')
 def _():
-    source = textract_fast.generate_tex_source('Hello world')
+    source = tesseract.generate_tex_source('Hello world')
     check(r'\documentclass{article}' in source and 'Hello world' in source, source)
-    check(latex_tools.static_validate(source) == [],
-          latex_tools.static_validate(source))
+    check(latex.static_validate(source) == [],
+          latex.static_validate(source))
 
 
 @test('plain OCR text with LaTeX specials is escaped')
 def _():
-    source = textract_fast.generate_tex_source('50% off & 100_000 units')
+    source = tesseract.generate_tex_source('50% off & 100_000 units')
     check(r'50\% off \& 100\_000' in source, source)
 
 
@@ -1680,10 +1726,10 @@ def _():
     # handled, one stray guillemet aborted the whole compile.
     noisy = ('coefficient is »/z ≤ α → — dash '
              '“quoted” 50% & x_1 café 中文')
-    source = textract_fast.generate_tex_source(noisy)
-    check(latex_tools.static_validate(source) == [],
-          latex_tools.static_validate(source))
-    result = latex_tools.compile_tex(source)
+    source = tesseract.generate_tex_source(noisy)
+    check(latex.static_validate(source) == [],
+          latex.static_validate(source))
+    result = latex.compile_tex(source)
     if not result['attempted']:
         return skip('no LaTeX engine installed')
     check(result['ok'], f"noisy OCR text broke the compile: {result['errors'][:200]}")
@@ -1691,7 +1737,7 @@ def _():
 
 @test('escaping keeps renderable characters and replaces the rest')
 def _():
-    out = textract_fast.escape_tex('café » 中 ≤')
+    out = tesseract.escape_tex('café » 中 ≤')
     check('é' in out, 'a Latin-1 accent was destroyed')
     check('»' in out, 'a Latin-1 symbol was destroyed')
     check('中' not in out and '?' in out, 'an unrenderable glyph was kept')
@@ -1700,12 +1746,12 @@ def _():
 
 @test('Tesseract receives a deskewed page')
 def _():
-    if not textract_fast._TESSERACT_CMD:
+    if not tesseract._TESSERACT_CMD:
         return skip('Tesseract not installed')
     path = os.path.join(_SCRATCH, 'skewed.png')
     text_page().rotate(-9, resample=Image.BICUBIC, expand=True,
                        fillcolor=255).save(path)
-    text = textract_fast.extract_text_from_file(path)
+    text = tesseract.extract_text_from_file(path)
     check('Chapter' in text or 'quick' in text,
           f'a rotated page still produced nothing usable: {text!r}')
     os.remove(path)
@@ -1713,10 +1759,10 @@ def _():
 
 @test('stored results round-trip and expire by token')
 def _():
-    token = tex_store.save({'tex': GOOD_TEX, 'source': 'textract'})
-    check(tex_store.read(token)['tex'] == GOOD_TEX, 'round-trip failed')
-    tex_store.discard(token)
-    check(tex_store.read(token) is None, 'discard did not delete')
+    token = results.save({'tex': GOOD_TEX, 'source': 'textract'})
+    check(results.read(token)['tex'] == GOOD_TEX, 'round-trip failed')
+    results.discard(token)
+    check(results.read(token) is None, 'discard did not delete')
 
 
 @test('gemini remains the default provider for the AI pipeline')
@@ -1757,7 +1803,7 @@ def with_clean_model_env(fn):
 def _():
     def run():
         provider = with_provider(['LATEX_OK'])
-        document = provider.start('sys', role=llm_providers.ROLE_DOCUMENT)
+        document = provider.start('sys', role=llm.ROLE_DOCUMENT)
 
         check(document.model == 'scripted-document', document.model)
         # Converting a page is a reading job: a short leash, not the budget.
@@ -1771,17 +1817,17 @@ def _():
 @test('the recommended Gemini models are the built-in defaults')
 def _():
     def run():
-        gemini = llm_providers.GeminiProvider()
+        gemini = llm.GeminiProvider()
         models = gemini.models()
-        check(models[llm_providers.ROLE_DOCUMENT] == 'gemini-3.1-flash-lite',
-              models[llm_providers.ROLE_DOCUMENT])
+        check(models[llm.ROLE_DOCUMENT] == 'gemini-3.1-flash-lite',
+              models[llm.ROLE_DOCUMENT])
     with_clean_model_env(run)
 
 
 @test('Claude defaults to Sonnet 5 rather than a pricier Opus tier')
 def _():
     def run():
-        claude = llm_providers.AnthropicProvider()
+        claude = llm.AnthropicProvider()
         for role, model in claude.models().items():
             check(model == 'claude-sonnet-5', f'{role}: {model}')
     with_clean_model_env(run)
@@ -1791,7 +1837,7 @@ def _():
 def _():
     def run():
         os.environ['AI_QA_MODEL'] = 'pinned-model'
-        gemini = llm_providers.GeminiProvider()
+        gemini = llm.GeminiProvider()
         for role, model in gemini.models().items():
             check(model == 'pinned-model', f'{role}: {model}')
     with_clean_model_env(run)
@@ -1802,24 +1848,24 @@ def _():
     def run():
         os.environ['AI_QA_MODEL'] = 'global-model'
         os.environ['AI_QA_MODEL_DOCUMENT'] = 'document-model'
-        gemini = llm_providers.GeminiProvider()
+        gemini = llm.GeminiProvider()
         models = gemini.models()
-        check(models[llm_providers.ROLE_DOCUMENT] == 'document-model',
-              models[llm_providers.ROLE_DOCUMENT])
+        check(models[llm.ROLE_DOCUMENT] == 'document-model',
+              models[llm.ROLE_DOCUMENT])
     with_clean_model_env(run)
 
 
 @test('thinking level is overridable per role and globally')
 def _():
     def run():
-        gemini = llm_providers.GeminiProvider()
-        check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'low',
+        gemini = llm.GeminiProvider()
+        check(gemini.default_thinking(llm.ROLE_DOCUMENT) == 'low',
               'the built-in default changed')
         os.environ['AI_QA_THINKING'] = 'off'
-        check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'off',
+        check(gemini.default_thinking(llm.ROLE_DOCUMENT) == 'off',
               'global override ignored')
         os.environ['AI_QA_THINKING_DOCUMENT'] = 'medium'
-        check(gemini.default_thinking(llm_providers.ROLE_DOCUMENT) == 'medium',
+        check(gemini.default_thinking(llm.ROLE_DOCUMENT) == 'medium',
               'per-role override does not beat the global one')
     with_clean_model_env(run)
 
@@ -1827,8 +1873,8 @@ def _():
 @test('provider_info reports both models and no credentials')
 def _():
     def run():
-        info = ai_qa.provider_info()
-        check(set(info['models']) == set(llm_providers.ROLES), info['models'])
+        info = ai.provider_info()
+        check(set(info['models']) == set(llm.ROLES), info['models'])
         blob = repr(info)
         for secret in ('GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'api_key'):
             check(secret not in blob, f'{secret} leaked into provider_info')
@@ -1848,7 +1894,7 @@ def line(text, top, bottom, conf, left=100, right=500, block=1, par=1, ln=1):
 def _():
     lines = [line('Signal processing turns measurements into meaning.',
                   200, 222, 96)]
-    nominated, rejected = layout.nominate(lines, [(100, 198, 500, 224)])
+    nominated, rejected = assemble.nominate(lines, [(100, 198, 500, 224)])
     check(nominated == [], f'prose was nominated: {nominated}')
     check(rejected, 'nothing was reported as rejected')
 
@@ -1857,17 +1903,17 @@ def _():
 def _():
     # Measured on a rendered PDF: Tesseract returned nothing whatsoever for a
     # displayed derivative, so "no words here" has to nominate.
-    nominated, _ = layout.nominate([], [(100, 400, 900, 500)])
+    nominated, _ = assemble.nominate([], [(100, 400, 900, 500)])
     check(nominated == [(100, 400, 900, 500)], f'not nominated: {nominated}')
 
 
 @test('a caption merged with the formula below it is carved apart')
 def _():
     # The segmenter merges ink separated by less than a line space, so this
-    # arrives as ONE band holding a sentence and an equation.
+    # arrives as ONE band holding a sentence and an formulas.
     lines = [line('The Fourier transform of f is', 200, 217, 96),
              line('F(w) -/ f(t)e* dt.', 224, 260, 5)]
-    nominated, _ = layout.nominate(lines, [(100, 198, 900, 279)])
+    nominated, _ = assemble.nominate(lines, [(100, 198, 900, 279)])
     check(len(nominated) == 1, f'expected one carved region, got {nominated}')
     check(nominated[0][1] >= 217,
           f'the carve kept the caption inside the formula: {nominated[0]}')
@@ -1879,7 +1925,7 @@ def _():
     # shredded formulas into slivers and took a page from 2 equations to 0.
     lines = [line('F(w) -/ f(t)e* dt.', 224, 260, 5),
              line('(1)', 239, 256, 94, left=800, right=860)]
-    nominated, _ = layout.nominate(lines, [(100, 220, 900, 279)])
+    nominated, _ = assemble.nominate(lines, [(100, 220, 900, 279)])
     check(len(nominated) == 1, f'the formula was split: {nominated}')
 
 
@@ -1890,7 +1936,7 @@ def _():
     # a sentence with inline maths better than the formula model does.
     lines = [line("Einstein's mass-energy relation is E = mc?, and the "
                   "Lorentz factor is", 195, 224, 15)]
-    nominated, _ = layout.nominate(lines, [(100, 193, 900, 226)])
+    nominated, _ = assemble.nominate(lines, [(100, 193, 900, 226)])
     check(nominated == [], f'inline maths was sent to the formula model: {nominated}')
 
 
@@ -1898,15 +1944,15 @@ def _():
 def _():
     # pix2text returns text as spaced letters inside \mathrm. This is the last
     # line of defence behind nomination.
-    check(not layout.looks_like_equation(
+    check(not assemble.looks_like_equation(
         r'1. 1 \quad \mathrm { M o t i v a t i o n }'), 'prose accepted')
-    check(not layout.looks_like_equation(
+    check(not assemble.looks_like_equation(
         r'\mathrm { T h e ~ F o u r i e r ~ t r a n s f o r m }'), 'prose accepted')
     for real in (r'F ( \omega ) = \int _ { 0 } ^ { 1 } f ( t ) d t',
                  r'H ( x ) = \begin{cases} 0 & x < 0 \end{cases}',
                  r'E = mc^{2}',
                  r'\frac { \partial u } { \partial t }'):
-        check(layout.looks_like_equation(real), f'rejected real maths: {real}')
+        check(assemble.looks_like_equation(real), f'rejected real maths: {real}')
 
 
 @test('equations displace the garbled text the OCR produced for them')
@@ -1914,7 +1960,7 @@ def _():
     lines = [line('Some prose above.', 100, 120, 95),
              line('F(w) -/ f(t)e* dt.', 200, 250, 5)]
     equations = [{'index': 1, 'latex': 'F(\\omega) = 1', 'box': (100, 195, 900, 255)}]
-    items = layout.assemble(lines, equations)
+    items = assemble.assemble(lines, equations)
     kinds = [item['kind'] for item in items]
     check(kinds == ['text', 'equation'], f'wrong merge: {kinds}')
     check(all('f(t)e*' not in i.get('text', '') for i in items),
@@ -1925,7 +1971,7 @@ def _():
 def _():
     lines = [line('Third.', 300, 320, 95), line('First.', 100, 120, 95)]
     equations = [{'index': 1, 'latex': 'x = 1', 'box': (100, 200, 500, 250)}]
-    items = layout.assemble(lines, equations)
+    items = assemble.assemble(lines, equations)
     check([i['box'][1] for i in items] == [100, 200, 300],
           f"out of order: {[i['box'][1] for i in items]}")
 
@@ -1935,9 +1981,9 @@ def _():
     lines = [line('1 Energy', 100, 128, 90),
              line('The relation is', 200, 220, 96)]
     equations = [{'index': 1, 'latex': 'E = mc^{2}', 'box': (100, 260, 500, 300)}]
-    tex = layout.to_tex(layout.assemble(lines, equations),
-                        textract_fast.escape_tex)
-    check(latex_tools.static_validate(tex) == [], latex_tools.static_validate(tex))
+    tex = assemble.to_tex(assemble.assemble(lines, equations),
+                        tesseract.escape_tex)
+    check(latex.static_validate(tex) == [], latex.static_validate(tex))
     check('\\section{Energy}' in tex, f'heading not recovered:\n{tex}')
     check('\\[\nE = mc^{2}\n\\]' in tex, f'equation not displayed:\n{tex}')
     check('amsmath' in tex, 'amsmath not loaded for a document with maths')
@@ -1945,8 +1991,8 @@ def _():
 
 @test('amsmath is not loaded for a page with no mathematics')
 def _():
-    tex = layout.to_tex(layout.assemble([line('Just prose here.', 100, 120, 96)],
-                                        []), textract_fast.escape_tex)
+    tex = assemble.to_tex(assemble.assemble([line('Just prose here.', 100, 120, 96)],
+                                        []), tesseract.escape_tex)
     check('amsmath' not in tex, 'an unused package was loaded')
 
 
@@ -1959,7 +2005,7 @@ def _():
     # Printed algebra is ordinary glyphs, so Tesseract reads "E=mc" happily at
     # confidence 80 and nothing looks wrong. Position is the only signal left.
     centred = line('E=mc', 165, 210, 80, left=653, right=841)
-    nominated, _ = layout.nominate([centred], [(600, 160, 900, 215)],
+    nominated, _ = assemble.nominate([centred], [(600, 160, 900, 215)],
                                    page_width=1500)
     check(nominated, 'a centred printed equation was left as prose')
 
@@ -1967,7 +2013,7 @@ def _():
 @test('a left-aligned confident line is still treated as text')
 def _():
     left = line('Clean print 99.9 61', 225, 250, 94, left=140, right=900)
-    nominated, _ = layout.nominate([left], [(130, 220, 910, 255)],
+    nominated, _ = assemble.nominate([left], [(130, 220, 910, 255)],
                                    page_width=1500)
     check(nominated == [], f'a table row was sent to the formula model: {nominated}')
 
@@ -1979,7 +2025,7 @@ def _():
     caption = line('The energy of a particle is given by', 100, 140, 31,
                    left=91, right=954)
     formula = line('E=mc', 165, 210, 52, left=653, right=841)
-    nominated, _ = layout.nominate([caption, formula], [(82, 96, 962, 230)],
+    nominated, _ = assemble.nominate([caption, formula], [(82, 96, 962, 230)],
                                    page_width=1500)
     check(nominated, 'the centred formula under a caption was missed')
 
@@ -1987,23 +2033,23 @@ def _():
 @test('prose is recovered from the formula model rather than being lost')
 def _():
     # Handed handwriting, pix2text answers with spaced letters in \mathrm.
-    recovered = layout.unwrap_text(
+    recovered = assemble.unwrap_text(
         r'\mathrm { T h i s ~ i d e a ~ c h a n g e d ~ h o w }')
     check(recovered == 'This idea changed how', repr(recovered))
 
 
 @test('unwrapping keeps word boundaries and drops spacing commands')
 def _():
-    check(layout.unwrap_text(r'\mathrm { W e ~ e x p l o r e }') == 'We explore',
-          layout.unwrap_text(r'\mathrm { W e ~ e x p l o r e }'))
-    check(layout.unwrap_text('') == '', 'empty input should stay empty')
+    check(assemble.unwrap_text(r'\mathrm { W e ~ e x p l o r e }') == 'We explore',
+          assemble.unwrap_text(r'\mathrm { W e ~ e x p l o r e }'))
+    check(assemble.unwrap_text('') == '', 'empty input should stay empty')
 
 
 @test('a line no engine could read is never silently dropped')
 def _():
     # The regression this guards: Tesseract returned NOTHING for a handwritten
     # line, so it was nominated as an equation, rejected as prose, and deleted.
-    import convert as real_convert
+    from contex.pipeline import run as real_convert
     page = Image.new('RGB', (900, 300), (255, 255, 255))
     # What pix2text actually returns when handed a line of handwriting.
     _recognized['latex'] = r'\mathrm { T h i s ~ i d e a ~ c h a n g e d }'
@@ -2020,7 +2066,7 @@ def _():
 
 @test('text the OCR did read is left alone rather than salvaged over')
 def _():
-    import convert as real_convert
+    from contex.pipeline import run as real_convert
     page = Image.new('RGB', (900, 300), (255, 255, 255))
     covering = [line('Already read fine here.', 50, 150, 95, left=50, right=800)]
     _equations, salvaged = real_convert._recognize_regions(
@@ -2030,7 +2076,7 @@ def _():
 
 @test('handwriting is typeset as ordinary LaTeX, not marked up as different')
 def _():
-    system = ' '.join(ai_qa._DIRECT_SYSTEM.split())
+    system = ' '.join(ai._DIRECT_SYSTEM.split())
     check('a handwritten sentence and a printed one both become ordinary '
           'LaTeX prose' in system,
           'the model is not told to typeset both hands the same way')
@@ -2044,9 +2090,9 @@ def _():
 
 def with_direct(result):
     """Replace the direct AI conversion with a fixed result."""
-    ai_qa.convert_page = (
+    ai.convert_page = (
         lambda data, name, validate=True, outline=None, rotation=None: result)
-    return convert
+    return pipeline
 
 
 @test('the AI path is taken when the model answers')
@@ -2059,7 +2105,7 @@ def _():
 
 @test('the converters take over when the AI is out of quota')
 def _():
-    module = with_direct(ai_qa.blank_review(
+    module = with_direct(ai.blank_review(
         '', 'failed', 'The Gemini free tier is rate limited right now.'))
     built = module.convert(png_bytes(), 'scan.png')
     check(built['summary']['path'] == 'converters', built['summary']['path'])
@@ -2075,28 +2121,28 @@ def _():
     # The direct call already retries internally, so asking the same model to
     # review the fallback only repeats the same backoff for the same answer.
     calls = []
-    ai_qa.convert_page = (
+    ai.convert_page = (
         lambda data, name, validate=True, outline=None, rotation=None: (
             calls.append('direct')
-            or ai_qa.blank_review('', 'failed', 'rate limited')))
-    convert.convert(png_bytes(), 'scan.png')
+            or ai.blank_review('', 'failed', 'rate limited')))
+    pipeline.convert(png_bytes(), 'scan.png')
     check(calls == ['direct'], f'extra API call made: {calls}')
 
 
 @test('AI_FIRST=false is refused without consent and honoured with it')
 def _():
     os.environ['AI_FIRST'] = 'false'
-    ai_qa.convert_page = lambda *a, **k: (_ for _ in ()).throw(
+    ai.convert_page = lambda *a, **k: (_ for _ in ()).throw(
         AssertionError('the AI path ran despite AI_FIRST=false'))
     try:
         try:
-            convert.convert(png_bytes(), 'scan.png')
-        except convert.FallbackNotAuthorized as blocked:
+            pipeline.convert(png_bytes(), 'scan.png')
+        except pipeline.FallbackNotAuthorized as blocked:
             check(blocked.status['available'] is False, blocked.status)
         else:
             check(False, 'the fallback was used without the user agreeing')
 
-        built = convert.convert(png_bytes(), 'scan.png', allow_fallback=True)
+        built = pipeline.convert(png_bytes(), 'scan.png', allow_fallback=True)
         check(built['summary']['path'] == 'converters',
               built['summary']['path'])
     finally:
@@ -2106,8 +2152,8 @@ def _():
 @test('an unsupported file type is rejected before either path starts')
 def _():
     try:
-        convert.convert(b'anything', 'notes.xyz')
-    except convert.FallbackNotAuthorized:
+        pipeline.convert(b'anything', 'notes.xyz')
+    except pipeline.FallbackNotAuthorized:
         check(False, 'the type check ran after the availability check')
     except RuntimeError as exc:
         check('.xyz' in str(exc), str(exc))
@@ -2118,7 +2164,7 @@ def _():
 @test('a .docx is accepted by the type check')
 def _():
     with_direct(qa_result(GOOD_TEX, 'corrected'))
-    built = convert.convert(docx_bytes(), 'notes.docx')
+    built = pipeline.convert(docx_bytes(), 'notes.docx')
     check(built['summary']['path'] == 'ai', built['summary']['path'])
     check(built['tex'] == GOOD_TEX, 'the AI document was not returned')
 
@@ -2132,8 +2178,8 @@ def _():
         seen['bytes'] = data
         return qa_result(GOOD_TEX, 'corrected')
 
-    ai_qa.convert_page = capture
-    convert.convert(docx_bytes(), 'notes.docx')
+    ai.convert_page = capture
+    pipeline.convert(docx_bytes(), 'notes.docx')
     check(seen['bytes'] is None, 'the .docx was sent as a file')
     check('[HEADING 1] Mass and energy' in seen['outline'], seen['outline'][:200])
     check('[TABLE]' in seen['outline'], 'the table structure was not passed on')
@@ -2142,9 +2188,9 @@ def _():
 @test('direct conversion returns nothing to fall back on when it fails')
 def _():
     # This is the trade-off the hybrid exists to cover, so pin it down.
-    with_provider([], fail_on_start=llm_providers.LlmError('no key'))
+    with_provider([], fail_on_start=llm.LlmError('no key'))
     try:
-        result = ai_qa.convert_page(png_bytes(), 'scan.png')
+        result = ai.convert_page(png_bytes(), 'scan.png')
         check(result['status'] == 'failed', result['status'])
         check(result['tex'] == '', 'a failed direct conversion invented a document')
     finally:
@@ -2153,7 +2199,7 @@ def _():
 
 @test('the direct prompt asks for faithful transcription of either hand')
 def _():
-    system = ' '.join(ai_qa._DIRECT_SYSTEM.split())
+    system = ' '.join(ai._DIRECT_SYSTEM.split())
     check('handwritten, printed, or both' in system,
           'the direct prompt does not cover both hands')
     check('unusual is not wrong' in system,
@@ -2199,7 +2245,7 @@ def scripted_models(behaviour):
 
     Returns the real start() so the caller can put it back.
     """
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     real = type(provider).start
 
     class Convo:
@@ -2226,16 +2272,16 @@ def scripted_models(behaviour):
 
 
 def restore_start(real):
-    type(llm_providers.get_provider()).start = real
+    type(llm.get_provider()).start = real
 
 
 def _chain():
-    return llm_providers.get_provider().model_chain(llm_providers.ROLE_DOCUMENT)
+    return llm.get_provider().model_chain(llm.ROLE_DOCUMENT)
 
 
 @test('each role has an ordered fallback chain, best first')
 def _():
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     chains = provider.chains()
     for role, chain in chains.items():
         check(len(chain) >= 1, f'{role}: no chain')
@@ -2246,10 +2292,10 @@ def _():
 
 @test('pinning a model keeps it first without removing the safety net')
 def _():
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     os.environ['AI_QA_MODEL_DOCUMENT'] = 'pinned-model'
     try:
-        chain = provider.model_chain(llm_providers.ROLE_DOCUMENT)
+        chain = provider.model_chain(llm.ROLE_DOCUMENT)
         check(chain[0] == 'pinned-model', chain)
         check(len(chain) > 1, 'pinning removed every fallback')
     finally:
@@ -2257,7 +2303,7 @@ def _():
 
     os.environ['AI_QA_MODEL_DOCUMENT'] = 'first, second'
     try:
-        chain = provider.model_chain(llm_providers.ROLE_DOCUMENT)
+        chain = provider.model_chain(llm.ROLE_DOCUMENT)
         check(chain[:2] == ['first', 'second'], chain)
     finally:
         del os.environ['AI_QA_MODEL_DOCUMENT']
@@ -2266,22 +2312,22 @@ def _():
 @test('an exhausted model is skipped for the next one automatically')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(
-        lambda m: (llm_providers.LlmQuotaError(
+        lambda m: (llm.LlmQuotaError(
             'daily allowance used up', retry_after=41, scope='day')
             if m == chain[0] else 'answer'))
     try:
-        convo, reply, _p = ai_qa.ask_first_usable(
-            'sys', llm_providers.ROLE_DOCUMENT, ['parts'])
+        convo, reply, _p = ai.ask_first_usable(
+            'sys', llm.ROLE_DOCUMENT, ['parts'])
         check(convo.model == chain[1],
               f'answered by {convo.model}, expected {chain[1]}')
         check(reply == 'answer', reply)
-        check(chain[0] in ai_status.unavailable_models(),
+        check(chain[0] in availability.unavailable_models(),
               'the exhausted model was not remembered')
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('rotation keeps walking the chain, not just one step')
@@ -2290,87 +2336,87 @@ def _():
     if len(chain) < 3:
         skip('chain too short')
         return
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(
-        lambda m: (llm_providers.LlmQuotaError('rate limited', retry_after=30,
+        lambda m: (llm.LlmQuotaError('rate limited', retry_after=30,
                                                scope='minute')
                    if m in chain[:2] else 'answer'))
     try:
-        convo, _reply, _p = ai_qa.ask_first_usable(
-            'sys', llm_providers.ROLE_DOCUMENT, ['parts'])
+        convo, _reply, _p = ai.ask_first_usable(
+            'sys', llm.ROLE_DOCUMENT, ['parts'])
         check(convo.model == chain[2], convo.model)
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a model this key cannot reach is skipped, not fatal')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(
-        lambda m: (llm_providers.LlmModelError(f'{m} is not available')
+        lambda m: (llm.LlmModelError(f'{m} is not available')
                    if m == chain[0] else 'answer'))
     try:
-        convo, _reply, _p = ai_qa.ask_first_usable(
-            'sys', llm_providers.ROLE_DOCUMENT, ['parts'])
+        convo, _reply, _p = ai.ask_first_usable(
+            'sys', llm.ROLE_DOCUMENT, ['parts'])
         check(convo.model == chain[1], convo.model)
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('one exhausted model does NOT take the service down')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     try:
-        ai_status.record_model_outage(chain[0], 'daily quota gone',
+        availability.record_model_outage(chain[0], 'daily quota gone',
                                       retry_after=600, scope='day')
-        status = ai_status.check()
+        status = availability.check()
         check(status['available'] is True,
               'one model out of quota still disables the whole AI path')
         service = status['services'][0]
         check(chain[0] in service['exhausted_models'], service)
         check(chain[1] in service['available_models'], service)
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('the service is down only when every model is exhausted')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(
-        lambda m: llm_providers.LlmQuotaError('out of quota', retry_after=60,
+        lambda m: llm.LlmQuotaError('out of quota', retry_after=60,
                                               scope='minute'))
     try:
         try:
-            ai_qa.ask_first_usable('sys', llm_providers.ROLE_DOCUMENT, ['p'])
-        except llm_providers.LlmError:
+            ai.ask_first_usable('sys', llm.ROLE_DOCUMENT, ['p'])
+        except llm.LlmError:
             pass
         else:
             check(False, 'an exhausted chain still returned an answer')
 
-        check(len(ai_status.unavailable_models()) == len(chain),
+        check(len(availability.unavailable_models()) == len(chain),
               'not every attempted model was recorded')
-        status = ai_status.check()
+        status = availability.check()
         check(status['available'] is False, 'service still reported as up')
         check('reached its quota' in status['reason'], status['reason'])
         check(status['recovery']['known'] is True,
               'the soonest recovery time was not reported')
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a rejected API key fails at once instead of rotating')
 def _():
     # A bad key dooms every model, so trying three more wastes the user's time
     # to reach the same answer.
-    ai_status.clear_outage()
+    availability.clear_outage()
     tried = []
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     real = type(provider).start
 
     class Convo:
@@ -2380,7 +2426,7 @@ def _():
             self.usage = {}
 
         def ask(self, parts):
-            raise llm_providers.LlmError(
+            raise llm.LlmError(
                 "The server's Gemini API key was rejected.")
 
     def start(self, system, model=None, role=None, thinking=None,
@@ -2391,44 +2437,44 @@ def _():
     type(provider).start = start
     try:
         try:
-            ai_qa.ask_first_usable('sys', llm_providers.ROLE_DOCUMENT, ['p'])
-        except llm_providers.LlmError:
+            ai.ask_first_usable('sys', llm.ROLE_DOCUMENT, ['p'])
+        except llm.LlmError:
             pass
         else:
             check(False, 'a rejected key was treated as success')
         check(len(tried) == 1, f'rotated {len(tried)} times on a bad key')
-        check(ai_status.check()['available'] is False,
+        check(availability.check()['available'] is False,
               'a rejected key did not mark the service down')
     finally:
         type(provider).start = real
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a successful call un-parks the model it used')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(lambda m: 'answer')
     try:
-        ai_status.record_model_outage(chain[0], 'stale', retry_after=600,
+        availability.record_model_outage(chain[0], 'stale', retry_after=600,
                                       scope='minute')
-        ai_qa.ask_first_usable('sys', llm_providers.ROLE_DOCUMENT, ['p'])
+        ai.ask_first_usable('sys', llm.ROLE_DOCUMENT, ['p'])
         # It rotated to chain[1] and that success clears chain[1], not chain[0];
         # what matters is that a model which answers is never left parked.
-        check(chain[1] not in ai_status.unavailable_models(),
+        check(chain[1] not in availability.unavailable_models(),
               'a model that answered is still marked exhausted')
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 
 @test('a round opens on the preferred model')
 def _():
-    ai_status.clear_outage()
-    rotation = ai_qa.Rotation(llm_providers.ROLE_DOCUMENT)
-    provider = llm_providers.get_provider()
-    check(rotation.active == provider.default_model(llm_providers.ROLE_DOCUMENT),
+    availability.clear_outage()
+    rotation = ai.Rotation(llm.ROLE_DOCUMENT)
+    provider = llm.get_provider()
+    check(rotation.active == provider.default_model(llm.ROLE_DOCUMENT),
           f'round opened on {rotation.active}')
     check(rotation.exhausted is False, 'a fresh round is already spent')
 
@@ -2436,17 +2482,17 @@ def _():
 @test('a round keeps the model it rotated to, instead of re-probing each page')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     asked = []
 
     def behaviour(model):
         asked.append(model)
-        return (llm_providers.LlmQuotaError('quota', retry_after=None)
+        return (llm.LlmQuotaError('quota', retry_after=None)
                 if model == chain[0] else 'answer')
 
     real = scripted_models(behaviour)
     try:
-        rotation = ai_qa.Rotation(llm_providers.ROLE_DOCUMENT)
+        rotation = ai.Rotation(llm.ROLE_DOCUMENT)
         for _page in range(4):
             rotation.ask('sys', ['parts'])
         # Page one pays to discover chain[0] is out; pages two to four must not.
@@ -2457,7 +2503,7 @@ def _():
         check(rotation.active == chain[1], rotation.active)
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a new round starts back at the preferred model')
@@ -2465,12 +2511,12 @@ def _():
     # A model out of quota for a minute must not push every later conversion
     # onto a worse model for the rest of the day.
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     try:
         # Parked by our own guess, not by the provider: worth re-testing.
-        ai_status.record_model_outage(chain[0], 'assumed', retry_after=None,
+        availability.record_model_outage(chain[0], 'assumed', retry_after=None,
                                       provider='test')
-        rotation = ai_qa.Rotation(llm_providers.ROLE_DOCUMENT)
+        rotation = ai.Rotation(llm.ROLE_DOCUMENT)
         check(rotation.active == chain[0],
               f'a new round opened on {rotation.active}, not the default')
 
@@ -2483,7 +2529,7 @@ def _():
         finally:
             restore_start(real)
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a provider-stated retry window is honoured without a wasted call')
@@ -2491,29 +2537,29 @@ def _():
     # The one exception to re-trying the default: when the provider itself named
     # a time, calling early wastes a round trip and can extend the block.
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     asked = []
     real = scripted_models(lambda m: asked.append(m) or 'answer')
     try:
-        ai_status.record_model_outage(chain[0], 'rate limited', retry_after=120,
+        availability.record_model_outage(chain[0], 'rate limited', retry_after=120,
                                       scope='minute', provider='test')
-        rotation = ai_qa.Rotation(llm_providers.ROLE_DOCUMENT)
+        rotation = ai.Rotation(llm.ROLE_DOCUMENT)
         convo, _reply = rotation.ask('sys', ['parts'])
         check(chain[0] not in asked,
               'called a model the provider told us to leave alone')
         check(convo.model == chain[1], convo.model)
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a model believed exhausted is confirmed with one call, not three')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     seen = {}
 
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     real = type(provider).start
 
     class Convo:
@@ -2533,34 +2579,34 @@ def _():
     type(provider).start = start
     try:
         # Parked by a guess, so the round still tries it - but cheaply.
-        ai_status.record_model_outage(chain[0], 'assumed', retry_after=None,
+        availability.record_model_outage(chain[0], 'assumed', retry_after=None,
                                       provider='test')
-        ai_qa.Rotation(llm_providers.ROLE_DOCUMENT).ask('sys', ['p'])
+        ai.Rotation(llm.ROLE_DOCUMENT).ask('sys', ['p'])
         check(seen.get(chain[0]) == 1,
               f'retry budget for a parked model was {seen.get(chain[0])}, '
               'expected 1 - three attempts with backoff would add seconds to '
               'every conversion')
     finally:
         type(provider).start = real
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('an exhausted round stops asking instead of failing the conversion')
 def _():
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     calls = {'n': 0}
 
     def behaviour(model):
         calls['n'] += 1
-        return llm_providers.LlmQuotaError('out', retry_after=None)
+        return llm.LlmQuotaError('out', retry_after=None)
 
     real = scripted_models(behaviour)
     try:
-        rotation = ai_qa.Rotation(llm_providers.ROLE_DOCUMENT)
+        rotation = ai.Rotation(llm.ROLE_DOCUMENT)
         try:
             rotation.ask('sys', ['p'])
-        except llm_providers.LlmError:
+        except llm.LlmError:
             pass
         check(rotation.exhausted is True, 'the round is not marked spent')
         check(calls['n'] == len(chain),
@@ -2572,17 +2618,17 @@ def _():
         check(calls['n'] == before, 'a spent round made another call')
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 @test('a multi-page conversion completes locally once every model is out')
 def _():
     # The whole point: the user gets a finished document, not an error.
-    ai_status.clear_outage()
+    availability.clear_outage()
     real = scripted_models(
-        lambda m: llm_providers.LlmQuotaError('out of quota', retry_after=None))
+        lambda m: llm.LlmQuotaError('out of quota', retry_after=None))
     try:
-        result = convert.convert(pdf_bytes(pages=3), 'three.pdf',
+        result = pipeline.convert(pdf_bytes(pages=3), 'three.pdf',
                                  allow_fallback=True)
         check(result['tex'].strip(), 'the conversion came back empty')
         stats = result['summary']
@@ -2592,7 +2638,7 @@ def _():
               'the user was not told quality dropped')
     finally:
         restore_start(real)
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 # ---------------------------------------------------------------------------
@@ -2606,7 +2652,7 @@ def _ai_pages_then_quota(good_pages, tex=None):
 
     def convert_page(data, name, validate=True, outline=None, rotation=None):
         if done['n'] >= good_pages:
-            return ai_qa.blank_review('', 'failed',
+            return ai.blank_review('', 'failed',
                                       'Every AI model has reached its quota.')
         done['n'] += 1
         page = body.replace('Energy', f'Page {done["n"]}')
@@ -2623,8 +2669,8 @@ def _ai_pages_then_quota(good_pages, tex=None):
 
 @test('pages converted before exhaustion are kept, not redone')
 def _():
-    ai_qa.convert_page = _ai_pages_then_quota(2)
-    result = convert.convert(pdf_bytes(pages=4), 'four.pdf')
+    ai.convert_page = _ai_pages_then_quota(2)
+    result = pipeline.convert(pdf_bytes(pages=4), 'four.pdf')
     stats = result['summary']
     check(stats['ai_pages'] == 2, stats)
     check(stats['fallback_pages'] == 2, stats)
@@ -2637,41 +2683,41 @@ def _():
 @test('the fallback resumes at the page the AI stopped on')
 def _():
     seen = {}
-    real_local = convert._local_document
+    real_local = run._local_document
 
     def spy(pages, first_number=1, equation_offset=0):
         seen['first'] = first_number
         seen['count'] = len(pages)
         return real_local(pages, first_number, equation_offset)
 
-    convert._local_document = spy
+    run._local_document = spy
     try:
-        ai_qa.convert_page = _ai_pages_then_quota(3)
-        convert.convert(pdf_bytes(pages=5), 'five.pdf')
+        ai.convert_page = _ai_pages_then_quota(3)
+        pipeline.convert(pdf_bytes(pages=5), 'five.pdf')
         check(seen['first'] == 4,
               f'the fallback restarted at page {seen["first"]}, not 4')
         check(seen['count'] == 2,
               f'the fallback re-converted {seen["count"]} pages, not 2 - work '
               'the AI had already finished was thrown away')
     finally:
-        convert._local_document = real_local
+        run._local_document = real_local
 
 
 @test('work survives the fallback itself failing')
 def _():
     # The tail is the step most likely to fail on a server missing Poppler or
     # Tesseract. Two AI pages must not be lost to that.
-    ai_qa.convert_page = _ai_pages_then_quota(2)
-    real_pages = convert._pages
+    ai.convert_page = _ai_pages_then_quota(2)
+    real_pages = run._pages
 
     def broken(file_bytes, filename, first=1):
         if first > 1:
             raise RuntimeError('Poppler was not found.')
         return real_pages(file_bytes, filename, first)
 
-    convert._pages = broken
+    run._pages = broken
     try:
-        result = convert.convert(pdf_bytes(pages=4), 'four.pdf')
+        result = pipeline.convert(pdf_bytes(pages=4), 'four.pdf')
         check('Page 1' in result['tex'] and 'Page 2' in result['tex'],
               'AI pages were lost when the fallback failed')
         notice = result['summary']['fallback_notice']
@@ -2679,25 +2725,25 @@ def _():
               'a truncated document was not flagged as incomplete')
         check('Poppler' in notice['reason'], notice)
     finally:
-        convert._pages = real_pages
+        run._pages = real_pages
 
 
 @test('a conversion with nothing salvageable still raises rather than lying')
 def _():
     # No AI pages and a broken fallback is a real failure, not a partial one.
-    ai_qa.convert_page = _ai_pages_then_quota(0)
-    real_pages = convert._pages
-    convert._pages = lambda *a, **k: (_ for _ in ()).throw(
+    ai.convert_page = _ai_pages_then_quota(0)
+    real_pages = run._pages
+    run._pages = lambda *a, **k: (_ for _ in ()).throw(
         RuntimeError('Poppler was not found.'))
     try:
         try:
-            convert.convert(pdf_bytes(pages=2), 'two.pdf')
+            pipeline.convert(pdf_bytes(pages=2), 'two.pdf')
         except RuntimeError as exc:
             check('Poppler' in str(exc), str(exc))
         else:
             check(False, 'an empty conversion was reported as a success')
     finally:
-        convert._pages = real_pages
+        run._pages = real_pages
 
 
 @test('one page that will not open does not cost the others')
@@ -2713,15 +2759,15 @@ def _():
             raise OSError('truncated image')
 
     good = _Image.new('RGB', (400, 200), 'white')
-    tex, _eq, items, notes = convert._local_document([good, Broken(), good])
+    tex, _eq, items, notes = run._local_document([good, Broken(), good])
     check(tex.strip(), 'a broken page emptied the whole document')
     check(any('could not be read' in note for note in notes), notes)
 
 
 @test('the degraded notice appears exactly once on the result page')
 def _():
-    ai_status.clear_outage()
-    ai_qa.convert_page = _ai_pages_then_quota(1)
+    availability.clear_outage()
+    ai.convert_page = _ai_pages_then_quota(1)
     client = accept_terms(client_for_tests())
     client.post('/convert',
                 data={'file': (io.BytesIO(pdf_bytes(pages=2)), 'x.pdf')},
@@ -2732,7 +2778,7 @@ def _():
     with client.session_transaction() as session:
         token = session.get('convert_token')
     check(token, 'the conversion produced no result')
-    notice = tex_store.read(token)['stats']['fallback_notice']
+    notice = results.read(token)['stats']['fallback_notice']
     check(notice, 'no notice was produced')
 
     page = client.get('/').get_data(as_text=True)
@@ -2746,8 +2792,8 @@ def _():
 
 @test('a fully successful conversion carries no notice at all')
 def _():
-    ai_status.clear_outage()
-    flask_app.convert.convert = scripted_convert()
+    availability.clear_outage()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     page = client.post('/convert',
                        data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -2766,16 +2812,16 @@ def _():
 def _():
     import time as _time
     chain = _chain()
-    ai_status.clear_outage()
+    availability.clear_outage()
     try:
-        ai_status.record_model_outage(chain[0], 'brief', retry_after=1,
+        availability.record_model_outage(chain[0], 'brief', retry_after=1,
                                       scope='minute')
-        check(chain[0] in ai_status.unavailable_models(), 'not recorded')
+        check(chain[0] in availability.unavailable_models(), 'not recorded')
         _time.sleep(1.2)
-        check(chain[0] not in ai_status.unavailable_models(),
+        check(chain[0] not in availability.unavailable_models(),
               'the model stayed parked after its retry window passed')
     finally:
-        ai_status.clear_outage()
+        availability.clear_outage()
 
 
 # ---------------------------------------------------------------------------
@@ -2784,8 +2830,7 @@ def _():
 
 def _script():
     """The browser-side source, read from disk as the browser would get it."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        'static', 'scripts.js')
+    path = os.path.join(_ROOT, 'static', 'scripts.js')
     with open(path, encoding='utf-8') as handle:
         return handle.read()
 
@@ -2800,8 +2845,7 @@ def _js_function(script, name):
 
 
 def _read_template(relative):
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        'templates', *relative.split('/'))
+    path = os.path.join(_ROOT, 'templates', *relative.split('/'))
     with open(path, encoding='utf-8') as handle:
         return handle.read()
 
@@ -2816,7 +2860,7 @@ def _():
     match = re.search(r'PREVIEW_TIMEOUT_MS\s*=\s*(\d+)', script)
     check(match, 'PREVIEW_TIMEOUT_MS is gone from scripts.js')
     client_seconds = int(match.group(1)) / 1000
-    server_seconds = latex_tools._COMPILE_TIMEOUT
+    server_seconds = engine._COMPILE_TIMEOUT
     check(client_seconds > server_seconds,
           f'the browser gives up after {client_seconds}s but the server '
           f'compiles for up to {server_seconds}s, so the server error can '
@@ -2856,10 +2900,10 @@ def _():
 
 @test('the page images are served as images, and the count as JSON')
 def _():
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -2887,10 +2931,10 @@ def _():
 
 @test('page images belong to the session that made them')
 def _():
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     owner = accept_terms(client_for_tests())
     owner.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                content_type='multipart/form-data')
@@ -2918,11 +2962,11 @@ def _():
 def _():
     # The frame shows whatever comes back, so a failure has to be a document a
     # frame can display. Raw JSON in the preview panel is not an error message.
-    if not latex_tools.find_engine():
+    if not latex.find_engine():
         skip('no LaTeX engine installed')
         return
     client = client_for_tests()
-    token = tex_store.save({'tex': BROKEN_TEX, 'file_name': 'bad.png',
+    token = results.save({'tex': BROKEN_TEX, 'file_name': 'bad.png',
                             'source': 'convert'})
     with client.session_transaction() as session:
         session['tex_tokens'] = [token]
@@ -2959,7 +3003,7 @@ def _():
 def _():
     # Some browsers are configured never to display a PDF inline. The preview
     # frame stays empty for them, so there has to be another way to the file.
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     page = client.post('/convert',
                        data={'file': (io.BytesIO(png_bytes()), 'a.png')},
@@ -3055,14 +3099,14 @@ def _():
     with client.session_transaction() as session:
         session['user'] = {'uid': 'uid-route', 'email': 'r@example.com'}
 
-    real_list = _fake_firebase.get_user_ocr_history
-    _fake_firebase.get_user_ocr_history = lambda uid, **k: (
+    real_list = _fake_history.recent
+    _fake_history.recent = lambda uid, **k: (
         [dict(item)] if uid == 'uid-route' else [])
     try:
         history = client.get('/history')
         workspace = client.get('/').get_data(as_text=True)
     finally:
-        _fake_firebase.get_user_ocr_history = real_list
+        _fake_history.recent = real_list
 
     check(history.status_code == 200, history.status_code)
     body = history.get_data(as_text=True)
@@ -3079,7 +3123,7 @@ def _():
     # The finished document used to appear below the upload control that
     # produced it, inside the same card, so the thing you came back for was
     # under a control you had already finished with.
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client = accept_terms(client_for_tests())
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'a.png')},
                 content_type='multipart/form-data')
@@ -3168,7 +3212,7 @@ def _():
     # A class Tailwind could not build is not in the built stylesheet, so this
     # catches an undefined colour. It also catches the other way of getting the
     # same silent nothing: adding a class and forgetting to run build_css.py.
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = _ROOT
     with open(os.path.join(root, 'static', 'css', 'app.css'),
               encoding='utf-8') as handle:
         css = handle.read()
@@ -3225,7 +3269,7 @@ def _():
     # kind of thing that comes back square the next time someone regenerates
     # them. CORNER there is 3/16, chosen because it lands on a whole pixel at
     # 16, 32 and 48, so every size rounds by the same proportion.
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = _ROOT
     corner = 3 / 16
 
     icons = [('favicon.ico', None), ('favicon-32.png', 32)]
@@ -3280,8 +3324,7 @@ def read_source(relative):
     about what it does at run time - a default that must not come back, a
     header that must still be set, a log line that must stay deleted.
     """
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        *relative.split('/'))
+    path = os.path.join(_ROOT, *relative.split('/'))
     with open(path, encoding='utf-8') as handle:
         return handle.read()
 
@@ -3355,10 +3398,10 @@ def _():
     for label, body in attacks.items():
         tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
                '\n\\end{document}\n')
-        found = latex_tools.unsafe_constructs(tex)
+        found = latex.unsafe_constructs(tex)
         check(found, f'{label} was not recognised as unsafe')
 
-        result = latex_tools.compile_tex(tex, want_pdf=True)
+        result = latex.compile_tex(tex, want_pdf=True)
         check(not result['ok'], f'{label} compiled anyway')
         check(result['pdf'] is None, f'{label} produced a PDF')
         check('reach outside itself' in (result['reason'] or ''),
@@ -3367,7 +3410,7 @@ def _():
     # The preamble form, which reads as an ordinary package line.
     shellesc = ('\\documentclass{article}\n\\usepackage{shellesc}\n'
                 '\\begin{document}x\\end{document}\n')
-    check(latex_tools.unsafe_constructs(shellesc),
+    check(latex.unsafe_constructs(shellesc),
           'the shellesc package was not recognised')
 
 
@@ -3397,12 +3440,12 @@ def _():
         tex = ('\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n'
                '\\usepackage{amsmath}\n\\begin{document}\n' + body +
                '\n\\end{document}\n')
-        found = latex_tools.unsafe_constructs(tex)
+        found = latex.unsafe_constructs(tex)
         check(not found, f'{label} was refused: {found}')
 
     # inputenc in particular: it contains the letters of \input and is in the
     # preamble of nearly every document this app writes.
-    check(not latex_tools.unsafe_constructs(GOOD_TEX),
+    check(not latex.unsafe_constructs(GOOD_TEX),
           'the suite\'s own good document was refused')
 
 
@@ -3411,7 +3454,7 @@ def _():
     # Layer one of two. These are kpathsea settings, so they are what protects
     # a Linux deployment; MiKTeX ignores them, which is exactly why the source
     # guard above exists as well and why neither is described as sufficient.
-    env = latex_tools._compile_env()
+    env = engine._compile_env()
     check(env.get('openin_any') == 'p', 'reading is not restricted')
     check(env.get('openout_any') == 'p', 'writing is not restricted')
     check(env.get('shell_escape') == 'f', 'shell escape is not disabled')
@@ -3419,7 +3462,7 @@ def _():
 
     # And the flags on the command line, which is the part that works
     # everywhere.
-    argv = latex_tools._engine_argv('pdflatex', 'document.tex', '/tmp/x')
+    argv = engine._engine_argv('pdflatex', 'document.tex', '/tmp/x')
     check('-no-shell-escape' in argv, 'shell escape is not disabled on argv')
     check('-interaction=nonstopmode' in argv, 'the engine could sit at a prompt')
 
@@ -3461,46 +3504,45 @@ def _():
     # The cookie carries the signed-in uid and is signed, not encrypted, so
     # whoever knows the key can mint one for any account. It used to fall back
     # to 'supersecretkey', which is in every copy of the source.
-    code = read_code('app.py')
+    code = read_code('contex/app.py')
     check('supersecretkey' not in code,
           'the guessable default session key is back')
-    # A second argument to getenv IS a default, whatever it says.
-    check("getenv('FLASK_SECRET_KEY'," not in code,
+    # A second argument IS a default, whatever it is called.
+    check("text('FLASK_SECRET_KEY'," not in code,
           'the session key has a fallback value again')
-    check("os.getenv('FLASK_SECRET_KEY')" in code,
+    check("config.text('FLASK_SECRET_KEY')" in code,
           'the session key no longer comes from the environment')
 
     # In production a missing key must stop the process rather than pick one.
-    guard = code.split('_secret = os.getenv')[1].split('app.secret_key')[0]
+    guard = code.split('_secret = config.text')[1].split('app.secret_key')[0]
     check('IS_PRODUCTION' in guard and 'raise RuntimeError' in guard,
           'a missing key no longer fails closed in production')
 
 
 @test('the debugger cannot be switched on by forgetting something')
 def _():
-    code = read_code('app.py')
     # Both of these used to default the other way: debug on, and bound to
     # every interface, which together put an interactive Python console on
     # the network.
-    check("_flag('FLASK_DEBUG', False)" in code,
+    check("flag('FLASK_DEBUG', False)" in read_code('contex/config.py'),
           'debug no longer defaults to off')
-    check('host=os.getenv("HOST", "127.0.0.1")' in code,
+    check("config.text('HOST', '127.0.0.1')" in read_code('wsgi.py'),
           'the development server binds every interface again')
-    check(flask_app.IS_PRODUCTION is not flask_app.DEBUG,
+    check(config.IS_PRODUCTION is not config.DEBUG,
           'production and debug are no longer opposites')
 
 
 @test('the session cookie is locked down')
 def _():
-    config = flask_app.app.config
-    check(config['SESSION_COOKIE_HTTPONLY'] is True,
+    cookies = flask_app.app.config
+    check(cookies['SESSION_COOKIE_HTTPONLY'] is True,
           'the session cookie is readable from JavaScript')
-    check(config['SESSION_COOKIE_SAMESITE'] == 'Lax',
+    check(cookies['SESSION_COOKIE_SAMESITE'] == 'Lax',
           'the session cookie would be sent on a cross-site POST, which is '
           'what stops CSRF on /convert and /login')
     # Secure follows the environment: on over HTTPS, off so that
     # http://localhost still works while developing.
-    check(config['SESSION_COOKIE_SECURE'] == flask_app.IS_PRODUCTION,
+    check(cookies['SESSION_COOKIE_SECURE'] == config.IS_PRODUCTION,
           'the Secure flag does not track the environment')
 
 
@@ -3526,7 +3568,7 @@ def _():
     # The generated files too - a .tex or a page image served without nosniff
     # is a file a browser might decide to run as HTML.
     client = accept_terms(client_for_tests())
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'p.png')},
                 content_type='multipart/form-data')
     with client.session_transaction() as stored:
@@ -3542,12 +3584,12 @@ def _():
     # compile and a rasterise. The limiter counts within one process only -
     # that is written down where it is defined - but a single loop against a
     # single instance is the abuse it exists to stop.
-    saved = dict(flask_app._RATE_LIMITS)
-    flask_app._RATE_LIMITS['convert'] = (3, 300)
-    flask_app._RATE_BUCKETS.clear()
+    saved = dict(security._RATE_LIMITS)
+    security._RATE_LIMITS['convert'] = (3, 300)
+    security._RATE_BUCKETS.clear()
     try:
         client = accept_terms(client_for_tests())
-        flask_app.convert.convert = scripted_convert()
+        pipeline.convert = scripted_convert()
         for attempt in range(3):
             client.post('/convert',
                         data={'file': (io.BytesIO(png_bytes()), 'p.png')},
@@ -3566,13 +3608,13 @@ def _():
 
         # Turning it off must really turn it off, because that is what the
         # suite itself relies on.
-        flask_app._RATE_LIMITS['convert'] = (0, 300)
-        check(not flask_app._rate_limited('convert'),
+        security._RATE_LIMITS['convert'] = (0, 300)
+        check(not security.rate_limited('convert'),
               'a limit of zero still refuses')
     finally:
-        flask_app._RATE_LIMITS.clear()
-        flask_app._RATE_LIMITS.update(saved)
-        flask_app._RATE_BUCKETS.clear()
+        security._RATE_LIMITS.clear()
+        security._RATE_LIMITS.update(saved)
+        security._RATE_BUCKETS.clear()
 
 
 @test('signing in does not inherit the previous visitor’s documents')
@@ -3581,7 +3623,7 @@ def _():
     # who was just using it, and a result token left in the cookie would let
     # them download that document.
     client = accept_terms(client_for_tests())
-    flask_app.convert.convert = scripted_convert()
+    pipeline.convert = scripted_convert()
     client.post('/convert', data={'file': (io.BytesIO(png_bytes()), 'p.png')},
                 content_type='multipart/form-data')
     with client.session_transaction() as stored:
@@ -3591,7 +3633,7 @@ def _():
         from flask import session as live
         live['tex_tokens'] = ['abc']
         live['terms_version'] = 'anything'
-        flask_app._start_session('uid-1', 'a@b.c', 'A', remember=False)
+        web_session.start_session('uid-1', 'a@b.c', 'A', remember=False)
         check(live.get('tex_tokens') is None,
               'a previous visitor\'s result tokens survived the sign-in')
         check(live['user']['uid'] == 'uid-1', 'the new session has no user')
@@ -3602,11 +3644,11 @@ def _():
     # It used to generate the link with the Admin SDK, print it, and tell the
     # user an email was on its way - so nothing was ever sent, and a string
     # equivalent to the account password sat in the server log.
-    code = read_code('firebase_config.py')
+    code = read_code('contex/services/accounts.py')
     check('generate_password_reset_link' not in code,
           'the reset link is being generated locally again, which means '
           'something has to deliver it and nothing here can')
-    check('sendOobCode' in read_source('firebase_config.py'),
+    check('sendOobCode' in read_source('contex/services/accounts.py'),
           'Firebase is no longer asked to send the email itself')
 
     reset = code.split('def send_password_reset')[1].split('\ndef ')[0]
@@ -3623,7 +3665,7 @@ def _():
     # either way, or they become a way to find out who has an account here.
     # firebase_config is stubbed out for this suite, so the real module has to
     # be read from disk rather than imported.
-    code = read_code('firebase_config.py')
+    code = read_code('contex/services/accounts.py')
     check("INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password'" in code,
           'the credential failure message is no longer generic')
 
@@ -3685,7 +3727,7 @@ def _():
               f'an inline script would be blocked by the policy: {tag[:70]}')
 
     # And no attribute handlers anywhere, since no nonce can cover one.
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = _ROOT
     offenders = []
     for folder, _dirs, names in os.walk(os.path.join(root, 'templates')):
         for name in names:
@@ -3723,7 +3765,7 @@ def _():
     # request in Flask 3, so the handler is called the way Flask calls it -
     # inside a request context, with the exception it would have caught.
     with flask_app.app.test_request_context('/anything'):
-        body, status = flask_app.server_error(
+        body, status = web_errors_module.server_error(
             RuntimeError('AIzaSy-pretend-key at /srv/app/app.py line 1'))
     check(status == 500, f'the 500 handler returned {status}')
     for leak in ('AIzaSy', '/srv/app', 'RuntimeError', 'Traceback', 'line 1'):
@@ -3804,10 +3846,10 @@ def _():
     check(response.get_json() == {'ok': True}, 'the health check says nothing')
     # It must not reach out to anything: a check that calls Firestore turns
     # Firestore's bad minute into a restart loop.
-    source = read_source('app.py')
+    source = read_source('contex/web/pages.py')
     body = source.split('def healthz')[1].split('\n\n\n')[0]
-    for reaching in ('firebase_config.', 'ai_status.', 'convert.',
-                     'latex_tools.'):
+    for reaching in ('firebase_config.', 'availability.', 'convert.',
+                     'latex.'):
         check(reaching not in body,
               f'the health check calls {reaching} - a dependency outage would '
               f'then look like a dead process')
@@ -3815,14 +3857,17 @@ def _():
 
 @test('the AI is never allowed to hang a worker')
 def _():
-    check(llm_providers.AI_REQUEST_TIMEOUT > 0,
+    check(llm.AI_REQUEST_TIMEOUT > 0,
           'model calls have no timeout, so a stalled socket holds a worker '
           'until the platform kills it')
-    source = read_source('llm_providers.py')
-    check('http_options' in source and 'AI_REQUEST_TIMEOUT * 1000' in source,
+    base = read_source('contex/services/llm/base.py')
+    check('AI_REQUEST_TIMEOUT = config.integer' in base,
+          'the timeout is no longer defined once and shared by both providers')
+    gemini = read_source('contex/services/llm/gemini.py')
+    check('http_options' in gemini and 'AI_REQUEST_TIMEOUT * 1000' in gemini,
           'the Gemini client is built without a timeout')
-    check('anthropic.Anthropic(\n' in source or
-          'timeout=AI_REQUEST_TIMEOUT' in source,
+    claude = read_source('contex/services/llm/anthropic.py')
+    check('timeout=AI_REQUEST_TIMEOUT' in claude,
           'the Anthropic client is built without a timeout')
 
 

@@ -81,8 +81,8 @@
     <script nonce="{{ csp_nonce }}">
         window.pageData = Object.assign({
             legalUrls: {
-                terms: {{ url_for('legal', document='terms') | tojson }},
-                privacy: {{ url_for('legal', document='privacy') | tojson }}
+                terms: {{ url_for('pages.legal', document='terms') | tojson }},
+                privacy: {{ url_for('pages.legal', document='privacy') | tojson }}
             },
             isAuthenticated: {{ 'true' if is_authenticated else 'false' }}
         }, {% block page_data %}{}{% endblock %});

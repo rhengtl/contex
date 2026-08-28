@@ -20,7 +20,7 @@ accept terms ─▶ provide input ─▶ check AI availability ─▶ convert �
 ```
 
 Word documents take neither path: a `.docx` already knows its own headings,
-cells and words, so it is read structurally by `docx_input.py` and only its
+cells and words, so it is read structurally by `pipeline/recognise/word.py` and only its
 LaTeX form is decided — by the model when available, deterministically when not.
 
 **Why AI-first.** Measured on the same corpus with the same model, against the
@@ -71,14 +71,14 @@ free-tier quota is spent one model at a time:
 
 ### Rounds
 
-One conversion is one **round**, however many pages it has (`ai_qa.Rotation`).
+One conversion is one **round**, however many pages it has (`the Rotation class in `pipeline/recognise/ai.py``).
 
 - The round **opens on the role's preferred model** — the first entry of its
   chain.
 - If that model reports itself out of quota, the round **advances and stays
   there** for the remaining pages, rather than re-probing an exhausted model
   once per page. A ten-page PDF pays for that discovery once, not ten times.
-- When the chain runs out the round is `exhausted`; `convert.py` sees that,
+- When the chain runs out the round is `exhausted`; `pipeline/run.py` sees that,
   **stops calling the API, and finishes the document with the local
   converters**. The conversion always completes — the user gets a finished
   `.tex`, never an error.
@@ -126,7 +126,7 @@ publish the reset schedule. In every other case the UI says, in those words,
 **Mid-conversion failure keeps what was finished.** This is why a PDF is sent to
 the model page by page rather than whole. If quota runs out on page 7 of 10,
 pages 1–6 keep their AI output, pages 7–10 are converted locally, the two halves
-are spliced into one document by `latex_tools.merge_documents()`, and the result
+are spliced into one document by ``pipeline.latex.merge_documents()``, and the result
 says exactly where the change happened and what it costs. It buys that guarantee
 with one API call per page instead of one per document.
 
@@ -202,7 +202,7 @@ Tesseract found, not on the region.
 ### Uncertain lines are counted
 
 On the fallback path, any line no engine read confidently is marked
-`uncertain` by `layout.py` and counted into `summary['uncertain_lines']`. It is
+`uncertain` by `pipeline/latex/assemble.py` and counted into `summary['uncertain_lines']`. It is
 the honest measure of how much of a fallback conversion is guesswork.
 
 The model is told **not** to mark handwriting up differently. A handwritten
@@ -225,7 +225,7 @@ unaffected.
 
 ## The unified pipeline
 
-`convert.py` orchestrates; `layout.py` decides. Neither converter knows the
+`pipeline/run.py` orchestrates; `pipeline/latex/assemble.py` decides. Neither converter knows the
 other exists.
 
 **Tesseract runs first, on purpose.** Its confidence map is better information
@@ -279,7 +279,7 @@ converter did before.
 
 Tesseract reads the document and `generate_tex_source()` wraps the text in a
 minimal LaTeX document. On the fallback path that draft is the result; it is
-what the merge in `layout.py` builds on:
+what the merge in `pipeline/latex/assemble.py` builds on:
 
 
 ---
@@ -388,7 +388,7 @@ the converter's own output rather than failing.
 
 ## Preprocessing
 
-`preprocess.py` conditions every page before any engine sees it — EXIF rotation,
+`pipeline/preprocess.py` conditions every page before any engine sees it — EXIF rotation,
 projection-profile deskew, low-DPI upscale. No API calls, no model time. From
 `bench/README.md`, on the 10° skew set:
 
@@ -467,7 +467,7 @@ conversion warns the user and offers the local fallback.
 ### 3. Run
 
 ```powershell
-.venv\Scripts\python.exe app.py
+.venv\Scripts\python.exe wsgi.py
 ```
 
 Then open <http://127.0.0.1:5000/>.
@@ -475,7 +475,7 @@ Then open <http://127.0.0.1:5000/>.
 ### 4. Verify
 
 ```powershell
-.venv\Scripts\python.exe test_ai_qa.py    # 177 offline checks, no API key needed
+.venv\Scripts\python.exe tests/test_contex.py    # 177 offline checks, no API key needed
 npm install; npm run test:rules            # 28 Firestore rules checks (emulator)
 ```
 
@@ -624,43 +624,89 @@ Defaults shown; full list in `.env.example`.
 
 ---
 
-## Files
+## Where things live
+
+```
+contex/                  the application
+  config.py              every setting, one place, marked required / optional
+  web/                   HTTP only - no business logic lives here
+  pipeline/              the conversion, in the order it happens
+  services/              things outside this process
+  data/                  things that outlive a request
+templates/               Jinja templates
+static/                  the stylesheet, the script, the brand assets
+tools/                   development scripts, never shipped
+tests/                   the verification suites
+bench/                   the measurement corpus and its scoring
+brand/                   the logo masters the served assets derive from
+wsgi.py                  the entry point: gunicorn wsgi:app
+```
+
+Dependencies run one way down that list. `web` imports `pipeline`; `pipeline`
+imports `services`; nothing imports `web`. An import that wants to go back up
+usually means the logic is in the wrong layer.
+
+### If you need to change...
+
+| ...this | ...go here |
+|---|---|
+| what the AI is asked, or how its answer is parsed | `contex/pipeline/recognise/ai.py` |
+| which model, or add a provider | `contex/services/llm/` - one file per vendor plus the registry |
+| whether the AI is considered usable | `contex/services/llm/availability.py` |
+| local OCR | `contex/pipeline/recognise/tesseract.py` |
+| formula recognition | `contex/pipeline/recognise/formulas.py` |
+| Word extraction | `contex/pipeline/recognise/word.py` |
+| how OCR blocks become LaTeX | `contex/pipeline/latex/assemble.py` |
+| what counts as valid or dangerous LaTeX | `contex/pipeline/latex/validate.py` |
+| how LaTeX is compiled or rasterised | `contex/pipeline/latex/engine.py` |
+| which path a document takes | `contex/pipeline/run.py` |
+| what file types are accepted | `contex/pipeline/inputs.py` - the picker derives from it |
+| a URL, or what a page renders | `contex/web/pages.py` and the templates |
+| the conversion request itself | `contex/web/convert.py` |
+| download or preview | `contex/web/output.py` |
+| sign-in, sign-up, reset | `contex/web/auth.py` (routes), `contex/services/accounts.py` (rules) |
+| saved history | `contex/data/history.py` |
+| profiles or terms acceptance | `contex/data/users.py` |
+| where generated results are kept | `contex/data/results.py` |
+| headers, CSP, rate limits | `contex/web/security.py` |
+| any setting at all | `contex/config.py` |
+| the camera or the canvas | `static/scripts.js` + `templates/partials/dialogs_convert.html` |
+
+### The pipeline, in order
+
+```
+  inputs      what is accepted; a file becomes pages
+     |
+  preprocess  deskew, EXIF rotation, alpha flatten, upscale
+     |
+  recognise   ai.py  |  tesseract.py + formulas.py  |  word.py
+     |                 (AI path)      (local fallback)      (.docx)
+  latex       assemble -> validate -> engine (compile) -> documents (merge)
+     |
+  run         chooses the path, handles partial failure, shapes the result
+     |
+  web/output  .tex, compiled PDF, page images
+     |
+  data        history for signed-in users; sessionStorage for guests
+```
+
+### Front end and configuration
 
 | File | Role |
 |---|---|
-| `convert.py` | The one orchestrator: input type, AI path, fallback, merge. |
-| `ai_status.py` | Is the AI usable? Per-model outage memory, provider-supplied recovery. |
-| `docx_input.py` | Word documents read structurally — never OCR'd. |
-| `layout.py` | Text-vs-maths nomination, position merge, LaTeX assembly. |
-| `ai_qa.py` | Prompts, parsing, validation, per-page and merged conversion. |
-| `llm_providers.py` | Provider adapter — Gemini and Claude behind one interface. |
-| `equation.py` | pix2text wrapper, page segmentation (fallback only). |
-| `textract_fast.py` | Tesseract OCR, preprocessing, LaTeX escaping (fallback only). |
-| `latex_tools.py` | Offline validation, compilation, per-page document merge. |
-| `preprocess.py` | EXIF rotation, deskew, low-DPI upscale, alpha flatten. |
-| `tex_store.py` | Token-addressed, TTL-expiring store for results and previews. |
-| `app.py` | The conversion route, terms gate, status API, preview, history. |
 | `templates/base.html` | The application shell every page extends. |
 | `templates/home.html` | The workspace: give it a page, or read the result. |
 | `templates/history.html` | Past conversions, saved and session. |
-| `templates/legal/terms.html` | Terms of Service — complete, unreviewed. |
-| `templates/legal/privacy.html` | Privacy Policy — complete, unreviewed. |
-| `templates/partials/header.html` | Header and the mobile drawer. |
-| `templates/partials/footer.html` | Footer — what ConTeX is, and the legal links. |
-| `templates/partials/convert_section.html` | The single conversion UI, both states. |
-| `templates/partials/terms_gate.html` | The agreement checkbox. |
-| `templates/partials/qa_notice.html` | Pre-upload privacy disclosure. |
-| `templates/partials/processing.html` | What you see while a conversion runs. |
-| `templates/partials/dialog_legal.html` | Terms / Privacy, on every page. |
-| `templates/partials/dialogs_convert.html` | AI outage, camera, canvas, confirm. |
+| `templates/legal/` | Terms of Service and Privacy Policy - complete, unreviewed. |
+| `templates/partials/` | Header, footer, the conversion UI, the dialogs, the gate. |
 | `static/scripts.js` | Input plumbing, gate, dialogs, camera, canvas, preview, history. |
 | `static/css/tailwind.src.css` | The design system: tokens, base, components. |
 | `tailwind.config.js` | Palette, type, radii, motion. |
-| `build_css.py` | Builds `static/css/app.css`. Run after changing any class. |
-| `brand/` | The logo masters and the script that derives the served assets. |
+| `tools/build_css.py` | Builds `static/css/app.css`. Run after changing any class. |
+| `tools/make_assets.py` | Derives every served icon from the masters in `brand/`. |
+| `tests/test_contex.py` | 179-check verification suite (no API key needed). |
+| `tests/firestore.rules.test.mjs` | 28 rules checks against the Firebase emulator. |
 | `bench/score_qa.py` | Before/after scoring for the conversion layer. |
-| `test_ai_qa.py` | 177-check verification suite (no API key needed). |
-| `firestore.rules.test.mjs` | 28 rules checks against the Firebase emulator. |
 | `Dockerfile` | The production image: Flask + TeX Live + Tesseract + Poppler. |
 | `DEPLOYMENT.md` | How this is deployed, and what is still outstanding. |
 
@@ -677,7 +723,7 @@ Defaults shown; full list in `.env.example`.
 - **The fallback chain lists four Gemini models.** If Google retires or renames
   one, that entry starts failing with a model-not-found error, which is skipped
   (and parked for an hour) rather than being fatal — but it wastes one call the
-  first time each hour. Prune `MODEL_CHAIN` in `llm_providers.py` when that
+  first time each hour. Prune `MODEL_CHAIN` in `services/llm/` when that
   happens.
 - **Segmentation is vertical only.** On the fallback path, two equations side
   by side on one line are treated as one region.
@@ -686,7 +732,7 @@ Defaults shown; full list in `.env.example`.
   flatter the direct-to-AI path; on a phone photo of genuinely messy
   handwriting the gap to the fallback could narrow.
 - **Word equations lose their layout.** Word stores mathematics as OMML, not
-  LaTeX. `docx_input.py` extracts the symbols in reading order, but
+  LaTeX. `pipeline/recognise/word.py` extracts the symbols in reading order, but
   superscripts, fractions, roots and limits arrive flattened and have to be
   rebuilt from context. This is the least reliable part of `.docx` conversion
   on either path, and the result says so.

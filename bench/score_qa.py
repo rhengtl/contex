@@ -41,8 +41,8 @@ sys.path.insert(0, os.path.dirname(BENCH))  # the app package lives one level up
 sys.path.insert(0, BENCH)
 
 from score_math import lev, normalize  # reuse the existing LaTeX normaliser
-import ai_qa  # noqa: E402
-import latex_tools  # noqa: E402
+from contex.pipeline.recognise import ai  # noqa: E402
+from contex.pipeline import latex  # noqa: E402
 
 _STRUCTURE = {
     'section': r'\\section\b',
@@ -161,7 +161,7 @@ def run_direct(path, file_name, mock):
         data = handle.read()
     if mock:
         return '', '', {'status': 'mock'}
-    result = ai_qa.convert_page(data, file_name)
+    result = ai.convert_page(data, file_name)
     return '', result['tex'], result
 
 
@@ -225,10 +225,10 @@ def main(argv=None):
         os.environ['AI_QA_PROVIDER'] = args.provider
 
     if not args.mock:
-        if not ai_qa.enabled():
+        if not ai.enabled():
             print('AI QA is not configured - set GEMINI_API_KEY (or use --mock).')
             return 1
-        info = ai_qa.provider_info()
+        info = ai.provider_info()
         print(f"model: {args.model or info['models']['document']}   "
               f"provider: {info['name']}")
     print(f"corpus: {args.corpus}   pages: {len(manifest)}\n")
@@ -265,8 +265,8 @@ def main(argv=None):
                 totals[key][0] += value
                 totals[key][1] += 1
 
-        compiles['before'] += bool(latex_tools.compile_tex(raw)['ok'])
-        after_ok = bool(latex_tools.compile_tex(reviewed)['ok'])
+        compiles['before'] += bool(latex.compile_tex(raw)['ok'])
+        after_ok = bool(latex.compile_tex(reviewed)['ok'])
         compiles['after'] += after_ok
 
         print(f"  {row['file']:<26}"

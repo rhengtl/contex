@@ -24,7 +24,7 @@ ENV PYTHONUNBUFFERED=1 \
 # texlive-latex-extra is the large one (~1 GB). It is here because the model
 # writes the LaTeX, and a transcribed document can legitimately ask for a
 # package outside the base set; a preview that fails on \usepackage{siunitx}
-# is a preview the user cannot trust. latex_tools reports a missing package
+# is a preview the user cannot trust. The engine reports a missing package
 # clearly rather than crashing, so this is a quality decision, not a
 # correctness one - trim it if image size matters more than preview coverage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -116,4 +116,4 @@ CMD exec gunicorn \
     --keep-alive 65 \
     --access-logfile - \
     --error-logfile - \
-    app:app
+    wsgi:app

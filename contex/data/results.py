@@ -1,4 +1,4 @@
-# tex_store.py
+# results.py
 """
 Short-lived, per-session storage for generated LaTeX jobs.
 

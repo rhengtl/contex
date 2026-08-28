@@ -72,7 +72,7 @@
             <h1 class="text-[1.75rem]">Create an account</h1>
             <p class="mt-2 text-sm text-ink-500">
                 Keeps your conversions after the tab closes.
-                <a href="{{ url_for('home') }}" class="link">Convert without an account</a>
+                <a href="{{ url_for('pages.home') }}" class="link">Convert without an account</a>
             </p>
         </div>
 
@@ -89,12 +89,12 @@
                     <p class="note-title">Account created</p>
                     <p>
                         {{ success }}
-                        <a href="{{ url_for('login') }}" class="link">Sign in now</a>.
+                        <a href="{{ url_for('auth.login') }}" class="link">Sign in now</a>.
                     </p>
                 </div>
             {% endif %}
 
-            <form method="POST" action="{{ url_for('signup') }}" class="space-y-4">
+            <form method="POST" action="{{ url_for('auth.signup') }}" class="space-y-4">
                 <div>
                     <label for="fullname" class="field-label">Full name</label>
                     <input type="text" id="fullname" name="fullname" required
@@ -151,7 +151,7 @@
 
                 <p id="google-error" class="field-error mb-3 hidden" role="alert"></p>
 
-                <form id="google-signup-form" method="POST" action="{{ url_for('login') }}" class="hidden">
+                <form id="google-signup-form" method="POST" action="{{ url_for('auth.login') }}" class="hidden">
                     <input type="hidden" name="idToken" value="">
                 </form>
 
@@ -170,7 +170,7 @@
 
         <p class="mt-6 text-center text-sm text-ink-500">
             Already have an account?
-            <a href="{{ url_for('login') }}" class="link">Sign in</a>
+            <a href="{{ url_for('auth.login') }}" class="link">Sign in</a>
         </p>
     </div>
 </div>

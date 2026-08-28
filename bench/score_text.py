@@ -4,7 +4,7 @@ Usage:
     python score_text.py [manifest.json] [image_dir] [psm]
 
 Defaults to the clean set at Tesseract's default page-segmentation mode, which is
-what pytesseract.image_to_string() uses in textract_fast.py.
+what pytesseract.image_to_string() uses in tesseract.py.
 """
 import os, json, subprocess, sys, re, shutil
 from collections import defaultdict

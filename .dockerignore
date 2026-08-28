@@ -58,13 +58,13 @@ public/
 # committed and is what ships.
 node_modules/
 tailwind.config.js
-build_css.py
+tools/
 static/css/tailwind.src.css
 
 # Documentation and tests. Keeping them out is about image size and about not
 # publishing internal notes, not about them being unimportant.
 *.md
-test_ai_qa.py
+tests/
 
 # Local logs and OS clutter
 *.log
@@ -74,4 +74,3 @@ Thumbs.db
 # Development tooling that must never enter the image.
 package.json
 package-lock.json
-firestore.rules.test.mjs

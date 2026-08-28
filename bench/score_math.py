@@ -1,4 +1,4 @@
-"""Score the app's real equation.py path against the formula benchmark."""
+"""Score the app's real formulas.py path against the formula benchmark."""
 import os, sys, json, re, time
 from collections import defaultdict
 
@@ -44,8 +44,10 @@ def main():
 
     for k, m in enumerate(manifest, 1):
         with open(os.path.join(BENCH, "img_math", m["file"]), "rb") as fh:
-            import equation  # the app's actual model wrapper
-            pred = equation.process_image(fh.read())
+            # the app's actual model wrapper, imported here so the
+            # heavy ONNX load only happens when this script runs
+            from contex.pipeline.recognise import formulas
+            pred = formulas.process_image(fh.read())
         g, p = normalize(m["gt"]), normalize(pred)
         gt_tok, p_tok = tokens(g), tokens(p)
         a = agg[m["cond"]]

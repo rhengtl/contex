@@ -49,7 +49,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-import llm_providers
+from contex.services import llm
 
 # How long an outage with no provider-supplied retry time is assumed to last
 # before the app tries that model again. Short on purpose: guessing too long
@@ -319,12 +319,12 @@ def check():
     Returns a dict safe to send to the browser: it names services, models and
     states, and never contains credentials.
     """
-    provider = llm_providers.get_provider()
+    provider = llm.get_provider()
     configured = provider.is_configured()
     switched_on = _flag('AI_QA_ENABLED')
     ai_first = _flag('AI_FIRST')
 
-    chain = provider.model_chain(llm_providers.ROLE_DOCUMENT)
+    chain = provider.model_chain(llm.ROLE_DOCUMENT)
     state = _live()
     blocked = set(state['models'])
     ready = [model for model in chain if model not in blocked]
@@ -388,7 +388,7 @@ def check():
 def _unavailable(services, reason, records):
     return {
         'available': False,
-        'configured': llm_providers.is_configured(),
+        'configured': llm.is_configured(),
         'enabled': True,
         'provider': services[0]['provider'] if services else None,
         'services': services,

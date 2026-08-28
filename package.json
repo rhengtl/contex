@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build:css": "python build_css.py",
-    "test:rules": "firebase emulators:exec --only firestore --project contex-rules-test \"node firestore.rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project contex-rules-test \"node tests/firestore.rules.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
