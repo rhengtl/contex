@@ -69,15 +69,15 @@
                         <div class="mt-3 flex flex-wrap gap-2">
                             <a href="{{ url_for('history_download', doc_id=item.id) }}"
                                class="btn-secondary btn-sm">Download .tex</a>
-                            <button type="button" onclick="copyHistory('{{ item.id }}', this)"
+                            <button type="button" data-action="history-copy" data-arg="{{ item.id }}"
                                     class="btn-secondary btn-sm">Copy LaTeX</button>
-                            <button type="button" onclick="toggleHistoryPreview('{{ item.id }}', this)"
+                            <button type="button" data-action="history-preview" data-arg="{{ item.id }}"
                                     {% if item.truncated %}disabled{% endif %}
                                     class="btn-quiet btn-sm">Preview PDF</button>
                             {% if not item.truncated %}
                                 <a href="{{ url_for('history_preview', doc_id=item.id) }}"
                                    data-document-url="{{ url_for('preview_document', doc=item.id) }}"
-                                   onclick="return openPdf(this)"
+                                   data-action="open-pdf"
                                    target="_blank" rel="noopener"
                                    class="btn-quiet btn-sm">Open PDF in new tab</a>
                             {% endif %}

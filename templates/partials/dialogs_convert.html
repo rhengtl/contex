@@ -56,10 +56,10 @@
         </div>
 
         <div class="dialog-foot">
-            <button type="button" onclick="recheckAi()" id="ai-modal-recheck"
+            <button type="button" data-action="ai-recheck" id="ai-modal-recheck"
                     class="btn-quiet mr-auto" data-dialog-initial>Check again</button>
-            <button type="button" onclick="cancelConversion()" class="btn-secondary">Cancel and wait</button>
-            <button type="button" onclick="continueWithFallback()" class="btn-danger">Continue without AI</button>
+            <button type="button" data-action="ai-cancel" class="btn-secondary">Cancel and wait</button>
+            <button type="button" data-action="ai-fallback" class="btn-danger">Continue without AI</button>
         </div>
     </div>
 </div>
@@ -80,19 +80,19 @@
     </div>
 
     <div class="absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-4">
-        <button type="button" onclick="closeCameraModal()"
+        <button type="button" data-action="camera-close"
                 class="btn-on-dark btn-sm bg-black/55" data-dialog-initial>Cancel</button>
         <p class="rounded-md bg-black/50 px-3 py-1.5 text-center text-xs text-white/90">
             Fill the frame with your page
         </p>
-        <button type="button" id="camera-switch" onclick="switchCamera()"
+        <button type="button" id="camera-switch" data-action="camera-switch"
                 class="btn-on-dark btn-sm bg-black/55">Flip</button>
     </div>
 
     <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 p-6">
         <p id="camera-error"
            class="hidden max-w-md rounded-md bg-alarm-700 px-3 py-2 text-center text-sm text-white"></p>
-        <button type="button" onclick="capturePhoto()"
+        <button type="button" data-action="camera-capture"
                 class="h-[4.5rem] w-[4.5rem] rounded-full bg-white ring-4 ring-white/40
                        transition-transform active:scale-95">
             <span class="sr-only">Capture photo</span>
@@ -110,9 +110,9 @@
 
     <div class="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
         <div class="flex items-center gap-1" role="group" aria-label="Tool">
-            <button type="button" id="tool-pen" onclick="setTool('pen')" class="toolbtn-active">Pen</button>
-            <button type="button" id="tool-eraser" onclick="setTool('eraser')" class="toolbtn">Eraser</button>
-            <button type="button" id="tool-pan" onclick="setTool('pan')" class="toolbtn">Pan</button>
+            <button type="button" id="tool-pen" data-action="draw-tool" data-arg="pen" class="toolbtn-active">Pen</button>
+            <button type="button" id="tool-eraser" data-action="draw-tool" data-arg="eraser" class="toolbtn">Eraser</button>
+            <button type="button" id="tool-pan" data-action="draw-tool" data-arg="pan" class="toolbtn">Pan</button>
         </div>
 
         <label for="brush-size" class="flex items-center gap-2.5 text-sm text-paper-100">
@@ -122,9 +122,9 @@
         </label>
 
         <div class="flex items-center gap-1">
-            <button type="button" onclick="clearCanvas()" class="toolbtn-danger">Clear all</button>
-            <button type="button" onclick="closeDrawModal()" class="toolbtn" data-dialog-initial>Cancel</button>
-            <button type="button" onclick="saveDrawing()" class="toolbtn-active">Use this</button>
+            <button type="button" data-action="draw-clear" class="toolbtn-danger">Clear all</button>
+            <button type="button" data-action="draw-close" class="toolbtn" data-dialog-initial>Cancel</button>
+            <button type="button" data-action="draw-save" class="toolbtn-active">Use this</button>
         </div>
     </div>
 

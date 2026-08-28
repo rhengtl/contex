@@ -153,6 +153,7 @@ Verified means measured, not assumed.
 | The app inside the container | A real AI conversion (Gemini, 10-13s) and a real local-fallback conversion (4.8s) both ran end to end: upload -> LaTeX -> `pdflatex` -> PDF -> page image -> `.tex` download. |
 | Fail-closed on a missing secret | Verified in the container: with no `FLASK_SECRET_KEY` the worker refuses to boot and gunicorn shuts down. |
 | Security headers | Verified on live responses from the container: CSP, `nosniff`, `DENY`, `Referrer-Policy`, `Permissions-Policy`, HSTS. |
+| Content-Security-Policy | **No `'unsafe-inline'` in `script-src` or `style-src`.** All 40 inline `on*=` handlers were removed in favour of `data-action` plus one delegated listener; the three remaining inline `<script>` blocks carry a per-request nonce. Verified with a browser across 5 viewports and through a real conversion: zero policy violations, every control still works. |
 | Error pages | A 404 and an induced 500 render in the application shell and carry no traceback, path, exception type or key. |
 | Browser and responsive | 227 checks across 5 viewports (1920, 1366, 768, 360 portrait, 740 landscape) x 5 pages: no sideways scroll, no overflow, no console errors, no failed requests, every control >= 24px, every dialog opens and closes on Escape. |
 | LaTeX sandboxing | The file-read path was **demonstrated** before the fix: a canary string from an unrelated file on disk appeared in the rendered PDF. 13 attack shapes are now refused; 7 real document shapes still compile. |
@@ -190,9 +191,14 @@ Everything here is unnecessary while you use `contex-28bfd.web.app`.
 
 ### 3. Test the CSP against the real sign-in flow
 
-The policy is strict and default-deny. The Google popup is the part most
-likely to trip it. Open the console on the deployed `/login`, click the Google
-button, and watch for `Refused to ...` messages.
+The policy is strict, default-deny, and has no `'unsafe-inline'`, so there is
+no slack in it. Everything reachable without signing in has been exercised
+under it here with zero violations - but the Google popup has not, because it
+needs a real authorized domain. Open the console on the deployed `/login`,
+click the Google button, and watch for `Refused to ...`.
+
+If it does trip, the fix is almost certainly a missing origin in `script-src`
+or `frame-src`, both of which are built from `FIREBASE_AUTH_DOMAIN`.
 
 ### 4. Budget and quota
 
@@ -233,15 +239,6 @@ visible and honest rather than silent or wrong.
 gunicorn with 2 workers a caller effectively gets twice the allowance, and with
 several Cloud Run instances it multiplies again. It stops a script hammering
 one instance. It is not a defence against a distributed attacker.
-
-### `'unsafe-inline'` in the script CSP
-
-The Content-Security-Policy is otherwise default-deny, but `script-src`
-carries `'unsafe-inline'`. This is not an oversight: about twenty templates use
-inline `onclick=` handlers, which no nonce or hash can cover — only
-`'unsafe-hashes'` or moving them to `addEventListener`. Removing it is front-end
-work, not a header change. Until then the CSP is a meaningful defence against
-external script injection and a weak one against inline injection.
 
 ### Email verification is not required
 

@@ -1871,3 +1871,87 @@ window.addEventListener('DOMContentLoaded', function () {
         render();
     });
 })();
+
+
+/* ---------------------------------------------------------------------------
+   Declarative actions
+   ---------------------------------------------------------------------------
+
+   Every control used to carry its behaviour in an onclick= attribute. That
+   works, and it costs the whole Content-Security-Policy: an inline handler is
+   inline script, so allowing them means script-src 'unsafe-inline', and
+   'unsafe-inline' means an injected <img onerror=...> runs too. There is no
+   nonce or hash that covers attribute handlers - only removing them does.
+
+   So markup now says what a control IS, not what it runs:
+
+       <button data-action="legal" data-arg="terms">Terms of Service</button>
+
+   ONE delegated listener, not one per element, and that is not a
+   micro-optimisation. The legal dialog fetches /legal/terms and drops the
+   markup straight into the page, and that markup contains a control of its
+   own - the Privacy Policy link inside the Terms. Anything bound at load
+   would miss it. Delegation catches it because the listener is on the
+   document, not on the button. The same goes for any control rendered later.
+
+   A handler returning exactly false calls preventDefault(), which is how the
+   two "open in a new tab" links keep their real href as the fallback when
+   fetch or Blob is unavailable.
+   --------------------------------------------------------------------------- */
+
+var ACTIONS = {
+    /* Navigation and the shell */
+    'toggle-sidebar':   function ()          { toggleSidebar(); },
+
+    /* Legal */
+    'legal':            function (el)        { openLegal(el.dataset.arg); },
+    'legal-close':      function ()          { closeLegal(); },
+
+    /* Choosing what to convert */
+    'camera-open':      function (el)        { openCameraModal(el.dataset.arg); },
+    'camera-close':     function ()          { closeCameraModal(); },
+    'camera-switch':    function ()          { switchCamera(); },
+    'camera-capture':   function ()          { capturePhoto(); },
+    'draw-open':        function (el)        { openDrawModal(el.dataset.arg); },
+    'draw-close':       function ()          { closeDrawModal(); },
+    'draw-tool':        function (el)        { setTool(el.dataset.arg); },
+    'draw-clear':       function ()          { clearCanvas(); },
+    'draw-save':        function ()          { saveDrawing(); },
+    'file-clear':       function ()          { clearConvertFile(); },
+
+    /* The AI-unavailable dialog */
+    'ai-recheck':       function ()          { recheckAi(); },
+    'ai-cancel':        function ()          { cancelConversion(); },
+    'ai-fallback':      function ()          { continueWithFallback(); },
+
+    /* The result */
+    'copy-tex':         function (el)        { copyTex(el.dataset.arg, el); },
+    'preview-load':     function ()          { loadPreview(); },
+    'open-pdf':         function (el)        { return openPdf(el); },
+
+    /* Saved history */
+    'history-copy':     function (el)        { copyHistory(el.dataset.arg, el); },
+    'history-preview':  function (el)        { toggleHistoryPreview(el.dataset.arg, el); }
+};
+
+var CHANGE_ACTIONS = {
+    'choose-file': function (el) { chooseInput(el.dataset.arg, 'file'); }
+};
+
+function runAction(table, event) {
+    var el = event.target.closest && event.target.closest('[data-action]');
+    if (!el) { return; }
+    var handler = table[el.getAttribute('data-action')];
+    if (!handler) { return; }
+    // Exactly false, not merely falsy: a handler that returns nothing is the
+    // common case and must not cancel the event.
+    if (handler(el, event) === false) { event.preventDefault(); }
+}
+
+document.addEventListener('click', function (event) {
+    runAction(ACTIONS, event);
+});
+
+document.addEventListener('change', function (event) {
+    runAction(CHANGE_ACTIONS, event);
+});

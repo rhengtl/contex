@@ -978,7 +978,8 @@ def _():
                        follow_redirects=True).get_data(as_text=True)
     check('id="preview-panel"' in page, 'no PDF preview panel')
     check('id="preview-pages"' in page, 'nowhere to put the rendered pages')
-    check("copyTex('convert-tex'" in page, 'no copy button')
+    check('data-action="copy-tex" data-arg="convert-tex"' in page,
+          'no copy button')
     check('download-converted-tex' in page, 'no download link')
     # The rendered document is the preview; the source is secondary.
     check(page.index('id="preview-panel"') < page.index('LaTeX source'),
@@ -1157,12 +1158,14 @@ def _():
     # Without the data attribute the click falls back to the plain PDF link,
     # which is the behaviour being fixed.
     panel = _read_template('partials/convert_section.html')
-    check('data-document-url' in panel and 'openPdf(this)' in panel,
+    check('data-document-url' in panel
+          and 'data-action="open-pdf"' in panel,
           'the result page button no longer opens the document as a blob')
 
     # History has its own route now; the button moved with it.
     saved = _read_template('history.html')
-    check('data-document-url' in saved and 'openPdf(this)' in saved,
+    check('data-document-url' in saved
+          and 'data-action="open-pdf"' in saved,
           'the saved-history button no longer opens the document as a blob')
 
     script = _script()
@@ -3064,8 +3067,8 @@ def _():
     check(history.status_code == 200, history.status_code)
     body = history.get_data(as_text=True)
     check('saved.png' in body, 'the saved conversion is not listed')
-    for action in ('/history/doc-route/download', 'copyHistory',
-                   'toggleHistoryPreview', 'openPdf'):
+    for action in ('/history/doc-route/download', 'history-copy',
+                   'history-preview', 'open-pdf'):
         check(action in body, f'{action} is missing from the history page')
     check('saved.png' not in workspace,
           'history is being rendered on the workspace as well')
@@ -3134,9 +3137,26 @@ def _():
 
     signup = client.get('/signup').get_data(as_text=True)
     for button in re.findall(r'<button[^>]*>', signup):
-        wired = ('onclick=' in button or 'type="submit"' in button
+        wired = ('data-action=' in button or 'type="submit"' in button
                  or 'id="google-signup"' in button)
         check(wired, f'a button on the sign-up page does nothing: {button[:70]}')
+
+    # Stricter than the old onclick= check, which only asked whether an
+    # attribute was present. A data-action naming something scripts.js does
+    # not dispatch is a control that silently does nothing - exactly the bug
+    # this test exists to catch, and now reachable by a typo.
+    script = _script()
+    registered = set(re.findall(r"^\s*'([a-z-]+)':\s*function", script, re.M))
+    check(registered, 'the action registry is gone from scripts.js')
+    used = set()
+    for path in ('/', '/history', '/login', '/signup', '/forgot-password',
+                 '/legal/terms', '/legal/privacy'):
+        used |= set(re.findall(r'data-action="([^"]+)"',
+                               client.get(path).get_data(as_text=True)))
+    check(used, 'no page uses a data-action at all')
+    unknown = sorted(used - registered)
+    check(not unknown,
+          f'markup asks for actions scripts.js does not dispatch: {unknown}')
 
 
 @test('every colour the markup asks for actually exists')
@@ -3617,6 +3637,73 @@ def _():
     reset = code.split('def send_password_reset')[1].split('\ndef ')[0]
     check("'EMAIL_NOT_FOUND'" in reset and "{'success': True}" in reset,
           'an unknown address is no longer answered as success')
+
+
+@test('no page may run script the server did not send')
+def _():
+    # The whole value of this policy is the absence of 'unsafe-inline'. With
+    # it, an injected <script> or <img onerror=...> executes; without it, the
+    # only inline script that runs is one carrying this response's nonce.
+    #
+    # It is guarded rather than assumed because it is so easy to give back:
+    # one inline onclick= added to a template does not break anything visible,
+    # it just quietly stops working, and the obvious fix is to put
+    # 'unsafe-inline' back.
+    client = client_for_tests()
+    first = client.get('/').headers['Content-Security-Policy']
+    second = client.get('/').headers['Content-Security-Policy']
+
+    directives = dict(
+        (part.split(' ', 1) + [''])[:2] for part in
+        [p.strip() for p in first.split(';')] if part)
+
+    check("'unsafe-inline'" not in directives.get('script-src', ''),
+          f"script-src allows inline script again: {directives.get('script-src')}")
+    check("'unsafe-inline'" not in directives.get('style-src', ''),
+          f"style-src allows inline style again: {directives.get('style-src')}")
+    check("'unsafe-eval'" not in first, 'the policy allows eval')
+    check("'strict-dynamic'" not in first,
+          'strict-dynamic would let a trusted script load any other')
+
+    # A nonce, and a different one every time. A fixed nonce is no nonce.
+    nonces = [re.search(r"'nonce-([^']+)'", policy) for policy in (first, second)]
+    check(all(nonces), 'script-src carries no nonce, so no inline script runs')
+    check(nonces[0].group(1) != nonces[1].group(1),
+          'the same nonce is reused across requests, which makes it guessable')
+    check(len(nonces[0].group(1)) >= 16,
+          f'the nonce is too short: {len(nonces[0].group(1))} characters')
+
+    # Every inline script in the page must carry that request's nonce, or it
+    # will not run - and the page will fail silently.
+    page = client.get('/')
+    body = page.get_data(as_text=True)
+    nonce = re.search(r"'nonce-([^']+)'",
+                      page.headers['Content-Security-Policy']).group(1)
+    inline = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>', body)
+    for tag in inline:
+        check(f'nonce="{nonce}"' in tag,
+              f'an inline script would be blocked by the policy: {tag[:70]}')
+
+    # And no attribute handlers anywhere, since no nonce can cover one.
+    root = os.path.dirname(os.path.abspath(__file__))
+    offenders = []
+    for folder, _dirs, names in os.walk(os.path.join(root, 'templates')):
+        for name in names:
+            if not name.endswith('.html'):
+                continue
+            path = os.path.join(folder, name)
+            with open(path, encoding='utf-8') as handle:
+                for number, line in enumerate(handle, 1):
+                    # The quote matters: without it this matches the
+                    # comment in login.html explaining why the handler is
+                    # NOT an attribute, and reports the fix as the bug.
+                    if re.search(r'\son(click|change|input|submit|load|error'
+                                 r'|key\w+|mouse\w+|touch\w+|focus|blur)'
+                                 r"""\s*=\s*["']""", line):
+                        offenders.append(f'{name}:{number}')
+    check(not offenders,
+          'inline event handlers are back, and they cannot run under this '
+          f'policy: {offenders[:5]}')
 
 
 @test('an error page tells the visitor nothing about the server')

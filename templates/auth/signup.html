@@ -17,7 +17,7 @@
     {% if firebase_config %}
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // tojson, not a quoted interpolation. Jinja's autoescaping is for
         // HTML, and these values sit inside a <script> where HTML escaping is
         // the wrong escaping - a value carrying a quote or a </script> would
@@ -49,6 +49,15 @@
                     }
                 });
         }
+
+        // Bound here rather than with an onclick= attribute: an inline
+        // handler is inline script, and allowing those would mean putting
+        // 'unsafe-inline' back into script-src for the whole application.
+        // This script has a nonce, so it may run; an injected one may not.
+        document.addEventListener('DOMContentLoaded', function () {
+            var button = document.getElementById('google-signup');
+            if (button) { button.addEventListener('click', signUpWithGoogle); }
+        });
     </script>
     {% endif %}
 {% endblock %}
@@ -124,9 +133,9 @@
                     </label>
                     <p id="signup-terms-text" class="text-sm leading-relaxed text-ink-700">
                         I agree to the
-                        <button type="button" class="link" onclick="openLegal('terms')">Terms of Service</button>
+                        <button type="button" class="link" data-action="legal" data-arg="terms">Terms of Service</button>
                         and the
-                        <button type="button" class="link" onclick="openLegal('privacy')">Privacy Policy</button>.
+                        <button type="button" class="link" data-action="legal" data-arg="privacy">Privacy Policy</button>.
                     </p>
                 </div>
 
@@ -146,7 +155,7 @@
                     <input type="hidden" name="idToken" value="">
                 </form>
 
-                <button type="button" id="google-signup" onclick="signUpWithGoogle()"
+                <button type="button" id="google-signup"
                         class="btn-secondary btn-block">
                     <svg class="h-[1.125rem] w-[1.125rem]" viewBox="0 0 24 24" aria-hidden="true">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

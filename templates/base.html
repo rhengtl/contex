@@ -78,7 +78,7 @@
            class="w-fit max-w-full rounded-md bg-ink-900 px-4 py-2.5 text-center text-sm text-paper-50 shadow-dialog sm:text-left"></p>
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
         window.pageData = Object.assign({
             legalUrls: {
                 terms: {{ url_for('legal', document='terms') | tojson }},
