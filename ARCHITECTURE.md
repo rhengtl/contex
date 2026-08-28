@@ -638,7 +638,7 @@ static/                  the stylesheet, the script, the brand assets
 tools/                   development scripts, never shipped
 tests/                   the verification suites
 bench/                   the measurement corpus and its scoring
-brand/                   the logo masters the served assets derive from
+brand/                   the logo master the served assets derive from
 wsgi.py                  the entry point: gunicorn wsgi:app
 ```
 
@@ -703,7 +703,7 @@ usually means the logic is in the wrong layer.
 | `static/css/tailwind.src.css` | The design system: tokens, base, components. |
 | `tailwind.config.js` | Palette, type, radii, motion. |
 | `tools/build_css.py` | Builds `static/css/app.css`. Run after changing any class. |
-| `tools/make_assets.py` | Derives every served icon from the masters in `brand/`. |
+| `tools/make_assets.py` | Derives every served icon from the master in `brand/`. |
 | `tests/test_contex.py` | 179-check verification suite (no API key needed). |
 | `tests/firestore.rules.test.mjs` | 28 rules checks against the Firebase emulator. |
 | `bench/score_qa.py` | Before/after scoring for the conversion layer. |

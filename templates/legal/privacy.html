@@ -4,18 +4,23 @@
    Every factual statement below was written by reading the code, and must be
    kept in step with it:
 
-     what is sent to the AI      ai_qa.py  source_part(), convert_page()
-     per-page PDF splitting      convert.py  _split_pdf(), _ai_units()
-     .docx sent as text          convert.py  _convert_docx()
-     local fallback              convert.py  _convert_pages(), layout.py
-     1 hour result retention     tex_store.py  TTL_SECONDS
+     what is sent to the AI      pipeline/recognise/ai.py  source_part(),
+                                 convert_page()
+     per-page PDF splitting      pipeline/inputs.py  _split_pdf();
+                                 pipeline/run.py  _ai_units()
+     .docx sent as text          pipeline/run.py  _convert_docx()
+     local fallback              pipeline/run.py  _convert_pages();
+                                 pipeline/latex/assemble.py
+     1 hour result retention     data/results.py  TTL_SECONDS
      guest history               static/scripts.js  contex_guest_history
-     signed-in history           firebase_config.py  save_ocr_history()
-     profile fields              firebase_config.py  create_user(),
-                                 upsert_user_profile(), set_terms_accepted()
-     session cookie contents     app.py  session[...] keys
+     signed-in history           data/history.py  save()
+     profile fields              services/accounts.py  create_user();
+                                 data/users.py  upsert_profile(),
+                                 set_terms_accepted()
+     session cookie contents     web/session.py  session[...] keys
      third-party browser hosts   templates/home.html  <script>/<link> tags
-     outage record               ai_status.py  _write() - no user content
+     outage record               services/llm/availability.py  _write() -
+                                 no user content
 
    NOT reviewed by a lawyer, and no claim of compliance is made. See the notice
    at the top of the rendered page.

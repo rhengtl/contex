@@ -3,7 +3,7 @@ rules_version = '2';
 // SCOPE OF THESE RULES
 // --------------------
 // The Flask server reaches Firestore through the Firebase Admin SDK
-// (firebase_config.py), which authenticates with a service account and
+// (services/firebase.py), which authenticates with a service account and
 // BYPASSES these rules entirely. The browser currently uses Firebase Auth
 // only and never touches Firestore directly.
 //
@@ -11,7 +11,7 @@ rules_version = '2';
 // that must hold for any direct client access, so a leaked Web API key can
 // never be used to read or tamper with another user's data. Server-side
 // enforcement is what actually protects the app today -- every uid comes from
-// the signed session cookie (app.py: current_user_uid), never from a request
+// the signed session cookie (web/session.py: current_user_uid), never from a
 // field, so a client cannot target another user's history by forging a uid.
 //
 // Because no client writes here today, these rules can be as strict as the
@@ -73,7 +73,7 @@ service cloud.firestore {
            ])
         && request.resource.data.fileName is string
         && request.resource.data.result is string
-        // Matches HISTORY_RESULT_LIMIT in app.py plus the truncation marker.
+        // Matches HISTORY_RESULT_LIMIT in web/session.py plus the marker.
         && request.resource.data.result.size() <= 60100
         && request.resource.data.timestamp == request.time;
 

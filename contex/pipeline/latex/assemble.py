@@ -26,8 +26,9 @@ let the AI review reject whatever was not really an formulas. It already does
 exactly that, marking headings and prose `not_an_equation` unprompted.
 """
 
-import os
 import re
+
+from contex import config
 
 # Below this Tesseract is guessing at glyphs rather than reading words.
 #
@@ -48,15 +49,8 @@ _MIN_EQUATION_HEIGHT = 14
 _OVERLAP = 0.5
 
 
-def _int_env(name, default):
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-
-
 def conf_floor():
-    return _int_env('UNIFIED_CONF_FLOOR', _CONF_FLOOR)
+    return config.integer('UNIFIED_CONF_FLOOR', _CONF_FLOOR)
 
 
 def _overlap(first, second):

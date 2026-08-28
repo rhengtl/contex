@@ -4,7 +4,7 @@
   "description": "Development-only tooling. Nothing here runs in production: the application is Python, and the stylesheet it serves is built ahead of time and committed. This exists so the Firestore rules can be tested against the real rules engine.",
   "type": "module",
   "scripts": {
-    "build:css": "python build_css.py",
+    "build:css": "python tools/build_css.py",
     "test:rules": "firebase emulators:exec --only firestore --project contex-rules-test \"node tests/firestore.rules.test.mjs\""
   },
   "devDependencies": {

@@ -195,12 +195,11 @@ def send_password_reset(email):
     """
     Ask Firebase to email this address a password reset link.
 
-    What this used to do: call auth.generate_password_reset_link(), print the
-    resulting link to the server log, and return success. Nothing was ever
-    sent, so every user who asked to reset a password was told an email was on
-    its way and then waited for one that did not exist - and a link that is
-    equivalent to the account's password sat in the log for anyone with log
-    access to use.
+    This must stay an actual send. auth.generate_password_reset_link() only
+    mints the link - it delivers nothing, so using it means telling the user
+    an email is on its way and sending none. And the link it returns is
+    equivalent to the account's password, so it must never be printed,
+    logged or returned to the caller.
 
     Returns:
         dict: {'success': True} whether or not the address is registered - the

@@ -234,7 +234,8 @@ def prepare_image(image, do_deskew=True, do_upscale=True):
     must not cost the user their OCR run.
 
     Every step returns the image it was given when it has nothing to do, so
-    `result is image` is a reliable "nothing was changed" test. ai_qa relies on
+    `result is image` is a reliable "nothing was changed" test. The AI path
+    relies on
     it to send a camera capture's original bytes to the model untouched rather
     than re-encoding a photo that conditioning did not alter.
     """

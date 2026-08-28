@@ -1229,8 +1229,9 @@ function saveDrawing() {
    a browser has no special handling for: a JSON page count, and images. The
    real PDF is still one click away, for anyone who wants the file itself.
 
-   Keep PREVIEW_TIMEOUT_MS above LATEX_COMPILE_TIMEOUT in latex_tools.py, so a
-   slow compile is given the chance to finish and explain itself. */
+   Keep PREVIEW_TIMEOUT_MS above LATEX_COMPILE_TIMEOUT in the LaTeX engine
+   (contex/pipeline/latex/engine.py), so a slow compile is given the chance to
+   finish and explain itself. */
 const PREVIEW_TIMEOUT_MS = 150000;
 
 let previewTimer = null;
@@ -1683,8 +1684,8 @@ window.addEventListener('DOMContentLoaded', function () {
     }
 
     /* The same shape the server renders a saved conversion with - '%d %b %Y,
-       %H:%M' in app.py - so the two kinds of history entry do not disagree
-       about what a date looks like. */
+       %H:%M' in templates/history.html - so the two kinds of history entry do
+       not disagree about what a date looks like. */
     function formatWhen(value) {
         if (!value) return '';
         var when = new Date(value);

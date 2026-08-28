@@ -1,5 +1,5 @@
 """
-Derive the app's logo assets from the transparent master.
+Derive the app's logo assets from the transparent master in brand/.
 
 The master is 1024x1024 with the artwork occupying only the middle 447x445 -
 44% padding on every side. Placed as-is in a 32px header slot the mark would

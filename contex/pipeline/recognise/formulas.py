@@ -1,7 +1,7 @@
 """
 Formula recognition: breezedeus/pix2text-mfr (TrOCR) on ONNX Runtime.
 
-Part of the local fallback, used when the AI is unavailable. convert.py calls
+Part of the local fallback, used when the AI is unavailable. run.py calls
 segment_boxes() to find the formula regions on a page, then tighten() and
 recognize() to read each one; assemble.py places the results back where their
 boxes sat.
@@ -234,7 +234,7 @@ def process_image_list(file_bytes):
     Returns a list of dicts: {'index': 1, 'latex': '...'}. The ordered list is
     this converter's whole output: it reads each expression and says nothing
     about how they relate or where they sit on the page. The app does not use
-    it - convert.py places recognised formulas by position instead, via
+    it - run.py places recognised formulas by position instead, via
     segment_boxes(), tighten() and recognize() - so this is kept as the
     module's own page-level entry point alongside process_image().
     """

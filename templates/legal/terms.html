@@ -7,14 +7,16 @@
 
      32 MB upload limit        app.py  MAX_UPLOAD_MB
      10 pages per PDF          .env    AI_QA_MAX_PDF_PAGES / UNIFIED_MAX_PDF_PAGES
-     1 hour result retention   tex_store.py  TTL_SECONDS
-     60,000 char history cap   app.py  HISTORY_RESULT_LIMIT
-     terms gate                app.py  terms_accepted() / convert_route()
+     1 hour result retention   data/results.py  TTL_SECONDS
+     60,000 char history cap   web/session.py  HISTORY_RESULT_LIMIT
+     terms gate                web/session.py  terms_accepted();
+                               web/convert.py  convert_route()
 
    NOT reviewed by a lawyer. See the notice at the top of the rendered page.
    The operator is identified by project name only, which was a deliberate
-   choice - see the note in AI_QA_README.md about RA 10173 identification of
-   the Personal Information Controller.
+   choice: RA 10173 requires a Personal Information Controller to be
+   identifiable, and a project name plus a working contact route is what this
+   deployment can honestly offer. A lawyer should confirm that it is enough.
    --------------------------------------------------------------------------- #}
 <div class="doc">
 

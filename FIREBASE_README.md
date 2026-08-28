@@ -186,7 +186,7 @@ It is declared in `firestore.indexes.json`. Deploy with:
 firebase deploy --only firestore:indexes
 ```
 
-Without it, `get_user_ocr_history()` notices, says so on the console, and falls
+Without it, `data/history.py recent()` notices, says so on the console, and falls
 back to fetching that user's rows and sorting them in Python — still scoped by
 uid, so still private, just slower.
 

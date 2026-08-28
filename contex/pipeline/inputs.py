@@ -8,6 +8,10 @@ the recognisers can read.
 ACCEPTED is the single source of truth for the file types. The web layer
 imports it to build the file picker, so the control cannot offer something the
 converter will refuse - which it could when the two kept their own lists.
+
+Everything below has exactly one definition, here. run.py imports them; it
+must not grow its own, because two copies of "how many pages does this PDF
+have" are two answers waiting to disagree.
 """
 
 import io
@@ -63,9 +67,8 @@ def _pages(file_bytes, filename, first=1):
     for. It also means a failure while rendering the tail cannot destroy work
     that is already finished.
 
-    This is also where the equation converter's old limitation goes away: it
-    could only ever open an image, so a PDF raised UnidentifiedImageError.
-    Rasterise once here and both engines get pages they can read.
+    Rasterising once here is what lets both local engines take a PDF: neither
+    of them can open one, and this hands them pages they can read.
     """
     extension = os.path.splitext(filename or '')[1].lower()
     if extension == '.pdf':

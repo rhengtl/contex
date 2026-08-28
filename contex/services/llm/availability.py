@@ -49,6 +49,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from contex import config
 from contex.services import llm
 
 # How long an outage with no provider-supplied retry time is assumed to last
@@ -66,20 +67,6 @@ _FILENAME = 'ai_outage.json'
 
 #: Serialises read-modify-write on the record file within this process.
 _LOCK = threading.RLock()
-
-
-def _int_env(name, default):
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _flag(name, default=True):
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in ('false', '0', 'no', 'off')
 
 
 def _path():
@@ -204,7 +191,7 @@ def _expired(record):
         return now >= until
     # No provider-supplied retry time: assume a short outage rather than
     # stranding the app on the fallback path.
-    assumed = _int_env('AI_OUTAGE_ASSUME_SECONDS', _ASSUME_SECONDS)
+    assumed = config.integer('AI_OUTAGE_ASSUME_SECONDS', _ASSUME_SECONDS)
     return now - float(record.get('at') or 0) >= assumed
 
 
@@ -321,8 +308,8 @@ def check():
     """
     provider = llm.get_provider()
     configured = provider.is_configured()
-    switched_on = _flag('AI_QA_ENABLED')
-    ai_first = _flag('AI_FIRST')
+    switched_on = config.enabled('AI_QA_ENABLED')
+    ai_first = config.enabled('AI_FIRST')
 
     chain = provider.model_chain(llm.ROLE_DOCUMENT)
     state = _live()

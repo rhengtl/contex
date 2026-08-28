@@ -33,14 +33,14 @@ order: the calls go out concurrently - see _convert_units.
 """
 
 import importlib
-import io
 import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image
-
+from contex import config
+from contex.pipeline.inputs import (_check_input, _pages, _split_pdf,
+                                    page_count)
 from contex.pipeline.recognise import ai
 from contex.services.llm import availability
 from contex.pipeline.recognise import word
@@ -48,10 +48,6 @@ from contex.pipeline import latex
 from contex.pipeline.latex import assemble
 from contex.pipeline import preprocess
 from contex.pipeline.recognise import tesseract
-
-_IMAGE_TYPES = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif',
-                '.webp'}
-_ACCEPTED = _IMAGE_TYPES | {'.pdf', '.docx'}
 
 
 class FallbackNotAuthorized(RuntimeError):
@@ -68,118 +64,12 @@ class FallbackNotAuthorized(RuntimeError):
         self.status = status
 
 
-def _int_env(name, default):
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _check_input(filename):
-    """
-    Reject an unusable file type before any path starts.
-
-    Cheap on purpose: the AI path reads PDFs natively, so rasterising one just
-    to validate it would throw away the speed advantage.
-    """
-    extension = os.path.splitext(filename or '')[1].lower()
-    if extension and extension not in _ACCEPTED:
-        raise RuntimeError(f"Unsupported file type: '{extension}'")
-
-
-def page_count(file_bytes, filename):
-    """How many pages this upload has, capped at the configured limit."""
-    if os.path.splitext(filename or '')[1].lower() != '.pdf':
-        return 1
-    limit = _int_env('UNIFIED_MAX_PDF_PAGES', 10)
-    try:
-        import pikepdf
-        with pikepdf.open(io.BytesIO(file_bytes)) as pdf:
-            return max(1, min(len(pdf.pages), limit))
-    except Exception:
-        return 1
-
-
-def _pages(file_bytes, filename, first=1):
-    """
-    Yield PIL pages from an upload, starting at page `first`.
-
-    `first` matters when the AI converted the opening pages and only the tail
-    needs the local engines: a ten-page PDF that lost the AI on page nine
-    should not pay to rasterise the eight pages it already has better output
-    for. It also means a failure while rendering the tail cannot destroy work
-    that is already finished.
-
-    This is also where the equation converter's old limitation goes away: it
-    could only ever open an image, so a PDF raised UnidentifiedImageError.
-    Rasterise once here and both engines get pages they can read.
-    """
-    extension = os.path.splitext(filename or '')[1].lower()
-    if extension == '.pdf':
-        try:
-            from pdf2image import convert_from_bytes
-        except ImportError:
-            raise RuntimeError(
-                "PDF support needs 'pdf2image' and Poppler on PATH.")
-        limit = _int_env('UNIFIED_MAX_PDF_PAGES', 10)
-        try:
-            return convert_from_bytes(file_bytes, first_page=max(1, first),
-                                      last_page=limit)
-        except Exception as exc:
-            if 'poppler' in str(exc).lower() or 'pdfinfo' in str(exc).lower():
-                raise RuntimeError(
-                    'Poppler was not found. Install it and add it to PATH.')
-            raise RuntimeError(f'Could not read the PDF: {exc}')
-
-    if extension and extension not in _IMAGE_TYPES:
-        raise RuntimeError(f"Unsupported file type: '{extension}'")
-    if first > 1:
-        return []          # a single-page input has no page two
-    try:
-        image = Image.open(io.BytesIO(file_bytes))
-        image.load()
-        return [image]
-    except Exception as exc:
-        raise RuntimeError(f'Could not read the image: {exc}')
-
-
-def _split_pdf(file_bytes, limit):
-    """
-    Cut a PDF into one single-page PDF per page.
-
-    Single-page PDFs rather than rasterised images: the model reads a PDF page
-    natively, including any text layer, and rendering it to a bitmap first
-    would discard that for no reason. Returns None when the file cannot be
-    split, which sends the whole document in one call instead.
-    """
-    try:
-        import pikepdf
-    except ImportError:
-        return None
-    try:
-        with pikepdf.open(io.BytesIO(file_bytes)) as pdf:
-            total = min(len(pdf.pages), limit)
-            if total <= 1:
-                return None
-            out = []
-            for index in range(total):
-                with pikepdf.new() as single:
-                    single.pages.append(pdf.pages[index])
-                    buffer = io.BytesIO()
-                    single.save(buffer)
-                    out.append(buffer.getvalue())
-            return out
-    except Exception as exc:
-        print(f'Notice: could not split the PDF into pages ({exc}).')
-        return None
-
-
 # ---------------------------------------------------------------------------
 # The local converter path
 # ---------------------------------------------------------------------------
 
 #: Started at most once per process - the module-level model load inside
-#: `equation` is what takes the time, and importing it twice does not repeat it.
+#: `formulas` is what takes the time, and importing it twice does not repeat it.
 _warming = threading.Lock()
 _warmed = False
 
@@ -188,7 +78,7 @@ def _warm_formula_model():
     """
     Begin loading the local formula model, without waiting for it.
 
-    Importing `equation` loads pix2text-mfr through ONNX Runtime, measured at
+    Importing `formulas` loads pix2text-mfr through ONNX Runtime, measured at
     13.6 seconds the first time in a process. It is imported lazily, so today
     that whole wait lands in the middle of the first fallback conversion, after
     the user has already been told this path is the slower one.
@@ -399,9 +289,10 @@ def _result(tex, summary, qa, items=None):
     Assemble one finished conversion.
 
     Also lifts the compiled PDF out of the report and onto the result. Every
-    path here compiles the finished document once already, to check it builds -
-    and the preview used to throw that away and compile the identical source a
-    second time, about 800 ms later, while the user watched a spinner.
+    path here compiles the finished document once already, to check it builds,
+    so carrying that PDF forward saves the preview compiling the identical
+    source a second time - about 800 ms, spent while the user watches a
+    spinner.
 
     The PDF is only carried when its hash says it came from exactly the `tex`
     being returned. A document can be repaired or merged after it was compiled,
@@ -481,7 +372,7 @@ def _ai_units(file_bytes, filename):
     """
     extension = os.path.splitext(filename or '')[1].lower()
     if extension == '.pdf':
-        limit = _int_env('AI_QA_MAX_PDF_PAGES', 10)
+        limit = config.integer('AI_QA_MAX_PDF_PAGES', 10)
         parts = _split_pdf(file_bytes, limit)
         if parts:
             return [(number, data, f'page-{number}.pdf')
@@ -499,7 +390,7 @@ def _ai_workers(count):
     """
     if count < 2:
         return 1
-    return max(1, min(_int_env('AI_QA_PAGE_CONCURRENCY', 3), count))
+    return max(1, min(config.integer('AI_QA_PAGE_CONCURRENCY', 3), count))
 
 
 def _convert_one(data, name, rotation):

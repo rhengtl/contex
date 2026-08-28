@@ -1,11 +1,11 @@
 """
 The HTTP layer: everything that knows a request is a request.
 
-Four blueprints and four sets of request hooks, registered here so there is
+Five blueprints and three sets of request hooks, registered here so there is
 exactly one place to look for "what URLs does this application answer, and what
 does every response carry".
 
-    pages      /  /history  /legal/<doc>  /accept-terms  /healthz  /index
+    pages      /  /history  /legal/<doc>  /accept-terms  /healthz
     convert    /convert  /api/ai-status
     output     /download-converted-tex  /preview/*  /history/<id>/*
     auth       /login  /signup  /forgot-password  /logout
@@ -13,7 +13,9 @@ does every response carry".
     security      the CSP and its nonce, the fixed headers, the rate limit
     compression   gzip, and the ?v= stamp that makes static files cacheable
     session       who this visitor is and what they may fetch
-    errors        413 / 404 / 429 / 500
+
+The fifth blueprint, errors, carries no URLs of its own - it registers the
+application-wide 413 / 404 / 429 / 500 handlers.
 
 Blueprints rather than a shared `app` object: a module that imports the
 application in order to decorate it cannot be imported without building the

@@ -8,8 +8,7 @@ produced is the pipeline. A route that starts making decisions is a route that
 has taken work from a layer that can be tested without a browser.
 """
 
-from flask import (Blueprint, jsonify, redirect, render_template, request,
-                   session, url_for)
+from flask import Blueprint, jsonify, render_template, request, session
 
 from contex.data import history as history_store
 from contex.data import users
@@ -131,11 +130,6 @@ def accept_terms():
     if uid:
         users.set_terms_accepted(uid, TERMS_VERSION)
     return jsonify({'ok': True, 'version': TERMS_VERSION})
-
-
-@bp.route('/index')
-def index():
-    return redirect(url_for('pages.home'))
 
 
 @bp.route('/healthz')

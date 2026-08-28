@@ -5,11 +5,12 @@ when it is unavailable. Neither half had a way to measure how well it works.
 These scripts build a synthetic corpus with **exact ground truth**, run it through
 the app's real code paths, and report error rates.
 
-- `ai_qa.convert_page` — the shipped pipeline: the model reads the page and
-  writes the LaTeX (see `score_qa.py`)
-- `textract_fast.extract_text_from_file` — Tesseract, the fallback's prose half
-- `equation.process_image` — `breezedeus/pix2text-mfr` (TrOCR + ONNX Runtime),
-  the fallback's mathematics half
+- `pipeline/recognise/ai.convert_page` — the shipped pipeline: the model
+  reads the page and writes the LaTeX (see `score_qa.py`)
+- `pipeline/recognise/tesseract.extract_text_from_file` — Tesseract, the
+  fallback's prose half
+- `pipeline/recognise/formulas.process_image` — `breezedeus/pix2text-mfr`
+  (TrOCR + ONNX Runtime), the fallback's mathematics half
 
 ## Running
 
@@ -70,18 +71,21 @@ Without that normalization the same predictions score 86.82% / 80% exact — mos
 the apparent gap is markup style, not misread math. Throughput is ~0.32 s/formula on
 CPU after a ~25 s model load at import.
 
-## Findings
+## What the numbers pay for
 
-1. ~~**Rotated pages silently return an empty string.**~~ **Fixed.** At 10 degree skew
-   Tesseract emitted nothing at the default PSM, so the user saw a blank result and no
-   error; `--psm 1` did not help (OSD only detects 90 degree steps). The
-   projection-profile deskew took this from 28.44% to **99.84%** char accuracy while
-   leaving straight images untouched, and now lives in `preprocess.py`, applied by both
-   `textract_fast.py` and the AI pipeline.
-2. ~~**Low DPI is the other weak spot**~~ (87.52%, 0/10 exact). **Mitigated:**
-   `preprocess.upscale_small()` enlarges small inputs before OCR.
-3. ~~`textract_fast.py` hardcodes the Tesseract path.~~ **Fixed** - it now resolves
-   `TESSERACT_CMD`, then `PATH`, then the usual install directories.
+Two steps in `pipeline/preprocess.py` exist because of measurements taken here,
+and the skew row in the table above is what they are measured against.
+
+1. **Deskewing.** At 10 degrees of skew Tesseract emits nothing at all at the
+   default PSM — a blank result with no error, not a bad one — and `--psm 1`
+   does not help, because OSD only detects 90 degree steps. The
+   projection-profile deskew takes that row from 28.44% to **99.84%** character
+   accuracy and leaves straight images untouched. Both the Tesseract path and
+   the AI path apply it.
+2. **Upscaling.** Very low DPI is the other weak spot (87.52%, 0/10 exact
+   lines). `preprocess.upscale_small()` enlarges small inputs before OCR.
+
+Re-run `score_text.py` and `deskew_test.py` after touching either one.
 
 
 ## What this does *not* measure

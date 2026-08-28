@@ -1,8 +1,7 @@
-# test_ai_qa.py
 """
 Verification suite for the conversion pipeline and the app around it.
 
-Run it with:      python test_ai_qa.py
+Run it with:      python tests/test_contex.py
 
 Covers everything that does not need a live API key: the AI pipeline driven by
 a scripted stand-in for the model, model rotation and the local fallback,
@@ -35,9 +34,9 @@ if _ROOT not in sys.path:
 #                       whose behaviour these tests script anyway
 #   Firebase            so the suite touches no network and no real project
 #
-# Firebase now needs three stubs where it needed one, because the module that
-# was firebase_config is now services/accounts.py (who someone is),
-# data/users.py (their profile) and data/history.py (their conversions).
+# Firebase needs three stubs, one per module that talks to it:
+# services/accounts.py (who someone is), data/users.py (their profile) and
+# data/history.py (their conversions).
 
 _recognized = {}
 _history_items = {}
@@ -106,15 +105,13 @@ from contex import config  # noqa: E402
 from contex import pipeline  # noqa: E402
 from contex.pipeline import run  # noqa: E402
 from contex.data import results  # noqa: E402
-from contex.pipeline import inputs, preprocess  # noqa: E402
+from contex.pipeline import preprocess  # noqa: E402
 from contex.pipeline import latex  # noqa: E402
 from contex.pipeline.latex import assemble, engine  # noqa: E402
 from contex.pipeline.recognise import ai, tesseract, word  # noqa: E402
 from contex.services import llm  # noqa: E402
 from contex.services.llm import availability  # noqa: E402
 from contex.web import errors as web_errors_module  # noqa: E402
-from contex.web import output as web_output  # noqa: E402
-from contex.web import pages as web_pages  # noqa: E402
 from contex.web import security  # noqa: E402
 from contex.web import session as web_session  # noqa: E402
 
@@ -144,9 +141,9 @@ def check(condition, message):
         raise AssertionError(message)
 
 
-# The route tests stub the conversion layer by assigning to `flask_app.ai_qa`
-# and `flask_app.convert`, which are the very same module objects as `ai_qa`
-# and `convert` - so those stubs would otherwise leak into every test that runs
+# The route tests stub the conversion layer by assigning to attributes of
+# `ai` and `pipeline`, which are the very same module objects the application
+# imported - so those stubs would otherwise leak into every test that runs
 # afterwards. Snapshot the real callables now and put them back before each
 # test.
 _REAL_CALLABLES = {
@@ -3264,7 +3261,7 @@ def _():
 
 @test('the tab icon has rounded corners at every size it ships')
 def _():
-    # The favicons are generated (brand/make_assets.py), so the rounding is a
+    # The favicons are generated (tools/make_assets.py), so the rounding is a
     # property of a build step rather than of anything in the source tree - the
     # kind of thing that comes back square the next time someone regenerates
     # them. CORNER there is 3/16, chosen because it lands on a whole pixel at
@@ -3663,8 +3660,8 @@ def _():
 def _():
     # Both the sign-in form and the reset form have to give the same answer
     # either way, or they become a way to find out who has an account here.
-    # firebase_config is stubbed out for this suite, so the real module has to
-    # be read from disk rather than imported.
+    # accounts.py is stubbed out for this suite, so the real module has to be
+    # read from disk rather than imported.
     code = read_code('contex/services/accounts.py')
     check("INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password'" in code,
           'the credential failure message is no longer generic')
@@ -3848,8 +3845,8 @@ def _():
     # Firestore's bad minute into a restart loop.
     source = read_source('contex/web/pages.py')
     body = source.split('def healthz')[1].split('\n\n\n')[0]
-    for reaching in ('firebase_config.', 'availability.', 'convert.',
-                     'latex.'):
+    for reaching in ('history_store.', 'users.', 'availability.',
+                     'ai.', 'latex.'):
         check(reaching not in body,
               f'the health check calls {reaching} - a dependency outage would '
               f'then look like a dead process')

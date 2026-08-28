@@ -8,7 +8,7 @@ The model reads the upload itself and writes the LaTeX:
 
 Tesseract and pix2text-mfr stand behind it as a local fallback for when it is
 unavailable, and the user is warned before that fallback is used - it is
-measurably worse. See convert.py for how the two are chosen between.
+measurably worse. See run.py for how the two are chosen between.
 
 Two rules shape everything below.
 
@@ -29,6 +29,7 @@ import re
 
 from PIL import Image
 
+from contex import config
 from contex.services.llm import availability
 from contex.pipeline import latex
 from contex.services import llm
@@ -50,23 +51,9 @@ _NATIVE_IMAGE_TYPES = {
 _CONVERTIBLE_IMAGE_TYPES = {'.bmp', '.tiff', '.tif'}
 
 
-def _int_env(name, default):
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _bool_env(name, default=True):
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in ('false', '0', 'no', 'off')
-
-
 def enabled():
     """AI conversion runs when a provider is configured and is switched on."""
-    return _bool_env('AI_QA_ENABLED', True) and llm.is_configured()
+    return config.enabled('AI_QA_ENABLED', True) and llm.is_configured()
 
 
 def provider_info():
@@ -152,13 +139,13 @@ def source_part(file_bytes, filename):
     if not file_bytes:
         return None
     extension = os.path.splitext(filename or '')[1].lower()
-    limit = _int_env('AI_QA_MAX_UPLOAD_MB', 20) * 1024 * 1024
+    limit = config.integer('AI_QA_MAX_UPLOAD_MB', 20) * 1024 * 1024
     if len(file_bytes) > limit:
         return None
 
     try:
         if extension == '.pdf':
-            data = _prepare_pdf(file_bytes, _int_env('AI_QA_MAX_PDF_PAGES', 10))
+            data = _prepare_pdf(file_bytes, config.integer('AI_QA_MAX_PDF_PAGES', 10))
             return media_part(data, 'application/pdf')
         if extension in _NATIVE_IMAGE_TYPES or extension in _CONVERTIBLE_IMAGE_TYPES:
             data, media_type = _prepare_image(file_bytes, extension)
@@ -216,7 +203,7 @@ def _validate_and_repair(convo, tex, calls_left, report):
     compile_result = {'attempted': False, 'ok': False, 'engine': None,
                       'errors': '', 'missing_packages': [], 'reason': None}
 
-    if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
+    if not problems and config.enabled('AI_QA_ENABLE_COMPILE', True):
         compile_result = latex.compile_tex(tex, want_pdf=True)
         if compile_result['attempted'] and not compile_result['ok']:
             detail = compile_result['errors'] or compile_result['reason'] or ''
@@ -236,7 +223,7 @@ def _validate_and_repair(convo, tex, calls_left, report):
                     report.append('Fixed a LaTeX validation error.')
                     # Re-check: reporting the pre-repair compile result would
                     # tell the user a working document does not build.
-                    if _bool_env('AI_QA_ENABLE_COMPILE', True):
+                    if config.enabled('AI_QA_ENABLE_COMPILE', True):
                         compile_result = latex.compile_tex(
                             repaired, want_pdf=True)
                     return repaired, compile_result
@@ -267,7 +254,7 @@ class Rotation:
     told us to stay away from until a stated time - see availability.hard_blocked.
 
     `pinned()` builds a throwaway round for one speculative call: a single
-    model, and a quota error that changes nothing anywhere. convert.py sends a
+    model, and a quota error that changes nothing anywhere. run.py sends a
     document's pages out concurrently through those, so that a 429 caused by
     our own burst cannot retire a model the service is perfectly willing to
     serve one request at a time. See _convert_units.
@@ -552,7 +539,7 @@ def convert_page(file_bytes, filename, validate=True, outline=None,
     Returns the same shape as blank_review(), so a caller handles a converted
     page and a skipped one the same way. On failure it returns an empty
     document with a status: there is no converter draft to fall back on here,
-    which is the central trade-off of going AI-first. convert.py is what turns
+    which is the central trade-off of going AI-first. run.py is what turns
     that failure into the local fallback.
     """
     if not enabled():
@@ -586,7 +573,7 @@ def convert_page(file_bytes, filename, validate=True, outline=None,
     compile_result = {'attempted': False, 'ok': False, 'engine': None,
                       'errors': '', 'missing_packages': [], 'reason': None}
     if validate:
-        budget = _int_env('AI_QA_MAX_API_CALLS', 3) - convo.calls
+        budget = config.integer('AI_QA_MAX_API_CALLS', 3) - convo.calls
         tex, compile_result = _validate_and_repair(convo, tex, budget, report)
 
     return {
@@ -619,7 +606,7 @@ def finalise_document(tex):
         compile_result = {'attempted': False, 'ok': False, 'engine': None,
                           'errors': '', 'missing_packages': [],
                           'reason': None}
-        if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
+        if not problems and config.enabled('AI_QA_ENABLE_COMPILE', True):
             compile_result = latex.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
@@ -638,7 +625,7 @@ def finalise_document(tex):
         problems = latex.static_validate(tex)
         compile_result = {'attempted': False, 'ok': False, 'engine': None,
                           'errors': '', 'missing_packages': [], 'reason': None}
-        if not problems and _bool_env('AI_QA_ENABLE_COMPILE', True):
+        if not problems and config.enabled('AI_QA_ENABLE_COMPILE', True):
             compile_result = latex.compile_tex(tex, want_pdf=True)
         return tex, compile_result, findings
 
@@ -652,5 +639,5 @@ def finalise_document(tex):
 
 
 def blank_review(tex, status, message):
-    """Public constructor for a no-review result (used by convert.py)."""
+    """Public constructor for a no-review result (used by run.py)."""
     return _blank_result(tex, status, message)

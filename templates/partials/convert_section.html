@@ -60,13 +60,13 @@
         </div>
     {% endif %}
 
-    {# The page / text-block / equation counts and the conversion-path badge
-       used to sit here. The counts described the machinery rather than the
-       document, and the badge only repeated what the notice above already
-       says in plain words. The stats are still produced and stored - nothing
-       here depends on them.
+    {# `stats` carries page, text-block and equation counts and the
+       conversion path. None of them are rendered, on purpose: they describe
+       the machinery rather than the document, and the path is already said in
+       plain words in the notice above. They are still produced and stored, so
+       nothing breaks by leaving them unread.
 
-       What survives is the per-page notes: a page that could not be read is
+       Only the per-page notes are shown: a page that could not be read is
        missing from the output, and that is not something the user can see by
        looking at the preview. #}
     {% if stats and stats.notes %}
