@@ -1,4 +1,3 @@
-# tesseract.py
 import pytesseract
 from PIL import Image
 import os
@@ -13,9 +12,15 @@ try:
 except ImportError:
     PDF2IMAGE_AVAILABLE = False
 
+# Where to send someone who has not got it. The Windows build is not on the
+# upstream download page, which is why that one platform gets its own link.
+INSTALL_URL = ('https://github.com/UB-Mannheim/tesseract/wiki' if os.name == 'nt'
+               else 'https://tesseract-ocr.github.io/tessdoc/Installation.html')
+
 # Resolve the tesseract executable.
 # Order: TESSERACT_CMD env var -> whatever is already on PATH -> common install locations.
-# On Linux (Render) tesseract is on PATH automatically, so which() covers it.
+# In the container it is installed by the Dockerfile and is on PATH, so which()
+# covers it and the Windows branch below never runs there.
 def _resolve_tesseract_cmd():
     explicit = os.getenv('TESSERACT_CMD')
     if explicit and os.path.exists(explicit):
@@ -40,8 +45,8 @@ _TESSERACT_CMD = _resolve_tesseract_cmd()
 if _TESSERACT_CMD:
     pytesseract.pytesseract.tesseract_cmd = _TESSERACT_CMD
 else:
-    print("WARNING: Tesseract executable not found. Set TESSERACT_CMD in your .env, "
-          "or install it from https://github.com/UB-Mannheim/tesseract/wiki")
+    print("WARNING: Tesseract executable not found. Set TESSERACT_CMD in your "
+          f".env, or install it from {INSTALL_URL}")
 
 def extract_text_from_file(file_path, languages='eng'):
     """
@@ -90,7 +95,8 @@ def extract_text_from_file(file_path, languages='eng'):
 
     except Exception as e:
         if "tesseract is not installed" in str(e).lower():
-             return "Error: Tesseract is not installed or not in PATH. Please install it from https://github.com/UB-Mannheim/tesseract/wiki"
+             return ("Error: Tesseract is not installed or not in PATH. "
+                     f"Please install it from {INSTALL_URL}")
         return f"Unexpected error during OCR: {e}"
     
     return '\n'.join(extracted_text)

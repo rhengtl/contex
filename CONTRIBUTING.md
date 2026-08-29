@@ -42,6 +42,13 @@ The Python suite runs in CI on every push and pull request. The rules suite does
 not — run it yourself if you touch `firestore.rules`, and say in the PR that you
 did.
 
+Checks that need Tesseract, Poppler or a LaTeX engine announce themselves as
+`(skipped: ...)` when the binary is missing, so the suite is still green on a
+machine without them — 23 of the 179 go quiet that way. CI installs all three,
+so a pull request is always measured against the full run. If you are changing
+the conversion pipeline or the LaTeX sandbox, install them locally too; a green
+local run with 23 skips is not the same evidence as a green CI run.
+
 ## What the code should look like
 
 Match the surrounding code. Concretely, for this repository that means:

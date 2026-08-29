@@ -4,6 +4,11 @@
 # it stubs the outbound services and asserts against the real application
 # objects. That is what makes it worth running on every push.
 #
+# It does need the three system binaries the conversion pipeline shells out
+# to. Without them the suite skips 23 checks and fails 5 more, because the
+# local fallback cannot rasterise a PDF and the LaTeX sandbox has no engine to
+# refuse anything at. See the apt step below.
+#
 # The Firestore rules suite (npm run test:rules) is deliberately not here: it
 # needs the Java-backed emulator, and it only has something to say when
 # firestore.rules changes. Run it locally before deploying rules.
@@ -26,6 +31,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install the pipeline's system binaries
+        # Poppler rasterises PDF pages for the local fallback; Tesseract is the
+        # fallback's text half; a LaTeX engine is what the compile, preview and
+        # sandbox checks exercise.
+        #
+        # Deliberately less TeX than the Dockerfile installs. Production also
+        # carries texlive-latex-extra and texlive-science (~1 GB) so that a
+        # preview of a model-written document does not fail on an unusual
+        # \usepackage - that is a coverage decision for arbitrary input. The
+        # test fixtures are fixed and known, and this 86 MB set runs the whole
+        # suite green with nothing skipped.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            poppler-utils \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-fonts-recommended
 
       - uses: actions/setup-python@v6
         with:

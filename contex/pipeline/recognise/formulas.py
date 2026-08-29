@@ -17,14 +17,22 @@ from optimum.onnxruntime import ORTModelForVision2Seq
 
 from contex.pipeline import preprocess
 
-# Load model and processor once
+# Load model and processor once.
+#
+# Failing here is not fatal and is not always a fault. Every caller goes
+# through is_model_loaded() first, and the fallback simply does its prose half
+# without its mathematics half. The verification suite reaches this branch on
+# purpose - it binds TrOCRProcessor and ORTModelForVision2Seq to None so the
+# module can be imported without fetching several hundred MB of weights - so
+# the wording has to read as a degradation rather than a crash.
 try:
-    print("Loading OCR model and processor...")
+    print("Loading formula recognition model...")
     processor = TrOCRProcessor.from_pretrained('breezedeus/pix2text-mfr')
     model = ORTModelForVision2Seq.from_pretrained('breezedeus/pix2text-mfr', use_cache=False)
-    print("Model and processor loaded successfully.")
+    print("Formula recognition ready.")
 except Exception as e:
-    print(f"Error loading model or processor: {e}")
+    print(f"Notice: formula recognition unavailable ({e}). "
+          "The fallback will convert text only.")
     processor = None
     model = None
 
