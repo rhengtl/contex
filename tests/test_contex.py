@@ -718,8 +718,29 @@ def _():
     # Read out of the markup rather than listed here, so that adding a script
     # or a stylesheet from a new host fails this test instead of quietly
     # leaving the disclosure wrong.
-    markup = ''.join(client.get(path).get_data(as_text=True)
-                     for path in ('/', '/login', '/signup', '/forgot-password'))
+    #
+    # Rendered with Firebase configured, because that is what the policy
+    # describes: the deployed application. The Firebase SDK <script> tags are
+    # what make the browser contact www.gstatic.com, and login.html and
+    # signup.html only emit them behind `{% if firebase_config %}`. Reading the
+    # markup from an unconfigured render would drop those hosts from `hosts`,
+    # which makes the forward check silently weaker and the reverse check below
+    # fail outright - as it does on a fresh clone with no .env.
+    browser_firebase = {'FIREBASE_API_KEY': 'test-api-key',
+                        'FIREBASE_AUTH_DOMAIN': 'test.firebaseapp.com',
+                        'FIREBASE_PROJECT_ID': 'test-project'}
+    restore = {name: os.environ.get(name) for name in browser_firebase}
+    os.environ.update(browser_firebase)
+    try:
+        markup = ''.join(client.get(path).get_data(as_text=True)
+                         for path in ('/', '/login', '/signup',
+                                      '/forgot-password'))
+    finally:
+        for name, previous in restore.items():
+            if previous is None:
+                del os.environ[name]
+            else:
+                os.environ[name] = previous
     hosts = {match.split('/')[2] for match in
              re.findall(r'(?:src|href)="(https?://[^"]+)"', markup)}
     check(hosts, 'no third-party hosts found - has the markup changed shape?')
