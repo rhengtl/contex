@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a change to what the application does.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [ARCHITECTURE.md](https://github.com/rhengtl/contex/blob/master/ARCHITECTURE.md) first if
+        your suggestion touches the conversion pipeline. Several arrangements
+        that look obviously better were tried and measured worse, and the
+        numbers are in there.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you unable to do today? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, or doing it outside the app.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: This does not add a user-visible choice of converter. There is one conversion feature by design.
+          required: true
+        - label: I have checked that an existing issue does not already cover this.
+          required: true

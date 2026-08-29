@@ -1,0 +1,90 @@
+name: Bug report
+description: Something behaves differently from how it is documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report a security vulnerability here — use
+        [private reporting](https://github.com/rhengtl/contex/security/advisories/new) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, and what did the application do instead of what you expected?
+      placeholder: |
+        I uploaded a two-page PDF and the preview showed only the first page.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: input-type
+    attributes:
+      label: What were you converting
+      options:
+        - Image (png/jpg/webp/etc.)
+        - PDF
+        - Word document (.docx)
+        - Camera capture
+        - Handwriting on the canvas
+        - Not a conversion — something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: path
+    attributes:
+      label: Which path was used
+      description: The app tells you when it falls back. If you are not sure, say so.
+      options:
+        - AI path (a provider was configured and available)
+        - Local fallback (Tesseract + pix2text)
+        - Not sure
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: >
+        If the problem depends on a particular document, please attach it — or a
+        small one that shows the same thing. Do not attach anything private.
+      placeholder: |
+        1. Open the home page
+        2. Upload the attached file
+        3. Click Convert
+        4. Open the PDF preview
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >
+        Where it happened, and — if running locally — which of the optional
+        binaries you have. `pdflatex --version`, `tesseract --version` and
+        `pdftoppm -v` answer the last part.
+      value: |
+        - Running: local checkout / deployed instance
+        - OS:
+        - Python:
+        - LaTeX engine:
+        - Tesseract:
+        - Poppler:
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors or logs
+      description: >
+        Anything from the server console or the browser console.
+        **Redact API keys and anything else secret.**
+      render: text
+    validations:
+      required: false

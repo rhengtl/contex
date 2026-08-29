@@ -1,0 +1,49 @@
+# The offline verification suite.
+#
+# tests/test_contex.py needs no API key, no Firebase project and no network -
+# it stubs the outbound services and asserts against the real application
+# objects. That is what makes it worth running on every push.
+#
+# The Firestore rules suite (npm run test:rules) is deliberately not here: it
+# needs the Java-backed emulator, and it only has something to say when
+# firestore.rules changes. Run it locally before deploying rules.
+
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install PyTorch (CPU build)
+        # requirements.txt pins torch==2.7.0. Installed from PyPI on Linux that
+        # resolves to the CUDA build and drags in ~2 GB of nvidia-* wheels for
+        # a runner with no GPU. Taking it from the CPU index first means the
+        # pin below is already satisfied.
+        run: pip install torch==2.7.0 --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        # Installing the full file, rather than a CI-only subset, is the point:
+        # a requirements.txt that no longer resolves is a deployment failure
+        # and should be caught here.
+        run: pip install -r requirements.txt
+
+      - name: Run the verification suite
+        run: python tests/test_contex.py

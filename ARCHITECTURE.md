@@ -476,7 +476,7 @@ Then open <http://127.0.0.1:5000/>.
 ### 4. Verify
 
 ```powershell
-.venv\Scripts\python.exe tests/test_contex.py    # 177 offline checks, no API key needed
+.venv\Scripts\python.exe tests/test_contex.py    # 179 offline checks, no API key needed
 npm install; npm run test:rules            # 28 Firestore rules checks (emulator)
 ```
 

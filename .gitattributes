@@ -1,0 +1,33 @@
+# Line endings.
+#
+# The application is developed on Windows and runs on Linux in a container, so
+# what is stored in the repository has to be LF regardless of who committed it.
+# Every text blob in this repository is already LF; this keeps it that way when
+# someone clones on Windows with core.autocrlf set.
+* text=auto eol=lf
+
+# Files where CRLF would actually break something rather than merely annoy:
+# the container build reads these directly.
+Dockerfile      text eol=lf
+*.sh            text eol=lf
+requirements.txt text eol=lf
+
+# Binary assets. Marking them explicitly stops Git attempting line-ending
+# conversion or a textual diff on them.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.ico           binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
+
+# Generated, and reviewed by regenerating rather than by reading the diff.
+# See tools/build_css.py.
+static/css/app.css      linguist-generated=true
+package-lock.json       linguist-generated=true
+
+# GitHub's language statistics should describe the application, not the
+# benchmark corpus or the committed Tailwind output.
+bench/**        linguist-vendored=true
+static/css/app.css      linguist-detectable=false

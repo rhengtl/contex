@@ -1,14 +1,34 @@
-# Environment Variables
+# Environment variables.
+#
+# .env carries the Gemini key, the Flask session secret and the Firebase web
+# keys. The wildcard covers .env.local, .env.production and every other variant
+# someone might create later; the template is the one exception.
 .env
+.env.*
+!.env.example
 
-# Firebase Service Account Keys (IMPORTANT - DO NOT COMMIT!)
+# Credentials and keys.
+#
+# Deny-by-default: every .json is ignored, and the few that are genuinely safe
+# to publish are named below. The Firebase Admin SDK service-account key is a
+# .json and grants full administrative access to the project, so the blanket
+# rule is the point of this section - do not replace it with a named pattern.
 *.json
-!package.json
-!tsconfig.json
-# Firebase project config (safe to commit - contains no secrets)
+# Firebase project configuration - identifies the project, holds no secret.
 !firebase.json
 !firestore.indexes.json
 !database.rules.json
+# Node manifests. The lockfile is committed so `npm ci` reproduces the exact
+# tree that the Firestore rules suite was verified against.
+!package.json
+!package-lock.json
+
+# Certificates and private keys in any other form.
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
 
 # Python
 __pycache__/
@@ -32,13 +52,20 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Virtual environments
 venv/
 env/
 ENV/
 .venv/
 env.bak/
 venv.bak/
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # IDEs
 .vscode/
@@ -55,7 +82,7 @@ Thumbs.db
 instance/
 .webassets-cache
 
-# Uploads
+# Uploads and generated conversion artifacts. Runtime output, never source.
 uploads/*
 !uploads/.gitkeep
 
@@ -63,7 +90,8 @@ uploads/*
 # See tailwind.config.js. The generated stylesheet IS committed.
 node_modules/
 
-# Logs
+# Firebase CLI local state: emulator data, deploy caches and debug logs.
+.firebase/
 *.log
 
 # Firebase Hosting's public root. It deliberately holds almost nothing - every
