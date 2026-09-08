@@ -5,17 +5,19 @@
  * cover: the shell context, the terms gate, sign-in, the upload, the page-by-
  * page conversion and merge, the preview, and both kinds of history.
  *
- * Four responsibilities moved here from the server, and each is deliberate:
+ * Three responsibilities moved here from the server, and each is deliberate:
  *
- *   base64 encoding   so the Worker can stream the body without reading it
- *                     (spec R1/R2). Chunked, because a 19 MB image blows the
- *                     call stack if spread into one apply().
  *   the model chain   a stream cannot be replayed, so the retry loop that
  *                     lived in services/llm/ lives here now. The order and the
  *                     outage semantics are unchanged.
  *   page splitting    run.py _ai_units, so a multi-page PDF is still converted
  *                     a page at a time and a partial conversion still survives.
  *   the merge         latex/documents.py, because the pages it joins are here.
+ *
+ * A fourth used to be here and is gone: base64 encoding. The Worker now pipes
+ * the raw bytes into the Gemini Files API, so there is nothing to encode --
+ * which is what closed the injection hole, and incidentally deleted the
+ * chunked-encode loop a 19 MB image needed.
  *
  * What did NOT move: who this visitor is, and whether they may convert. Those
  * are read from the signed session cookie in the Worker and are never the
@@ -42,6 +44,20 @@ function showError(message) {
   const box = el('error');
   box.textContent = message;
   box.hidden = false;
+}
+
+/**
+ * A transient message, for something that happened rather than something that
+ * is wrong. Never a browser dialog: scripts.js does not use one either, and the
+ * Python suite has a test that says so.
+ */
+let toastTimer = null;
+function toast(message) {
+  const box = el('toast');
+  box.textContent = message;
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.hidden = true; }, 4000);
 }
 function clearError() { el('error').hidden = true; }
 function setStatus(message) { el('status').textContent = message || ''; }
@@ -213,6 +229,7 @@ async function convertUnits(units, rotation) {
 
 async function run() {
   clearError();
+  el('notice').replaceChildren();
   el('notice').hidden = true;
   const file = el('file').files[0];
   if (!file) { showError('No file selected.'); return; }
@@ -247,7 +264,20 @@ async function run() {
 
     checkInput(file.name);
     const buf = new Uint8Array(await file.arrayBuffer());
-    const units = await aiUnits(buf, file.name, file.type);
+    const { units, total, dropped } = await aiUnits(buf, file.name, file.type);
+
+    // Say so BEFORE the conversion, not after. A PDF longer than the cap is
+    // converted in part, and the Python app never mentioned it -- the Terms
+    // disclose the limit, but nobody reads terms to find out why their
+    // document ends at page ten.
+    if (dropped > 0) {
+      notice(`Only the first ${units.length} pages of this ${total}-page PDF ` +
+             'will be converted.',
+             `ConTeX converts at most ${units.length} pages of a PDF. Pages ` +
+             `${units.length + 1} to ${total} are not sent and will not appear ` +
+             'in the result. Split the file and convert the rest separately if ' +
+             'you need all of it.');
+    }
     if (units.length > 1) setStatus(`Converting ${units.length} pages…`);
 
     const rotation = new Rotation();
@@ -298,14 +328,20 @@ async function run() {
   }
 }
 
+/**
+ * Add one notice. Appends rather than replaces: a long PDF that then loses the
+ * model part way through has two things to say, and the second must not erase
+ * the first. run() clears the box before each conversion.
+ */
 function notice(headline, detail, reason) {
   const box = el('notice');
-  box.replaceChildren();
+  const item = document.createElement('div');
   const h = document.createElement('strong');
   h.textContent = headline;
   const p = document.createElement('p');
   p.textContent = detail + (reason ? ` (${reason})` : '');
-  box.append(h, p);
+  item.append(h, p);
+  box.append(item);
   box.hidden = false;
 }
 
@@ -395,7 +431,7 @@ async function renderHistory() {
     clearBtn.hidden = true;   // there is no self-service delete; see the README
   } else {
     rows = state.guest.map((item, index) => ({
-      id: `guest-${index}`, fileName: item.fileName, timestamp: item.at,
+      id: `guest-${index}`, index, fileName: item.fileName, timestamp: item.at,
       result: item.result, truncated: false, saved: false,
     }));
     clearBtn.hidden = !rows.length;
@@ -435,6 +471,41 @@ async function renderHistory() {
     actions.append(button('Copy LaTeX', async () => {
       const { tex } = await getTex();
       await navigator.clipboard.writeText(tex || '');
+    }));
+
+    // Deleting your own conversion. The Flask app had no such control and its
+    // Privacy Policy said so; this is the erasure right with a button on it.
+    // The Worker re-checks that the row is yours whatever is sent from here.
+    actions.append(button('Delete', async (event) => {
+      const b = event.currentTarget;
+      if (b.dataset.confirming !== 'yes') {
+        // A second click rather than a browser dialog -- the suite pins that
+        // this app never uses one, and an accidental delete is unrecoverable.
+        b.dataset.confirming = 'yes';
+        b.textContent = 'Delete for good?';
+        b.classList.add('danger');
+        setTimeout(() => {
+          if (!b.isConnected || b.dataset.confirming !== 'yes') return;
+          delete b.dataset.confirming;
+          b.textContent = 'Delete';
+          b.classList.remove('danger');
+        }, 6000);
+        return;
+      }
+      b.disabled = true;
+      if (row.saved) {
+        if (!await history.deleteSaved(row.id)) {
+          b.disabled = false;
+          delete b.dataset.confirming;
+          b.textContent = 'Delete';
+          b.classList.remove('danger');
+          toast('That conversion could not be deleted. Please try again.');
+          return;
+        }
+      } else {
+        state.guest = history.removeGuest(row.index);
+      }
+      await renderHistory();
     }));
 
     const panel = document.createElement('div');
@@ -528,6 +599,7 @@ function clearWorkspace() {
   el('result').hidden = true;
   el('preview').replaceChildren();
   el('preview-error').hidden = true;
+  el('notice').replaceChildren();
   el('notice').hidden = true;
   el('download-pdf').hidden = true;
   el('file').value = '';

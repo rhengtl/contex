@@ -25,8 +25,14 @@ export const IMAGE_TYPES = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif',
                             '.gif', '.webp'];
 
 //: In the order a person expects to see them offered.
+//
+// .docx IS DELIBERATELY ABSENT. inputs.py accepts it, but only because
+// run.py's _convert_docx() extracts the text first and sends only that -- which
+// is what the Privacy Policy promises about Word files. That extraction is not
+// ported yet, so accepting .docx here would send the whole file to Google and
+// make the policy untrue. It comes back with the extraction, not before.
 export const ACCEPTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff',
-                                    '.tif', '.webp', '.gif', '.pdf', '.docx'];
+                                    '.tif', '.webp', '.gif', '.pdf'];
 
 export const ACCEPTED = new Set(ACCEPTED_EXTENSIONS);
 
@@ -95,10 +101,23 @@ export async function splitPdf(bytes, limit = MAX_PDF_PAGES) {
 /** How many pages this upload has, capped at the configured limit. */
 export async function pageCount(bytes, filename) {
   if (extensionOf(filename) !== '.pdf') return 1;
+  return Math.max(1, Math.min(await totalPages(bytes, filename), MAX_PDF_PAGES));
+}
+
+/**
+ * How many pages the file REALLY has, uncapped.
+ *
+ * page_count() in inputs.py only ever answers the capped number, so nothing in
+ * the Python app can tell a ten-page PDF from a fifty-page one -- and a user
+ * who uploads fifty gets ten converted without being told. The number has to
+ * be known before it can be said out loud.
+ */
+export async function totalPages(bytes, filename) {
+  if (extensionOf(filename) !== '.pdf') return 1;
   try {
     const { PDFDocument } = await getPdfLib();
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-    return Math.max(1, Math.min(doc.getPageCount(), MAX_PDF_PAGES));
+    return Math.max(1, doc.getPageCount());
   } catch {
     return 1;
   }
@@ -112,15 +131,29 @@ export async function pageCount(bytes, filename) {
  */
 export async function aiUnits(bytes, filename, mime) {
   if (extensionOf(filename) === '.pdf') {
+    const total = await totalPages(bytes, filename);
     const parts = await splitPdf(bytes, MAX_PDF_PAGES);
     if (parts && parts.length) {
-      return parts.map((data, i) => ({
-        number: i + 1,
-        bytes: data,
-        name: `page-${i + 1}.pdf`,
-        mime: 'application/pdf',
-      }));
+      return {
+        total,
+        // What the caller has to tell the user about. A PDF longer than the
+        // cap is converted in part, and silence about that is how somebody
+        // finds out by noticing their document ends early.
+        dropped: Math.max(0, total - parts.length),
+        units: parts.map((data, i) => ({
+          number: i + 1,
+          bytes: data,
+          name: `page-${i + 1}.pdf`,
+          mime: 'application/pdf',
+        })),
+      };
     }
+    // A PDF that would not split: it goes in one call, and if it was longer
+    // than the cap the model sees all of it. Nothing was dropped by us.
+    return { total, dropped: 0,
+             units: [{ number: 1, bytes, name: filename,
+                       mime: mime || 'application/pdf' }] };
   }
-  return [{ number: 1, bytes, name: filename, mime: mime || 'image/png' }];
+  return { total: 1, dropped: 0,
+           units: [{ number: 1, bytes, name: filename, mime: mime || 'image/png' }] };
 }

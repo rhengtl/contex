@@ -133,6 +133,31 @@ export async function fetchSavedTex(id) {
 }
 
 /**
+ * Delete one saved conversion.
+ *
+ * Only meaningful for a signed-in user: a guest's list is in this browser and
+ * is removed from it directly. The Worker re-checks ownership regardless of
+ * what is sent from here.
+ */
+export async function deleteSaved(id) {
+  try {
+    const res = await fetch(`/api/history/${encodeURIComponent(id)}`,
+                            { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop one entry from the guest list, by position. */
+export function removeGuest(index) {
+  const items = read();
+  items.splice(index, 1);
+  write(items);
+  return items;
+}
+
+/**
  * Save one conversion.
  *
  * Signed in -> the Worker writes it to Firestore, truncating server-side.

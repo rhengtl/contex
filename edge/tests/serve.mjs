@@ -16,13 +16,15 @@ import { extname, join, resolve } from 'node:path';
 
 const PUBLIC = resolve(process.env.CONTEX_PUBLIC || 'public');
 const TESTS = resolve(process.env.CONTEX_TESTS || 'tests');
+const BENCH = resolve(process.env.CONTEX_BENCH || '../bench');
 const PORT = Number(process.env.PORT || 8810);
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.wasm': 'application/wasm', '.json': 'application/json',
-  '.tex': 'text/plain', '.png': 'image/png',
+  '.tex': 'text/plain', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.onnx': 'application/octet-stream',
 };
 
 export const requestLog = [];
@@ -48,6 +50,10 @@ createServer(async (req, res) => {
   if (path.startsWith('/pdftex/')) {
     const name = path.split('/').pop();
     file = join(PUBLIC, 'texmf', name);
+  } else if (path.startsWith('/bench/')) {
+    // The benchmark images, so the local recogniser can be scored against the
+    // same corpus the AI path was.
+    file = join(BENCH, 'img_math', path.slice('/bench/'.length));
   } else if (path.startsWith('/tests/')) {
     file = join(TESTS, path.slice('/tests/'.length));
   } else {

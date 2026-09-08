@@ -20,6 +20,8 @@
   </nav>
 </header>
 
+<p id="toast" role="status" aria-live="polite" hidden></p>
+
 <main id="main" tabindex="-1">
   <h1>ConTeX</h1>
   <p class="tagline">Turn any page &mdash; handwritten, printed, photographed or
@@ -39,7 +41,7 @@
 
     <section id="convert">
       <input type="file" id="file"
-             accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.gif,.pdf,.docx">
+             accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.gif,.pdf">
       <button id="go" type="button">Convert</button>
       <p id="status" role="status" aria-live="polite"></p>
       <p id="error" role="alert" hidden></p>

@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ConTeX formula recogniser harness</title>
+<pre id="out">loading…</pre>
+<script type="module">
+// The shipped module, not a copy of it.
+import { load, recognise, ready } from '/recognise/formulas.js';
+
+window.loadModel = async () => {
+  const t0 = performance.now();
+  await load({ onProgress: (m) => { document.getElementById('out').textContent = m || 'ready'; } });
+  return Math.round(performance.now() - t0);
+};
+
+window.readFormula = async (url) => {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const r = await recognise(img);
+  return { ...r, heap: performance.memory?.usedJSHeapSize ?? 0 };
+};
+
+window.modelReady = () => ready();
+window.ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>

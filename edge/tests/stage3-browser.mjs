@@ -144,7 +144,7 @@ async function openApp(page, { shell = {}, onHistoryPost, texts = [pageTex] } = 
     status: 200, contentType: 'application/json',
     body: JSON.stringify({
       isAuthenticated: false, hasAcceptedTerms: true, maxUploadMb: 32,
-      termsVersion: '1.0-2026-08-24', displayName: null, email: null,
+      termsVersion: '2.0-2026-09-08', displayName: null, email: null,
       firebaseConfig: null, ...shell,
     }),
   }));
@@ -249,7 +249,7 @@ async function attach(page, name, bytes, mime) {
           await page.textContent('#legal-title'));
     const shown = await page.textContent('#legal-body [data-terms-version]');
     check(`${which}: names the version being enforced`,
-          shown === '1.0-2026-08-24', shown);
+          shown === '2.0-2026-09-08', shown);
     await page.click('#legal-close');
   }
 
@@ -349,7 +349,7 @@ async function attach(page, name, bytes, mime) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ ok: true, isAuthenticated: true, displayName: 'Ada L',
                            email: 'ada@example.com', hasAcceptedTerms: true,
-                           maxUploadMb: 32, termsVersion: '1.0-2026-08-24',
+                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
                            firebaseConfig: null }),
   }));
 
@@ -421,6 +421,98 @@ async function attach(page, name, bytes, mime) {
   const status = await page.textContent('#status');
   check('the merged document compiles to three pages',
         status === 'Done. 3 pages.', status);
+  await context.close();
+}
+
+// -- a PDF longer than the cap says so, before it starts --------------------
+{
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log('PAGEERROR ' + e.message.slice(0, 200)));
+  await page.goto(`${BASE}/tests/history-harness.html`, { waitUntil: 'load' });
+  const longPdf = await page.evaluate(async () => {
+    const { PDFDocument } = await import('/vendor/pdf-lib/pdf-lib.esm.min.js');
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < 14; i++) doc.addPage([300, 400]).drawText(`Page ${i + 1}`);
+    return Array.from(await doc.save());
+  });
+
+  const app = await openApp(page, { texts: [pageTex] });
+  await attach(page, 'long.pdf', longPdf, 'application/pdf');
+  await page.click('#go');
+  await page.waitForSelector('#notice:not([hidden])', { timeout: 30000 });
+  const warning = await page.textContent('#notice');
+  check('a 14-page PDF warns that only 10 pages will be converted',
+        /Only the first 10 pages of this 14-page PDF/.test(warning), warning.slice(0, 140));
+  check('and says which pages are missing',
+        /Pages 11 to 14 are not sent/.test(warning), warning.slice(0, 220));
+
+  await page.waitForFunction(
+    () => /Done|No preview/.test(document.getElementById('status').textContent),
+    { timeout: 180000 });
+  check('exactly ten pages were sent to the model', app.sentCount() === 10,
+        `${app.sentCount()} model calls`);
+  check('and the warning is still on screen afterwards',
+        !(await page.locator('#notice').isHidden()));
+  await context.close();
+}
+
+// -- .docx is not offered while its extraction is unported ------------------
+{
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await openApp(page);
+  const accept = await page.getAttribute('#file', 'accept');
+  check('the picker does not offer .docx', !accept.includes('.docx'), accept);
+
+  await attach(page, 'report.docx', [0x50, 0x4b, 0x03, 0x04],
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  await page.click('#go');
+  await page.waitForSelector('#error:not([hidden])', { timeout: 30000 });
+  check('and one chosen anyway is refused with inputs.py\'s wording',
+        (await page.textContent('#error')) === "Unsupported file type: '.docx'",
+        await page.textContent('#error'));
+  await context.close();
+}
+
+// -- deleting a saved conversion --------------------------------------------
+{
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log('PAGEERROR ' + e.message.slice(0, 200)));
+  let rows = [{ id: 'doc-1', fileName: 'saved.pdf', ocrType: 'convert',
+                timestamp: '2026-03-04T09:07:00Z', truncated: false }];
+  const deleted = [];
+  await openApp(page, { shell: { isAuthenticated: true, displayName: 'Ada L' } });
+  await page.route('**/api/history', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ ok: true, isAuthenticated: true, limit: 20, history: rows }),
+  }));
+  await page.route('**/api/history/doc-1', (route) => {
+    if (route.request().method() === 'DELETE') {
+      deleted.push('doc-1');
+      rows = [];
+      return route.fulfill({ status: 200, contentType: 'application/json',
+                             body: JSON.stringify({ ok: true, deleted: true }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, tex: pageTex, fileName: 'saved.pdf',
+                             truncated: false }) });
+  });
+
+  await page.click('#nav-history');
+  await page.waitForSelector('#history-list li');
+  const del = page.locator('#history-list button:has-text("Delete")').first();
+  await del.click();
+  check('one click asks rather than deletes',
+        deleted.length === 0 &&
+        /Delete for good\?/.test(await del.textContent()),
+        await del.textContent());
+  await del.click();
+  await page.waitForSelector('#history-empty:not([hidden])', { timeout: 15000 });
+  check('the second click deletes it', deleted.length === 1, JSON.stringify(deleted));
+  check('and the list is empty afterwards',
+        await page.locator('#history-list').isHidden());
   await context.close();
 }
 

@@ -41,3 +41,5 @@ dialog#legal::backdrop{background:rgba(23,28,26,.45)}
 .doc-table th,.doc-table td{border:1px solid #e2e8e6;padding:.4rem .55rem;text-align:left;vertical-align:top}
 .note-caution{background:#FFF7E6;border:1px solid #F0D9A8;border-radius:4px;padding:.7rem .9rem;margin:.8rem 0}
 .note-title{font-weight:600;margin:0 0 .3rem}
+#toast{position:fixed;left:50%;transform:translateX(-50%);top:1rem;z-index:10;margin:0;padding:.55rem .9rem;background:#171C1A;color:#fff;border-radius:4px;font-size:.9rem;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+#history-list button.danger{border-color:#8A2C2C;color:#8A2C2C;font-weight:600}

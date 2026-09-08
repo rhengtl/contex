@@ -192,10 +192,17 @@ globalThis.fetch = async (input, init = {}) => {
       })));
     }
 
-    // A single document read.
     const path = url.split('/documents/')[1];
     const [collection, id] = path.split('/');
     const target = collection === 'users' ? store.users : store.history;
+
+    if (init.method === 'DELETE') {
+      // Firestore answers 200 whether or not the document was there.
+      target.delete(id);
+      return j({});
+    }
+
+    // A single document read.
     const doc = target.get(id);
     if (!doc) return j({ error: 'not found' }, 404);
     return j({ name: `projects/${PROJECT}/databases/(default)/documents/${path}`,
@@ -756,6 +763,50 @@ store.accounts.set('grace@example.com', { uid: 'uid-grace', password: 'pw', disp
         downSave.status === 200 && downSave.body.stored === false,
         JSON.stringify(downSave.body));
   store.firestoreDown = false;
+
+  // -- self-service deletion, with the uid enforced in code ----------------
+  //
+  // The Flask app had none, and its Privacy Policy said so. This is an
+  // addition rather than a port, so the ownership rule is the thing to pin:
+  // the service account bypasses firestore.rules, which makes the check in
+  // history.remove() the only one standing between one user and another's row.
+  const doomed = await call('/api/history', { method: 'POST', cookie: ada.cookie,
+    body: { fileName: 'to-delete.png', tex: 'DELETE ME' } });
+  check('a row to delete exists', store.history.has(doomed.body.id));
+
+  const byStranger = await call(`/api/history/${doomed.body.id}`,
+                                { method: 'DELETE', cookie: grace.cookie });
+  check('another user cannot delete it',
+        byStranger.status === 404 && store.history.has(doomed.body.id),
+        `${byStranger.status}, present=${store.history.has(doomed.body.id)}`);
+  check('and is told exactly what a missing row would say',
+        byStranger.body.error === 'Not found.', JSON.stringify(byStranger.body));
+
+  const byGuest = await call(`/api/history/${doomed.body.id}`, { method: 'DELETE' });
+  check('a guest cannot delete it either',
+        byGuest.status === 404 && store.history.has(doomed.body.id),
+        String(byGuest.status));
+
+  const byOwner = await call(`/api/history/${doomed.body.id}`,
+                             { method: 'DELETE', cookie: ada.cookie });
+  check('the owner can delete it',
+        byOwner.status === 200 && byOwner.body.deleted === true,
+        `${byOwner.status} ${JSON.stringify(byOwner.body)}`);
+  check('and the row is really gone', !store.history.has(doomed.body.id));
+
+  const again = await call(`/api/history/${doomed.body.id}`,
+                           { method: 'DELETE', cookie: ada.cookie });
+  check('deleting it twice is a 404, not an error',
+        again.status === 404, String(again.status));
+
+  const ghost = await call('/api/history/doesNotExistAtAll',
+                           { method: 'DELETE', cookie: ada.cookie });
+  check('deleting a row that never existed answers the same way',
+        ghost.status === 404 && ghost.body.error === byStranger.body.error);
+
+  check('the delete did not disturb the user\'s other rows',
+        [...store.history.values()].filter((r) => r.uid === 'uid-ada').length === 2,
+        String([...store.history.values()].filter((r) => r.uid === 'uid-ada').length));
 
   // A path segment is a path segment.
   for (const bad of ['..%2Fusers%2Fuid-ada', 'a/b', '']) {

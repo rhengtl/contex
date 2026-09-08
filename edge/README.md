@@ -4,6 +4,10 @@ This directory is the Cloudflare rebuild of ConTeX. **The Python application in
 the repository root remains the source of truth** and stays working until every
 stage here has been validated against it.
 
+**Flask is being retired once this migration completes**, so the legal
+documents under `edge/public/legal/` describe this system and `contex/` becomes
+reference-only rather than a second deployment.
+
 Nothing in `contex/` has been deleted. Three things in it have been **fixed**,
 each because porting it or auditing the port found a real defect, and each is a
 correction to the source of truth rather than a divergence from it:
@@ -593,3 +597,170 @@ re-derived from this implementation. What changed, and why:
    own row, so it is a route and a button.
 8. **A 15-page PDF silently becomes 10** in both implementations. The Terms
    disclose the limit; the UI never says it applied.
+
+---
+
+## Security regression suite
+
+`npm run test:security` — **165 checks**, and it is the first suite in
+`npm test` because everything after it assumes the endpoint is sound.
+
+`/api/convert/page` spends the operator's Gemini key. It is safe to expose only
+if a client can supply **bytes to transcribe and nothing else** — no text, no
+parts, no model, no generation config, no system instruction. An earlier build
+failed that. The suite exists so that regression and its relatives cannot come
+back unnoticed.
+
+The real Worker handler is called; only Google's three endpoints are replaced,
+by a recorder that captures every outbound request and **refuses any host that
+is not expected**. Each hostile input is then judged against one invariant:
+
+> `canonical(request)` — the generateContent body is *exactly* the request
+> ConTeX means to send, byte for byte, whatever the client did.
+
+That is stronger than "the injection did not work". It says the outbound
+request is not a function of client input at all, beyond which chain entry to
+use and which file to point at.
+
+| what is attacked | how |
+|---|---|
+| Body → structure | 10 hostile bodies: the original exploit, a complete request of its own, closing every structure we opened, a second `system_instruction`, escaped quotes and backslashes, null bytes and control characters, unicode line separators, 5,000 quotes, a comment-like wrapper, newline-delimited |
+| Media type | 10 values: JSON syntax in the type, a path, a 9 KB type, a script type, `*/*`, uppercase, a parameter, and the legitimate ones |
+| Model and config | a chain index past the end, negative, non-numeric, `1e9`, fractional; injected `model`, `temperature`, `maxOutputTokens`, `system`, `key` query parameters |
+| Nothing spent on a refusal | GET/PUT/DELETE, empty body, over-limit body, no terms, forged cookie — each must reach **no host at all** |
+| Leaks | the API key and the file URI in bodies *and* headers; upstream error detail on 400/429/500; a failed upload's body |
+| The uploaded page | deleted after success, and after every kind of failure |
+| Reach | every outbound request went to `generativelanguage.googleapis.com`, and nothing else was attempted |
+| The LaTeX guard | all six pdfTeX file primitives still caught, all four look-alikes still ignored |
+
+**It found a bug on its first run.** `Math.max(0, Number('abc'))` is `NaN`, which
+`Math.max` passes through, which `attempt >= usable.length` answers `false` to
+because every comparison with `NaN` is false. `?attempt=abc` and `?attempt=0.5`
+therefore issued a request to `models/undefined:generateContent` — **after
+paying for an upload**. Fixed in the route, and again in `convertPage()` so a
+model that is not a string cannot reach a URL.
+
+### What it deliberately does not claim
+
+A page that itself contains the words *"ignore your instructions"* is **content,
+not structure**. No amount of request hygiene stops a model reading what it was
+asked to read. That residual is real, and it is bounded by the system
+instruction, temperature 0, the 32,000-token cap, the terms gate and the
+30-per-5-minutes brake — not by a green tick. The suite says so in its own
+header rather than implying coverage it does not have.
+
+---
+
+## Product decisions, applied
+
+| Decision | Where it landed |
+|---|---|
+| Flask retired after migration | The legal documents describe *this* system; `contex/` becomes reference-only |
+| Bump `TERMS_VERSION` | `1.0-2026-08-24` → **`2.0-2026-09-08`**. The data flow materially changed, so everyone re-accepts. Now read from `env.TERMS_VERSION`, as `session.py` reads it from config |
+| Disable `.docx` | Off in the picker, in `ACCEPTED_EXTENSIONS`, and in the Worker's media-type allowlist. It returns with `_convert_docx()`, not before — accepting it now would send the whole file to Google and make the policy untrue |
+| Free Gemini tier, policy verified | See below |
+| Production domain configurable | `_headers` ships the `https://*.firebaseapp.com` pattern; `npm run build:headers <authDomain>` narrows it to one host, and back again |
+| Philippines governing law | Unchanged |
+| Self-service history deletion | `DELETE /api/history/:id`, uid enforced in `history.remove()` |
+| Warn past 10 PDF pages | Said **before** the conversion starts |
+
+### The free-tier terms, verified
+
+Checked against the [Gemini API Additional Terms of
+Service](https://ai.google.dev/gemini-api/terms), **last updated 28 April
+2026**, and quoted in the Privacy Policy rather than paraphrased:
+
+- Google *"uses the content you submit to the Services and any generated
+  responses to provide, improve, and develop Google products and services and
+  machine learning technologies"* — so the document **and the LaTeX produced
+  from it**.
+- *"Human reviewers may read, annotate, and process your API input and
+  output"*, disconnected from account, API key and project first.
+- No retention period is stated for that use, and **deleting the uploaded file
+  does not withdraw it** — the deletion guarantee in those terms covers model
+  tuning, not general unpaid use. The policy says so explicitly rather than
+  letting our delete imply more than it does.
+- Google's own instruction: *"Do not submit sensitive, confidential, or
+  personal information to the Unpaid Services."*
+
+### Deletion, and why the check is where it is
+
+The Worker reaches Firestore with a service account, which **bypasses
+`firestore.rules` exactly as the Admin SDK did**. So the rules are defence in
+depth and not the check itself: `history.remove()` reads the row through the
+same `item()` every other read uses, and deletes only if the uid matches. A row
+belonging to someone else is answered exactly as a row that does not exist, so
+the endpoint cannot be used to find out which ids are real. Verified: another
+user 404s and the row survives; a guest 404s; the owner succeeds; a second
+delete 404s; a row that never existed answers identically.
+
+---
+
+## Stage 4 — in progress
+
+### The local formula recogniser — done and verified
+
+`public/recognise/formulas.js`, the browser port of
+`pipeline/recognise/formulas.py`, running the INT8 pix2text-mfr that S2 locked.
+
+**Scored on the same 75-image benchmark, with `bench/score_math.py`'s own
+normalisation and metric:**
+
+| | char acc | token acc | exact |
+|---|---|---|---|
+| S2, Python INT8 | 90.26% | 92.49% | 60/75 (80%) |
+| **This, in the browser** | **91.88%** | **93.12%** | **62/75 (83%)** |
+
+Slightly *better* than the reference — same weights, so the difference is
+resampling. 1.1–2.9 s per formula (median 1.6 s), 62 MiB peak heap, 42.5 MiB
+fetched once and cached hard. Nothing is fetched on the AI path: `npm run
+test:formulas` asserts the model is not loaded until it is asked for, and that
+only the runtime and the model are fetched when it is.
+
+**Two things had to be got right, and both were found by measuring.**
+
+*The resampler.* `preprocessor_config.json` asks for `resample: 3` — PIL's
+bicubic, with the support scaling that makes a large reduction antialiased. A
+canvas `drawImage` downscale is a different filter, and browser-dependent.
+Feeding the model a differently-filtered image is feeding it a different image.
+`public/recognise/resample.js` is Pillow's `ImagingResample` and
+`precompute_coeffs` ported directly — a separable convolution, horizontal then
+vertical. It is also why the numbers will be the same on every browser.
+
+*The metric.* The first run of the suite reported **69%** and looked like a
+failed port. It was the scorer: the model writes `E = m c ^ { 2 }` where the
+ground truth says `E = mc^2`, and `bench/score_math.py` has always collapsed
+that (`{x}` → `x`, `\operatorname{…}` → `\…`, whitespace out) before comparing.
+Scoring without it measures the model's spacing habits. The suite now uses the
+benchmark's own `normalize()`, `tokens()` and `lev()`, so its numbers are
+directly comparable to the ones S2 decided on.
+
+The mismatches that remain are the ones S2 reported too — `\operatorname*{lim}`
+for `\lim`, `{\bf1}` for `1`.
+
+### Building the assets
+
+The runtime and the model are kept out of git, like `public/texmf/`:
+
+```bash
+npm run build:models -- <path-to-pix2text-mfr-int8>
+```
+
+42.5 MiB in six files: ONNX Runtime Web (single-threaded SIMD — the site is not
+cross-origin isolated, so there is no SharedArrayBuffer and the threaded build
+would be dead weight), plus the encoder, decoder and tokenizer. The script
+refuses any asset over Pages' 25 MiB limit rather than letting a deploy find it.
+
+### Still to come in Stage 4
+
+- **Text recognition** (tesseract.js), and its language data self-hosted — the
+  CSP is `connect-src 'self'`, so the default CDN fetch is not an option.
+- **`pipeline/latex/assemble.py`**: `nominate()`, `assemble()` and `to_tex()` —
+  the layout analysis that decides which regions are formulas and interleaves
+  them with the text into a reading order.
+- **The fallback authorisation gate**: `allow_fallback` and
+  `FallbackNotAuthorized`, so a downgrade is never silent, plus the outage
+  notice and its re-check control.
+- **The rest of the input UI**: camera capture, canvas drawing, drag-and-drop.
+- **The AI QA / repair loop** (`ai.finalise_document`).
+- **Error pages** (`web/errors.py`) in the app's own shell.

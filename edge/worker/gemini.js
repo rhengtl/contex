@@ -193,7 +193,8 @@ const FILES_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta';
 const ACCEPTED_MIME = new Set([
   'image/png', 'image/jpeg', 'image/bmp', 'image/tiff', 'image/gif',
   'image/webp', 'image/heic', 'image/heif', 'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // No .docx: the picker does not offer it and the extraction that made it
+  // safe to accept is not ported. See public/pages.js.
 ]);
 
 export function safeMime(value) {
@@ -266,6 +267,16 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
     };
   }
   const model = usable[attempt];
+  // Belt and braces. The route sanitises `attempt`, but a model that is not a
+  // string is a request to `models/undefined:generateContent` -- and it would
+  // be issued AFTER paying for an upload. Nothing gets spent on an index that
+  // does not name one of ours.
+  if (typeof model !== 'string' || !model) {
+    return {
+      ok: false, status: 503, retryable: false,
+      error: 'Every available model refused this conversion.',
+    };
+  }
   const mediaType = safeMime(mime);
 
   let uploaded;

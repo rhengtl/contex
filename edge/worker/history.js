@@ -14,7 +14,8 @@
  * forgets it is a route that leaks.
  */
 
-import { configured, getDocument, mergeDocument, runQuery, autoId } from './firebase.js';
+import { configured, getDocument, mergeDocument, deleteDocument, runQuery,
+         autoId } from './firebase.js';
 
 // Longest result text stored in a history record (web/session.py).
 export const HISTORY_RESULT_LIMIT = 60000;
@@ -74,6 +75,23 @@ export async function item(env, uid, docId) {
   if (!data) return null;
   if (data.uid !== uid) return null;
   return data;
+}
+
+/**
+ * Delete one saved conversion, but only if it belongs to this user.
+ *
+ * Ownership is established by READING THE ROW FIRST, through the same item()
+ * that every other read goes through -- not by trusting the id, and not by
+ * leaving it to firestore.rules, which the service account bypasses. A row
+ * belonging to somebody else is answered exactly as a row that does not exist,
+ * so this cannot be used to find out which ids are real.
+ *
+ * Returns true when the row was this user's and is now gone.
+ */
+export async function remove(env, uid, docId) {
+  const owned = await item(env, uid, docId);
+  if (!owned) return false;
+  return deleteDocument(env, `ocr_history/${docId}`);
 }
 
 /**

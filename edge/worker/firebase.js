@@ -234,6 +234,31 @@ export async function mergeDocument(env, path, fields, serverTimestamps = []) {
 }
 
 /**
+ * Delete one document.
+ *
+ * The caller has already proved ownership -- this reaches Firestore with the
+ * service account, which bypasses the security rules exactly as the Admin SDK
+ * did, so the uid check in history.js is the only thing standing between one
+ * user and another's row. It is not a formality.
+ */
+export async function deleteDocument(env, path) {
+  try {
+    const res = await call(env, `/${path}`, { method: 'DELETE' });
+    if (!res) return false;
+    // Firestore answers 200 for a delete whether or not the document was
+    // there, so this is "it is gone", not "it was there".
+    if (!res.ok) {
+      console.error(`Firestore delete failed (${res.status}) for ${path}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`Error deleting ${path}:`, err);
+    return false;
+  }
+}
+
+/**
  * Firestore's own auto-id: 20 characters from the same alphabet the client
  * SDKs use. `collection.add()` generates one client-side too -- an auto-id has
  * never been a server secret, and the ownership check is the uid field, not

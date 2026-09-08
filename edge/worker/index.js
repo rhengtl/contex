@@ -246,6 +246,31 @@ async function historyRoutes(url, request, env, session) {
                   truncated: tex.includes(history.TRUNCATION_MARK) });
   }
 
+  // DELETE /api/history/:id -- remove one saved conversion.
+  //
+  // The Flask app had no self-service delete at all, and its Privacy Policy
+  // said so. This adds one, which is a deliberate addition rather than a port:
+  // a right the policy already promised (erasure) now has a control instead of
+  // an email address. Ownership is enforced in history.remove() by reading the
+  // row first -- the service account bypasses firestore.rules, so the rules are
+  // defence in depth here and not the check itself.
+  if (docId && parts.length === 1 && request.method === 'DELETE') {
+    if (!uid) {
+      // A guest's history is in their own browser; there is nothing here for
+      // them to delete, and saying so would confirm the id exists.
+      return json({ ok: false, error: 'Not found.' }, 404);
+    }
+    const brake = await rateLimited(env, request, session, 'history');
+    if (brake.limited) {
+      return json({ error: 'Too many requests. Please wait a few minutes and ' +
+                           'try again.', retryAfter: brake.retryAfter }, 429);
+    }
+    const removed = await history.remove(env, uid, docId);
+    // A row that is not yours is answered exactly as one that does not exist.
+    if (!removed) return json({ ok: false, error: 'Not found.' }, 404);
+    return json({ ok: true, id: docId, deleted: true });
+  }
+
   // GET /api/history/:id/download -- the .tex as a file.
   if (docId && parts[1] === 'download' && request.method === 'GET') {
     const found = await history.item(env, uid, docId);
@@ -378,7 +403,15 @@ async function handle(request, env, ctx) {
       }, 413);
     }
 
-    const attempt = Math.max(0, Number(url.searchParams.get('attempt') || 0));
+    // A chain index, and it has to survive being anything at all. The first
+    // form of this was Math.max(0, Number(...)), and Number('abc') is NaN --
+    // which Math.max passes straight through, which `attempt >= usable.length`
+    // then answers false to, because every comparison with NaN is false. The
+    // request went out to `models/undefined:generateContent`, after paying for
+    // an upload. Coerce to a whole number, or start at the top of the chain.
+    const rawAttempt = Number(url.searchParams.get('attempt'));
+    const attempt = Number.isFinite(rawAttempt)
+      ? Math.max(0, Math.floor(rawAttempt)) : 0;
     const mime = request.headers.get('x-image-mime') || 'image/png';
     const thinking = url.searchParams.get('thinking') !== 'off';
     const result = await convertPage(request, env, ctx, { attempt, mime, thinking });

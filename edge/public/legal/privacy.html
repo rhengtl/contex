@@ -72,7 +72,8 @@
         <td>Documents you convert</td>
         <td>Images, PDFs, camera photographs and canvas drawings, plus the file
             name. May contain personal data if your document does. The file is
-            passed through to the AI provider; ConTeX itself keeps no copy.</td>
+            passed through to the AI provider; ConTeX itself keeps no copy.
+            Word documents are not accepted.</td>
         <td>Each conversion</td>
       </tr>
       <tr>
@@ -157,15 +158,41 @@
     <li>Canvas drawings and camera photographs are sent as images.</li>
   </ul>
   <div class="note-caution">
-    <p class="note-title">Free-tier training</p>
+    <p class="note-title">
+      ConTeX runs on Google's free tier, and that has consequences
+    </p>
     <p>
-      If ConTeX is running on Google's free API tier, Google may use documents
-      sent to it to <strong>train its models</strong>. In that situation Google
-      acts on its own behalf and not merely on ours, and
-      <strong>we cannot undo, retract or limit that use</strong> once a
-      document has been sent &mdash; deleting the uploaded file does not
-      withdraw it. Please do not upload confidential, personal or sensitive
-      material.
+      This is the single most important thing in this policy. Under the
+      <a href="https://ai.google.dev/gemini-api/terms">Gemini API Additional
+      Terms of Service</a> (last updated 28 April 2026), for the
+      <strong>unpaid</strong> services:
+    </p>
+    <ul>
+      <li>
+        Google <em>&ldquo;uses the content you submit to the Services and any
+        generated responses to provide, improve, and develop Google products
+        and services and machine learning technologies&rdquo;</em> &mdash; so
+        both your document <strong>and the LaTeX produced from it</strong> may
+        be used to train Google's models.
+      </li>
+      <li>
+        <em>&ldquo;Human reviewers may read, annotate, and process your API
+        input and output.&rdquo;</em> Google says it disconnects that data from
+        the account, API key and project first.
+      </li>
+      <li>
+        Google states no retention period for content used this way, and
+        <strong>deleting the uploaded file does not withdraw it</strong>. Our
+        delete removes the file from the Files API; it does not reach anything
+        already taken for product improvement.
+      </li>
+    </ul>
+    <p>
+      Google's own instruction is: <strong>&ldquo;Do not submit sensitive,
+      confidential, or personal information to the Unpaid Services.&rdquo;</strong>
+      Please treat that as this Service's instruction too. If ConTeX is ever
+      moved to a paid tier, Google does not use prompts or responses to improve
+      its products, and this notice will be changed to say so.
     </p>
   </div>
   <p>
@@ -312,9 +339,17 @@
     portable form.
   </p>
   <p>
-    <strong>Please note:</strong> ConTeX has no self-service delete or export
-    for saved history. Write to the address in Section 1 and the operator will
-    do it by hand. There is no charge, and no account is needed to ask.
+    <strong>Deleting a saved conversion is self-service.</strong> Each entry in
+    your history has a Delete control, and using it removes the record from the
+    database. The server checks the record is yours before it deletes anything,
+    and a record belonging to somebody else is answered exactly as one that does
+    not exist.
+  </p>
+  <p>
+    For anything wider than that &mdash; a copy of your data, deleting your
+    whole account, or correcting a profile field &mdash; write to the address in
+    Section 1 and the operator will do it by hand. There is no charge, and no
+    account is needed to ask.
   </p>
 
   <h4>10. Children</h4>
