@@ -1,0 +1,256 @@
+/**
+ * The conversion call -- the Worker half of contex/pipeline/recognise/ai.py
+ * and contex/services/llm/.
+ *
+ * Two properties are load-bearing and must survive any edit here.
+ *
+ * 1. THE WORKER OWNS THE PROMPT. The client sends only base64 image bytes as
+ *    the raw request body. The system prompt, the model and the generation
+ *    config originate here, so this endpoint cannot be driven as a general
+ *    purpose LLM on our key. (Spec R1.)
+ *
+ * 2. THE WORKER NEVER READS THE BODY. The outbound request is assembled by
+ *    concatenating three streams. Buffering a page would exceed both the 10 ms
+ *    CPU budget and, under concurrency, the 128 MB isolate. (Spec R2, measured
+ *    in S1: bytes-read stays 0 while payloads grow 78x.)
+ *
+ * A consequence of (2) worth stating plainly: a stream cannot be replayed, so
+ * the model chain from gemini.py cannot be a loop inside one invocation. The
+ * browser drives it instead, re-posting with the next chain index when this
+ * returns `retryable`. The chain order and its outage semantics are preserved;
+ * only the location of the loop moved.
+ */
+
+import { DIRECT_SYSTEM, DIRECT_PROMPT, MODEL_CHAIN } from './prompt.js';
+
+const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+// From .env.example: AI_QA_REQUEST_TIMEOUT.
+const REQUEST_TIMEOUT_MS = 180_000;
+
+// availability.py parks a model this long when the provider gave no retry
+// time of its own. Short on purpose: guessing too long keeps users on the
+// worse path after the service has recovered.
+const ASSUME_OUTAGE_SECONDS = 900;
+
+/**
+ * Must match gemini.py _config() exactly -- the generated LaTeX depends on it.
+ *
+ *   temperature       AI_QA_TEMPERATURE, default 0
+ *   maxOutputTokens   AI_QA_MAX_TOKENS, default 32000
+ *   thinkingConfig    THINKING[ROLE_DOCUMENT] = 'low'
+ *
+ * The thinking level is not cosmetic: dropping it changed the model's package
+ * choices in side-by-side testing against the Python pipeline. `automatic
+ * function calling` is an SDK-side setting with no wire representation, so it
+ * has no counterpart here.
+ */
+function generationConfig({ thinking = true } = {}) {
+  const cfg = { temperature: 0, maxOutputTokens: 32000 };
+  if (thinking) cfg.thinkingConfig = { thinkingLevel: 'LOW' };
+  return JSON.stringify(cfg);
+}
+
+/**
+ * Pull a .tex document out of a model reply.
+ * Ported verbatim from ai.py fenced_latex() -- including the preference for
+ * the LAST fenced block that looks like a document, which is what makes the
+ * repair round trip work.
+ */
+export function fencedLatex(text) {
+  if (!text) return null;
+  const fenced = [...text.matchAll(/```(?:latex|tex)?\s*\n([\s\S]*?)```/g)]
+    .map((m) => m[1]);
+  if (fenced.length) {
+    for (let i = fenced.length - 1; i >= 0; i--) {
+      if (fenced[i].includes('\\documentclass') ||
+          fenced[i].includes('\\begin{document}')) {
+        return fenced[i].trim();
+      }
+    }
+    return fenced[fenced.length - 1].trim();
+  }
+  const m = text.match(/(\\documentclass[\s\S]*?\\end\{document\})/);
+  return m ? m[1].trim() : null;
+}
+
+// ---------------------------------------------------------------------------
+// Outage memory (availability.py, file -> KV)
+// ---------------------------------------------------------------------------
+//
+// Recorded PER MODEL, not per service. A free-tier daily quota is spent on one
+// model at a time, so one model being exhausted says nothing about the others.
+// Recording it against the whole service was what used to take the entire AI
+// path down and drop every user to Tesseract while other models still had
+// quota. The service counts as unavailable only when every candidate is spent.
+
+async function outages(env) {
+  if (!env.OUTAGES) return {};
+  return (await env.OUTAGES.get('models', 'json')) || {};
+}
+
+async function recordOutage(env, model, status, retryAfterSeconds) {
+  if (!env.OUTAGES) return;
+  const now = Math.floor(Date.now() / 1000);
+  const all = await outages(env);
+  all[model] = {
+    until: now + (retryAfterSeconds || ASSUME_OUTAGE_SECONDS),
+    status,
+  };
+  await env.OUTAGES.put('models', JSON.stringify(all));
+}
+
+async function clearOutage(env, model) {
+  if (!env.OUTAGES) return;
+  const all = await outages(env);
+  if (all[model]) {
+    delete all[model];
+    await env.OUTAGES.put('models', JSON.stringify(all));
+  }
+}
+
+/** Chain entries that are not currently parked, in preference order. */
+export async function availableModels(env) {
+  const all = await outages(env);
+  const now = Math.floor(Date.now() / 1000);
+  return MODEL_CHAIN.filter((m) => !all[m] || all[m].until <= now);
+}
+
+/**
+ * /api/ai-status -- parity with convert.py ai_status_route().
+ * The page asks this immediately before posting a conversion, and again when
+ * the user asks to re-check, so a warning cannot outlive the outage.
+ *
+ * Deliberately NOT done: probing the API with a throwaway request. On a free
+ * tier the probe consumes exactly the quota that runs out.
+ */
+export async function aiStatus(env) {
+  if (!env.GEMINI_API_KEY) {
+    return {
+      available: false,
+      reason: 'not_configured',
+      message: 'The AI conversion service is not configured on this server.',
+    };
+  }
+  const usable = await availableModels(env);
+  if (!usable.length) {
+    const all = await outages(env);
+    const soonest = Math.min(...MODEL_CHAIN.map((m) => all[m]?.until || 0));
+    return {
+      available: false,
+      reason: 'exhausted',
+      message: 'The AI conversion service is temporarily unavailable.',
+      retryAt: soonest || null,
+    };
+  }
+  return { available: true, model: usable[0], remaining: usable.length };
+}
+
+// ---------------------------------------------------------------------------
+// The streaming call
+// ---------------------------------------------------------------------------
+
+/**
+ * @param request  body is raw base64 of one page image, nothing else
+ * @param attempt  index into the surviving chain, supplied by the browser
+ */
+export async function convertPage(request, env, ctx, { attempt = 0, mime = 'image/png', thinking = true } = {}) {
+  const usable = await availableModels(env);
+  if (!usable.length) {
+    return {
+      ok: false, status: 503, retryable: false,
+      error: 'The AI conversion service is temporarily unavailable.',
+    };
+  }
+  if (attempt >= usable.length) {
+    return {
+      ok: false, status: 503, retryable: false,
+      error: 'Every available model refused this conversion.',
+    };
+  }
+  const model = usable[attempt];
+
+  const enc = new TextEncoder();
+  const prefix = enc.encode(
+    '{"system_instruction":{"parts":[{"text":' + JSON.stringify(DIRECT_SYSTEM) + '}]},' +
+    '"contents":[{"role":"user","parts":[' +
+      '{"text":' + JSON.stringify(DIRECT_PROMPT) + '},' +
+      '{"inline_data":{"mime_type":' + JSON.stringify(mime) + ',"data":"'
+  );
+  const suffix = enc.encode('"}}]}],"generationConfig":' + generationConfig({ thinking }) + '}');
+
+  // Three streams, concatenated. Nothing here touches a payload byte.
+  const { readable, writable } = new IdentityTransformStream();
+  ctx.waitUntil((async () => {
+    try {
+      const w = writable.getWriter();
+      await w.write(prefix);
+      w.releaseLock();
+      await request.body.pipeTo(writable, { preventClose: true });
+      const w2 = writable.getWriter();
+      await w2.write(suffix);
+      await w2.close();
+    } catch {
+      try { await writable.abort(); } catch { /* already torn down */ }
+    }
+  })());
+
+  let upstream;
+  try {
+    upstream = await fetch(`${ENDPOINT}/${model}:generateContent`, {
+      method: 'POST',
+      body: readable,
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return {
+      ok: false, status: 502, retryable: true, model,
+      error: 'The conversion failed. Please try a different file.',
+      detail: String(err && err.message || err).slice(0, 200),
+    };
+  }
+
+  if (upstream.ok) {
+    await clearOutage(env, model);
+    return { ok: true, model, upstream };
+  }
+
+  // Error bodies are small, so parsing here is affordable and stays well
+  // inside the CPU budget.
+  const text = await upstream.text();
+  let retryAfter = 0;
+  try {
+    const j = JSON.parse(text);
+    const info = (j.error?.details || [])
+      .find((d) => String(d['@type'] || '').includes('RetryInfo'));
+    const secs = info?.retryDelay && parseInt(String(info.retryDelay), 10);
+    if (secs > 0) retryAfter = secs;
+  } catch { /* keep the default */ }
+
+  if (upstream.status === 429 || upstream.status >= 500) {
+    await recordOutage(env, model, upstream.status, retryAfter);
+    return {
+      ok: false, status: upstream.status, retryable: true, model,
+      error: 'The AI conversion service is temporarily unavailable.',
+      retryAfter,
+    };
+  }
+  // A model that does not accept a thinking level at all: drop it once and
+  // retry the SAME model, which is what gemini.py ask() does.
+  if (upstream.status === 400 && /thinking/i.test(text) && thinking) {
+    return {
+      ok: false, status: 400, retryable: true, retryWithoutThinking: true,
+      model, error: 'Retrying without the thinking configuration.',
+    };
+  }
+  // 4xx that is not a quota problem: the next model would refuse it too.
+  return {
+    ok: false, status: upstream.status, retryable: false, model,
+    error: 'The conversion failed. Please try a different file.',
+    detail: text.slice(0, 300),
+  };
+}
