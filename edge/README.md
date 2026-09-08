@@ -91,3 +91,108 @@ npx wrangler dev --port 8788
 Before a first deploy: create the KV namespace and put the real id in
 `wrangler.toml`, then `wrangler secret put GEMINI_API_KEY` and
 `wrangler secret put SESSION_HMAC_KEY`.
+
+---
+
+## Stage 2 — complete and verified
+
+Generated `.tex` → browser validation → SwiftLaTeX/pdftex.wasm → curated TeX
+Live 2020 tree → PDF → preview and download. No server touches any of it, and
+the whole TeX tree is a static asset, so none of it is metered.
+
+### What maps to what
+
+| Python (source of truth) | Edge | Notes |
+|---|---|---|
+| `latex/validate.py` `static_validate()` | `public/latex/validate.js` | Direct port; identical issue strings |
+| `latex/validate.py` `unsafe_constructs()` | same | One deliberate tightening, below |
+| `latex/engine.py` `compile_tex()` | `public/latex/compile.js` | Same result shape, same refusal wording |
+| `latex/engine.py` `extract_errors()` | same | Same `_ERROR_LINE` alternation |
+| `latex/engine.py` `missing_packages()` | same | Same regex |
+| `latex/engine.py` `LATEX_COMPILE_TIMEOUT` | same | 120 s, plus a 60 s engine-load bound |
+| `web/output.py` preview + `data/results.py` page images | `public/preview.js` | **Deleted, not ported** — see below |
+| `texlive-latex-extra` in the Dockerfile | `public/texmf/` | 2,383 files, 74 MiB, static |
+
+### Verified — 199/199 checks
+
+`npm run test:stage2` compiles **15 crafted failure fixtures + the 26 real
+ConTeX benchmark outputs** and compares every result against the original
+implementation's own output (`tools/python-reference.py`).
+
+- Validation parity: `staticValidate` issue lists and `unsafeConstructs`
+  results match validate.py exactly on all 41 documents.
+- Compile parity: `ok` and `attempted` match engine.py on all 41.
+- Every successful compile emits a real `%PDF-1.5`.
+- `missing-package` reports exactly `['tikz']`; unsafe documents are refused
+  with `attempted:false` before the engine runs.
+- `undefined-command` surfaces `Undefined control sequence` in `errors`.
+- Format file fetched once across 29 compiles.
+- Sampled PDFs render through pdf.js with visible content.
+
+### Benchmarks
+
+| | Desktop | Pixel 7 viewport, 4x CPU throttle |
+|---|---|---|
+| Cold compile (engine + 9.9 MB format) | 291 ms | 311 ms |
+| Warm compile | 34–39 ms | 38–41 ms |
+| Large document (26 pages concatenated) | 79 ms | 85 ms |
+| Network, cold | 12.31 MiB / 43 requests | same |
+
+Corpus compile times: min 24 ms, median 33 ms, max 60 ms. PDFs average 0.891x
+the size of the Python pipeline's for the same source — different font
+embedding (cm-super vs the local MiKTeX), both valid.
+
+Throttling is emulated, not a real handset; treat it as directional.
+
+### Package and font coverage
+
+The tree is the S3-measured set: TeX Live 2020 vintage, matching the format's
+frozen `LaTeX2e <2020-02-02>` kernel. 32 unique files (10.56 MiB, of which
+9.88 MiB is the format) are all a typical page actually fetches. T1 is intact —
+`ecrm1000`, `sfrm1000.pfb`, `cm-super-t1.enc` resolve, and `amsmath`,
+`graphicx`, `keyval`, `booktabs`, `siunitx`, `mathtools`, `geometry`,
+`enumitem`, `xcolor`, `tabularx`, `multirow`, `ulem`, `amssymb`/`amsfonts` all
+compile. `hyperref`, `tikz` and `cancel` are deliberately absent and degrade
+through the missing-package path.
+
+### Bugs found and fixed
+
+1. **The engine hung forever on every compile.** `PdfTeXEngine.js` loads its
+   worker from the relative path `swiftlatexpdftex.js`, which resolves against
+   the *page* URL — a 404 from any route below the root, after which
+   `loadEngine()` never settles. Patched to an absolute path.
+2. **Nothing bounded the compile.** engine.py has `LATEX_COMPILE_TIMEOUT`; the
+   port had no equivalent, which is why (1) presented as a hang rather than an
+   error. Both the compile and the engine load are now bounded and report.
+3. **Static hosting cannot speak the engine's package protocol.** Upstream
+   expects a `fileid` header and HTTP 301 for a miss. Patched to derive the
+   cache path from the request key and accept 404 — which keeps the whole tree
+   on the free static path instead of the request meter.
+4. **Extensionless font lookups.** kpathsea asks for `ecrm1000`, meaning
+   `ecrm1000.tfm`. `tools/build-texmf.mjs` writes an extensionless alias for
+   every `.tfm` (+753 files, 1.58 MiB).
+
+### Deliberate differences
+
+**`\openin` detection is stricter.** validate.py writes `\openin\b`, and `\b`
+does not match between `n` and a digit — so `\openin1=secret.txt`, the ordinary
+form, slips through. The Python app was covered anyway by engine.py's paranoid
+kpathsea mode; pdftex.wasm has no equivalent, so the text check has to be the
+half that works. **Worth back-porting to validate.py.**
+
+**Page images are gone.** output.py rasterised the PDF with Poppler and served
+page images, because a browser hands an `application/pdf` *response* to its own
+viewer before the page can show it. That constraint does not apply to bytes we
+already hold: pdf.js renders them to canvas directly, so the `texpng_` store in
+data/results.py disappears rather than being ported.
+
+**pdf.js is self-hosted** under `/vendor/pdfjs/`, because the CSP is
+`script-src 'self'` and stays that way.
+
+### Remaining risks for Stage 3
+
+- Real low-end hardware is untested; only emulated throttling.
+- The multi-page merge (`latex/documents.py`) is not ported yet — Stage 2
+  compiles one document, and multi-page PDFs need it.
+- The `.tex`/PDF are held in memory only; `sessionStorage` persistence and the
+  guest-history contract arrive with Stage 3.

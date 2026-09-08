@@ -26,3 +26,14 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# The engine, its 9.88 MB format file and the TeX Live tree are content-addressed
+# by build: they never change under a given deploy. Without this the format is
+# refetched on every compile, which on a phone is the difference between a
+# preview and a stall. Static assets are free and unmetered, so caching them
+# hard costs nothing and saves the user the bytes.
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/texmf/*
+  Cache-Control: public, max-age=31536000, immutable

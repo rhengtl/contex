@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ConTeX Stage 2 harness</title>
+<pre id="out">loading…</pre>
+<script type="module">
+// Imports the real shipped modules -- nothing is reimplemented for the test.
+import { staticValidate, unsafeConstructs } from '/latex/validate.js';
+import { compile, extractErrors, missingPackages, sourceSha } from '/latex/compile.js';
+
+window.validate = (tex) => ({
+  issues: staticValidate(tex),
+  unsafe: unsafeConstructs(tex),
+});
+
+window.compileOne = async (tex, wantBytes) => {
+  const t0 = performance.now();
+  const r = await compile(tex);
+  return {
+    attempted: r.attempted,
+    ok: r.ok,
+    engine: r.engine,
+    errors: r.errors,
+    missingPackages: r.missingPackages,
+    reason: r.reason,
+    pdfBytes: r.pdf ? r.pdf.length : 0,
+    sourceSha: r.sourceSha,
+    ms: Math.round(performance.now() - t0),
+    // Keep the bytes so the driver can verify the PDF renders.
+    pdf: r.pdf ? Array.from(r.pdf.slice(0, 8)) : null,
+    pdfFull: (wantBytes && r.pdf) ? Array.from(r.pdf) : null,
+  };
+};
+
+window.sha = sourceSha;
+window.ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>

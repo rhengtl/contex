@@ -12,8 +12,12 @@
  *                     the outage semantics are unchanged.
  */
 
+import { staticValidate } from '/latex/validate.js';
+import { compile } from '/latex/compile.js';
+import { renderPdf, downloadPdf } from '/preview.js';
+
 const el = (id) => document.getElementById(id);
-const state = { tex: null, name: null };
+const state = { tex: null, name: null, pdf: null };
 
 // inputs.py ACCEPTED -- the single source of truth for file types. The picker
 // in index.html derives from the same list, so the control cannot offer
@@ -128,13 +132,58 @@ async function run() {
     state.name = file.name;
     el('tex').textContent = tex;
     el('result').hidden = false;
-    setStatus('Done.');
+
+    // Structural check before the engine, exactly as the pipeline does. Issues
+    // are reported but never block the .tex: a document that does not validate
+    // is still the user's transcription.
+    const issues = staticValidate(tex);
+    setStatus('Building the preview…');
+    await showPreview(tex, issues);
   } catch (err) {
     setStatus('');
     showError(err.message);
   } finally {
     el('go').disabled = false;
   }
+}
+
+/**
+ * Compile and render, or explain why not.
+ *
+ * Mirrors the contract of output.py's preview route: a failed preview never
+ * costs the .tex, and the reason is named -- the missing package, the unsafe
+ * construct, or the engine error -- rather than reported as a generic failure.
+ */
+async function showPreview(tex, issues) {
+  const box = el('preview-error');
+  box.hidden = true;
+  el('download-pdf').hidden = true;
+  el('preview').replaceChildren();
+
+  const result = await compile(tex);
+
+  if (result.ok) {
+    state.pdf = result.pdf;
+    el('download-pdf').hidden = false;
+    const { pages } = await renderPdf(result.pdf, el('preview'));
+    setStatus(`Done. ${pages} page${pages === 1 ? '' : 's'}.`);
+    return;
+  }
+
+  const parts = [];
+  if (result.reason) parts.push(result.reason);
+  if (result.missingPackages.length) {
+    parts.push('Missing LaTeX packages: ' + result.missingPackages.join(', ') +
+               '. The .tex file is unchanged and can still be downloaded and ' +
+               'compiled wherever those packages are available.');
+  } else if (result.attempted && !result.reason) {
+    parts.push('The preview could not be built from this document. ' +
+               'The .tex file is unchanged and can still be downloaded.');
+  }
+  if (issues.length) parts.push('Validation found: ' + issues.join(' '));
+  box.textContent = parts.join(' ');
+  box.hidden = false;
+  setStatus('Converted. No preview — see the note above.');
 }
 
 function download() {
@@ -152,6 +201,9 @@ el('terms').hidden = false;
 el('go').addEventListener('click', run);
 el('download').addEventListener('click', download);
 el('copy').addEventListener('click', () => navigator.clipboard.writeText(state.tex || ''));
+el('download-pdf').addEventListener('click', () => {
+  if (state.pdf) downloadPdf(state.pdf, state.name);
+});
 
 // Ask before converting, so a warning cannot outlive the outage that caused it.
 fetch('/api/ai-status').then((r) => r.json()).then((s) => {

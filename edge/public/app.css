@@ -6,3 +6,8 @@ section{margin:1.25rem 0}
 pre{background:#f6f7f7;padding:1rem;overflow-x:auto;white-space:pre-wrap;border-radius:4px}
 button{padding:.45rem .9rem;margin-right:.4rem}
 .actions{margin-bottom:.75rem}
+.preview-page{display:block;margin:0 0 1rem;border:1px solid #d6dede;border-radius:4px;background:#fff}
+.preview-note{color:#5F6E70;font-size:.9rem}
+.notice{color:#8A2C2C;background:#FAE7E4;padding:.6rem .8rem;border-radius:4px}
+details{margin-top:1rem}
+summary{cursor:pointer;color:#0E7C86}

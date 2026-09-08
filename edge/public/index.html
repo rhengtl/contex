@@ -28,9 +28,12 @@
   <section id="result" hidden>
     <div class="actions">
       <button id="download" type="button">Download .tex</button>
+      <button id="download-pdf" type="button" hidden>Download PDF</button>
       <button id="copy" type="button">Copy</button>
     </div>
-    <pre id="tex"></pre>
+    <p id="preview-error" class="notice" hidden></p>
+    <div id="preview" aria-label="PDF preview"></div>
+    <details id="source"><summary>LaTeX source</summary><pre id="tex"></pre></details>
   </section>
 </main>
 <script type="module" src="/app.js"></script>

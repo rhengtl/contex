@@ -1,0 +1,19 @@
+{
+  "name": "contex-edge",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Pages + Workers rebuild of ConTeX. The Python app in the repository root remains the source of truth until every stage is validated against it.",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "build:engine": "node tools/patch-engine.mjs $SWIFTLATEX_SRC public/vendor",
+    "build:texmf": "node tools/build-texmf.mjs public/texmf",
+    "reference": "python tools/python-reference.py ../.contex-python-ref.json tests/fixtures",
+    "test:stage2": "node tests/stage2.mjs",
+    "test:perf": "node tests/perf.mjs",
+    "test:one": "node tests/one.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.56.0",
+    "wrangler": "^4.129.0"
+  }
+}

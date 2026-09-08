@@ -1,0 +1,5 @@
+# The engine asks for /pdftex/<format>/<name>; the tree is flat under /texmf/.
+# One dynamic rewrite (limit is 100) turns the former into the latter, so the
+# whole TeX Live tree stays a static asset and never invokes the Worker.
+/pdftex/:format/:name  /texmf/:name  200
+/pdftex/pk/*           /404-not-a-file  404
