@@ -1,0 +1,28 @@
+# Security headers for platform-served static assets.
+#
+# WHY THIS FILE EXISTS. The Flask app set these in an after_request hook, on
+# every response, because "a policy applied to some responses is a policy with
+# a hole in it" (contex/web/security.py). Here static assets are served by the
+# platform without invoking the Worker -- that is what keeps them free and
+# unmetered -- so the Worker cannot add headers to them. This file does.
+#
+# The Worker applies the same set to its own API responses, so the two paths
+# together reproduce the original's coverage.
+#
+# NO NONCE, and that is an improvement rather than a loss. The Flask templates
+# carried inline <script> blocks, so the policy needed a per-request nonce to
+# avoid 'unsafe-inline'. This frontend has no inline script at all -- app.js is
+# an external module -- so 'self' alone is strictly stronger: there is nothing
+# for a nonce to authorise, and nothing an injected nonce could forge.
+#
+# Deliberately absent: COOP/COEP. Cross-origin isolation would buy
+# SharedArrayBuffer for multi-threaded ONNX and would break the Firebase Auth
+# popup and the gstatic SDK load. See spec R3.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com; worker-src 'self' blob:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob: https://www.gstatic.com https://apis.google.com; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

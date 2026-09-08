@@ -1,0 +1,36 @@
+name = "contex-edge"
+main = "worker/index.js"
+compatibility_date = "2026-01-15"
+
+# Static assets are served by the platform, not by the Worker. This is what
+# keeps the TeX Live tree and the model weights off the 100,000 requests/day
+# meter -- requests that do not invoke the Worker are free and unlimited.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = false
+
+# Global per-caller rate limiting, replacing the per-process deque in
+# contex/web/security.py. SQLite backend: the only kind available on the
+# Workers Free plan.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
+
+# Per-model outage records (availability.py, file -> KV). Rare writes: the
+# 1,000/day free write cap is not a constraint here.
+[[kv_namespaces]]
+binding = "OUTAGES"
+id = "0123456789abcdef0123456789abcdef"
+
+[vars]
+FIREBASE_AUTH_DOMAIN = ""
+
+# Secrets, set with `wrangler secret put` and never committed:
+#   GEMINI_API_KEY       the conversion key
+#   SESSION_HMAC_KEY     signs the session cookie
+#   FIREBASE_SERVICE_ACCOUNT  (auth stage; 2,376 B, within the 5 KB cap)
