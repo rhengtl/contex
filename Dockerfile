@@ -1,10 +1,14 @@
-# ConTeX - container image for Cloud Run (or any other container host).
+# ConTeX - the container image. This is the deployment unit.
 #
 # WHY THIS FILE EXISTS AT ALL. Firebase Hosting serves static files; it cannot
 # run Python. This app is a Flask server that shells out to a TeX engine,
-# Tesseract and Poppler, and loads an ONNX model - so Hosting reaches it
-# through a rewrite to a Cloud Run service (see firebase.json), and this is
-# what that service runs.
+# Tesseract and Poppler, and loads an ONNX model, so it has to run somewhere
+# that can hold all three.
+#
+# Built for linux/arm64 by .github/workflows/deploy.yml and run by
+# docker-compose.yml on an Oracle Ampere VM - see DEPLOYMENT.md. The x86 path
+# is kept working throughout so the same file still builds for Cloud Run or any
+# other container host.
 #
 # The three native binaries below are not optional extras. Without a TeX
 # engine there is no PDF preview; without Poppler no PDF can be opened at all;
@@ -44,12 +48,25 @@ WORKDIR /app
 # ---------------------------------------------------------------------------
 # Python packages
 # ---------------------------------------------------------------------------
-# torch first, from the CPU index. The default wheel bundles CUDA and is about
-# 2.5 GB; this one is around 200 MB, and there is no GPU on Cloud Run to use
-# the difference. Installed ahead of requirements.txt so the pinned version
-# there resolves against what is already present.
+# The torch step is architecture-dependent, which is why it is a conditional
+# rather than one flat command.
+#
+# On x86-64, PyPI's torch bundles CUDA and weighs about 2.5 GB. There is no GPU
+# on any host this image targets, so it is fetched from the CPU index instead -
+# around 200 MB - ahead of requirements.txt, so the pin there resolves against
+# what is already installed.
+#
+# On arm64 there is no CUDA wheel to avoid: PyPI's aarch64 torch is CPU-only
+# already, and the CPU index does not carry aarch64 at all. Asking for it there
+# fails. So the plain resolve is both correct and smaller.
+#
+# TARGETARCH is set by BuildKit. Keeping both paths means the same Dockerfile
+# builds for the Ampere VM and for a container host on x86 without editing.
+ARG TARGETARCH
 COPY requirements.txt ./
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.0 \
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.0; \
+    fi \
     && pip install -r requirements.txt
 
 # ---------------------------------------------------------------------------
@@ -76,9 +93,9 @@ snapshot_download('breezedeus/pix2text-mfr')" \
 COPY . .
 
 # Generated results live here: a .tex, its compiled PDF and the page images,
-# all deleted after TEX_STORE_TTL_SECONDS. On Cloud Run /tmp is a tmpfs, so
-# this is memory rather than disk - which is why the store has a TTL and a
-# per-session cap in the first place.
+# all deleted after TEX_STORE_TTL_SECONDS. Inside the container this is the
+# writable layer, and on a serverless host it is a tmpfs charged against
+# memory - which is why the store has a TTL and a per-session cap either way.
 ENV UPLOAD_FOLDER=/tmp/contex
 
 # Nothing here needs to be root, and the image has a TeX distribution in it.
@@ -87,7 +104,21 @@ RUN useradd --create-home --uid 10001 contex \
     && chown -R contex:contex /app /tmp/contex
 USER contex
 
-# Cloud Run hands the port in $PORT and expects the container to listen on it.
+# Which commit this image was built from, reported at /healthz.
+#
+# Deployment is pull-based: the server fetches new images on a timer, so a
+# successful build says nothing about what is actually serving. This is what
+# lets the release workflow ask the live site which commit it is running and
+# fail if the answer never becomes the right one.
+#
+# Declared last on purpose. It changes on every single build, and an ARG placed
+# higher would invalidate every layer beneath it - including the TeX install and
+# the model download.
+ARG GIT_SHA=dev
+ENV CONTEX_REVISION=$GIT_SHA
+
+# The port the container listens on. Cloud Run overrides $PORT at run time;
+# Caddy reaches it at this one.
 ENV PORT=8080
 EXPOSE 8080
 

@@ -1,6 +1,6 @@
 # ConTeX
 
-[![tests](https://github.com/rhengtl/contex/actions/workflows/tests.yml/badge.svg)](https://github.com/rhengtl/contex/actions/workflows/tests.yml)
+[![deploy](https://github.com/rhengtl/contex/actions/workflows/deploy.yml/badge.svg)](https://github.com/rhengtl/contex/actions/workflows/deploy.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Turn any page — handwritten, printed, photographed or typed — into LaTeX.
@@ -106,7 +106,7 @@ fallback.
 `static/scripts.js`. No frontend framework, no build step at runtime; Tailwind
 compiles `static/css/app.css` ahead of time and the result is committed.
 
-**Firebase** — Authentication, Firestore, and Hosting in front of Cloud Run.
+**Firebase** — Authentication and Firestore, both on the free Spark plan.
 
 ## Project structure
 
@@ -120,7 +120,7 @@ contex/                  the application package
 └── data/                persistence: users, history, results
 templates/               Jinja templates
 static/                  committed CSS, JS and images
-public/                  Firebase Hosting root — robots.txt only, by design
+public/                  Firebase Hosting root — robots.txt only, unused today
 tests/                   the Python suite and the Firestore rules suite
 tools/                   build_css.py, make_assets.py
 bench/                   conversion-quality benchmarks (development only)
@@ -205,27 +205,41 @@ Run service.
 
 ## Deployment
 
-**Firebase Hosting cannot run this application on its own.** Hosting serves
-static files; ConTeX is a Flask server that shells out to a TeX engine,
-Tesseract and Poppler and loads an ONNX model. The supported arrangement — and
-what `firebase.json` already configures — is Hosting rewriting every request to
-a **Cloud Run** service built from the `Dockerfile`:
+**No static host can run this.** ConTeX is a Flask server that shells out to a
+TeX engine, Tesseract and Poppler and holds an ONNX model in memory, so it runs
+as a container on a small always-on VM with Caddy in front of it for TLS:
 
 ```
-browser ─▶ Firebase Hosting (CDN, TLS, your domain)
-                │  rewrite "**"
-                ▼
-           Cloud Run service "contex"
-                ├─▶ Firebase Auth (Identity Toolkit REST)
-                ├─▶ Firestore (Admin SDK)
-                └─▶ Gemini API (server-side key)
+browser ─▶ Caddy  :443, Let's Encrypt, renews itself
+              │  reverse_proxy
+              ▼
+         contex container  ── the Dockerfile builds this
+              ├─▶ Firebase Auth (Identity Toolkit REST)
+              ├─▶ Firestore (Admin SDK)
+              └─▶ Gemini API (server-side key)
 ```
 
-[DEPLOYMENT.md](DEPLOYMENT.md) has the exact commands, the Secret Manager setup,
-and — importantly — what **cannot** be completed until the production URL
-exists. Authorised domains for Google sign-in, the OAuth redirect
-configuration and the CSP check against the real sign-in flow all depend on the
-deployed domain and are not done in advance.
+Firebase is still here for **Auth and Firestore**, both on the free Spark plan.
+Firebase Hosting is not used — it cannot execute Python, and the `hosting` block
+in `firebase.json` is inert configuration kept for the Cloud Run path, which the
+same `Dockerfile` still builds for.
+
+Releases are automatic and pull-based. A push to `master` that touches anything
+shipping runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
+the offline suite and the Firestore rules suite both have to pass, then the
+`linux/arm64` image is built on a native ARM runner and published to GHCR. The
+server checks for a new image every two minutes and restarts if the digest
+moved; a final job polls `/healthz` until the live site reports the commit that
+was just built, so a green pipeline means the site really changed rather than
+that a build succeeded.
+
+Nothing in GitHub holds an SSH key to the server and no inbound port is open to
+CI — the machine pulls, CI never pushes.
+
+[DEPLOYMENT.md](DEPLOYMENT.md) has the full standing-up procedure, the running
+costs (zero), and — importantly — what **cannot** be completed until the site has
+a public hostname.
+
 
 ## Environment variables
 
@@ -238,8 +252,8 @@ Copy `.env.example` and fill it in. No value below belongs in version control.
 | `FIREBASE_API_KEY` | For accounts | Firebase Console → Project Settings → Web app. Public by design, but still not committed. |
 | `FIREBASE_AUTH_DOMAIN` | For accounts | Usually `<project-id>.firebaseapp.com`. |
 | `FIREBASE_PROJECT_ID` | For accounts | Your Firebase project ID. |
-| `FIREBASE_SERVICE_ACCOUNT_PATH` | Local only | Path to the Admin SDK JSON. Leave **unset** on Cloud Run. |
-| `PORT` | No | Defaults to 5000 locally; Cloud Run supplies 8080. |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | For accounts | Path to the Admin SDK JSON. **Required on the server**, which has no ambient Google identity to fall back on. Leave unset only on Google Cloud. |
+| `PORT` | No | Defaults to 5000 locally; the container listens on 8080. |
 | `UPLOAD_FOLDER` | No | Defaults to `uploads`. |
 
 `.env.example` documents these and the optional tuning variables — model
@@ -266,11 +280,12 @@ selection, page limits, timeouts and feature switches — with comments.
 - **The fallback needs system binaries.** Tesseract, Poppler and a TeX engine
   are not Python packages. The container installs them; a local machine may not
   have them, and the app will tell you which is missing.
-- **Results are held in memory for one hour** and are per-process. Running more
-  than one Cloud Run instance means a preview request can land on an instance
-  that never saw the conversion. See DEPLOYMENT.md, *The multi-instance
-  caveat*.
-- **Rate limiting is per process**, so it weakens as instances scale out.
+- **Results are held in memory for one hour** and are per-process. On the
+  single-container deployment this is invisible; it would bite behind a load
+  balancer, where a preview request can land on a process that never saw the
+  conversion. See DEPLOYMENT.md, *The multi-instance caveat*.
+- **Rate limiting is per process**, which is close to global on one container
+  and weakens as soon as there is more than one.
 - **Email verification is not required** at sign-up.
 - **The local-OCR dependency stack is pinned old** (torch, transformers,
   optimum, datasets). DEPLOYMENT.md, *Dependencies*, has the exposure analysis;
@@ -281,7 +296,7 @@ selection, page limits, timeouts and feature switches — with comments.
 | File | What it covers |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The conversion pipeline, model choice, measurements, privacy |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Cloud Run + Hosting deployment, post-deploy steps, limitations |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Standing the server up, automatic releases, running costs, limitations |
 | [FIREBASE_README.md](FIREBASE_README.md) | Firebase auth, Firestore, rules, indexes, troubleshooting |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup and expectations for pull requests |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability |

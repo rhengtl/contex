@@ -3553,6 +3553,12 @@ def _():
 @test('the session cookie is locked down')
 def _():
     cookies = flask_app.app.config
+    # A caching CDN strips cookies it cannot key its cache on, and `__session`
+    # is the one Firebase Hosting keeps. Under any other name the session
+    # survives being set and then vanishes from the next request - on the
+    # deployed domain only, which is what makes it worth asserting here.
+    check(cookies['SESSION_COOKIE_NAME'] == '__session',
+          'the session cookie would be stripped behind a caching CDN')
     check(cookies['SESSION_COOKIE_HTTPONLY'] is True,
           'the session cookie is readable from JavaScript')
     check(cookies['SESSION_COOKIE_SAMESITE'] == 'Lax',
@@ -3861,7 +3867,12 @@ def _():
 def _():
     response = client_for_tests().get('/healthz')
     check(response.status_code == 200, 'no health endpoint')
-    check(response.get_json() == {'ok': True}, 'the health check says nothing')
+    payload = response.get_json()
+    check(payload.get('ok') is True, 'the health check says nothing')
+    # The release workflow polls this to confirm the live site is running the
+    # commit it just built, so an unstamped image has to answer something
+    # rather than omit the field.
+    check('revision' in payload, 'the health check does not identify the build')
     # It must not reach out to anything: a check that calls Firestore turns
     # Firestore's bad minute into a restart loop.
     source = read_source('contex/web/pages.py')

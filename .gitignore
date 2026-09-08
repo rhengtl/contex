@@ -94,8 +94,12 @@ node_modules/
 .firebase/
 *.log
 
-# Firebase Hosting's public root. It deliberately holds almost nothing - every
-# dynamic route and every static asset is served by the Cloud Run service, so
-# there is no build output here and no chance of publishing the source tree.
+# Firebase Hosting's public root. It deliberately holds almost nothing - the
+# container serves every dynamic route and every static asset - so there is no
+# build output here and no chance of publishing the source tree.
 public/*
 !public/robots.txt
+
+# The application environment on the server. It is created there, never
+# here, but a stray copy in the project root must not be committable.
+app.env

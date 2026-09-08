@@ -15,11 +15,13 @@
 
 name: tests
 
+# On pull requests directly, and on master through deploy.yml, which releases
+# nothing this suite has not passed first. A push trigger here as well would
+# only run the same checks against the same commit a second time.
 on:
-  push:
-    branches: [master]
   pull_request:
     branches: [master]
+  workflow_call:
 
 permissions:
   contents: read

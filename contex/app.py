@@ -57,6 +57,21 @@ if not _secret:
 app.secret_key = _secret
 
 app.config.update(
+    # NOT Flask's default name. Caddy, which is what sits in front of this
+    # today, passes any cookie through and does not care - but a caching CDN
+    # generally will not, because it cannot key a cache on cookies it does not
+    # control. Firebase Hosting is the specific case: it strips every cookie
+    # except one named `__session` before passing a request to the backend.
+    # Under the default name of `session` the cookie is set by the response and
+    # then dropped from every request after it, so signing in appears to work
+    # and the next page shows a guest - and nothing local reproduces it,
+    # because a development server and a bare container both pass cookies
+    # through untouched.
+    #
+    # Nothing in this application depends on the name, so paying that cost once
+    # here means the app can move behind a CDN without the failure ever
+    # happening.
+    SESSION_COOKIE_NAME='__session',
     # Never readable from JavaScript: an XSS bug should not also be a session
     # theft. (Flask's default, made explicit so it cannot be lost silently.)
     SESSION_COOKIE_HTTPONLY=True,
@@ -77,7 +92,7 @@ app.config.update(
 )
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Behind Firebase Hosting -> Cloud Run (or any other reverse proxy) the request
+# Behind Caddy (or Firebase Hosting, or any other reverse proxy) the request
 # arrives over plain HTTP with the real scheme, host and client address in
 # X-Forwarded-* headers. Without this, url_for(_external=True) builds http://
 # links and the rate limiter sees every request as coming from the proxy. Only

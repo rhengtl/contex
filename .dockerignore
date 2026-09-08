@@ -74,3 +74,9 @@ Thumbs.db
 # Development tooling that must never enter the image.
 package.json
 package-lock.json
+
+# Deployment manifests. They describe how to RUN the image; copying them
+# into it would be circular, and they are read on the server, not inside.
+docker-compose.yml
+Caddyfile
+deploy/

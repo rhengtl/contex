@@ -1,0 +1,95 @@
+# What runs on the Ampere VM.
+#
+# Two containers and nothing else: the application, and Caddy in front of it
+# holding the certificate. There is no orchestrator here and there does not
+# need to be - this is one small server.
+#
+# Paths are relative to wherever this file sits, which on the VM is
+# /opt/contex - alongside app.env, .env and the Admin SDK key, none of which is
+# in this repository. See DEPLOYMENT.md.
+#
+# UPDATES ARE PULLED, NOT PUSHED. GitHub Actions builds the arm64 image and
+# publishes it to GHCR; a systemd timer on this machine pulls and restarts.
+# Nothing in GitHub holds an SSH key to this box and port 22 stays closed to
+# everything but you - a CI system that can log into the server is a CI system
+# whose compromise is the server's compromise.
+
+services:
+  app:
+    # Overridable so a rollback is one command: set CONTEX_IMAGE to an older
+    # commit tag and bring the stack up again. Stop the update timer first, or
+    # it will pull :latest straight back over you.
+    image: ${CONTEX_IMAGE:-ghcr.io/rhengtl/contex:latest}
+    restart: always
+
+    # Every secret arrives here. app.env is 600 and owned by the account that
+    # runs Compose; it is not in this repository and must never be.
+    env_file:
+      - ./app.env
+
+    # The Admin SDK key, read-only.
+    #
+    # This is the one real cost of leaving Google Cloud. On Cloud Run the app
+    # used the platform's own identity and no private key existed anywhere. Off
+    # it, there is no ambient identity to inherit, so Firestore and the Admin
+    # SDK need an actual key file - and that file grants full administrative
+    # access to the Firebase project. Chown it to the container's uid and 400 it
+    # so nothing else on the host can read it either. DEPLOYMENT.md has the
+    # exact commands.
+    volumes:
+      - ./firebase-adminsdk.json:/run/secrets/firebase-adminsdk.json:ro
+
+    # Reachable from Caddy on the compose network, not from the internet. The
+    # only ports published to the host are Caddy's 80 and 443.
+    expose:
+      - "8080"
+
+    # python rather than curl, because the image is python:3.12-slim and has no
+    # curl in it. start_period is long on purpose: the first boot loads several
+    # hundred megabytes of ONNX weights, and a healthcheck that fails during
+    # that would put the container into a restart loop it can never escape.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen(
+              'http://127.0.0.1:8080/healthz', timeout=5).status == 200 else 1)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+
+    # The only two ports open to the world. 80 is not decoration: Let's Encrypt
+    # answers its HTTP-01 challenge there, so closing it means certificates
+    # stop renewing about sixty days later, long after you have forgotten why.
+    ports:
+      - "80:80"
+      - "443:443"
+
+    environment:
+      # Interpolated by Compose from /opt/contex/.env, which it reads out of
+      # the project directory automatically. Kept there rather than here so
+      # the Caddyfile carries no hostname and this repository stays free of one.
+      CONTEX_DOMAIN: ${CONTEX_DOMAIN:?set CONTEX_DOMAIN in /opt/contex/.env}
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Named volumes, so the issued certificate and its account key survive
+      # `docker compose down`. Losing them means re-requesting on every restart
+      # and eventually hitting Let's Encrypt's rate limit.
+      - caddy_data:/data
+      - caddy_config:/config
+
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:
