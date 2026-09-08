@@ -24,7 +24,14 @@ const MIME = {
   '.css': 'text/css',
   '.wasm': 'application/wasm', '.json': 'application/json',
   '.tex': 'text/plain', '.png': 'image/png', '.jpg': 'image/jpeg',
+  // .pdfdata, not .pdf. Edge intercepts a same-origin fetch for a URL ending
+  // in .pdf and answers 204 with no body, whatever the server sent -- measured,
+  // and it is why the multi-page fixture is named the way it is. The app never
+  // fetches a PDF by URL (an upload arrives as a File), so this is a test
+  // fixture problem only.
+  '.pdf': 'application/pdf', '.pdfdata': 'application/pdf',
   '.onnx': 'application/octet-stream',
+  '.traineddata': 'application/octet-stream',
 };
 
 export const requestLog = [];
@@ -51,9 +58,12 @@ createServer(async (req, res) => {
     const name = path.split('/').pop();
     file = join(PUBLIC, 'texmf', name);
   } else if (path.startsWith('/bench/')) {
-    // The benchmark images, so the local recogniser can be scored against the
-    // same corpus the AI path was.
-    file = join(BENCH, 'img_math', path.slice('/bench/'.length));
+    // The benchmark corpora, so the local recognisers can be scored against
+    // the same images the AI path was. Rooted at bench/ rather than at one of
+    // its folders: the fallback suite needs img_pages and img_mixed as well as
+    // img_math, and a route that can only reach one of them is a route that
+    // has to be duplicated per corpus.
+    file = join(BENCH, path.slice('/bench/'.length));
   } else if (path.startsWith('/tests/')) {
     file = join(TESTS, path.slice('/tests/'.length));
   } else {

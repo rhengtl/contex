@@ -1,0 +1,279 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ConTeX fallback pipeline harness</title>
+<pre id="out">loading…</pre>
+<script type="module">
+// The SHIPPED modules, not copies. Every function below is reached the way
+// app.js reaches it, so a regression in the app is a failure here.
+import * as preprocess from '/recognise/preprocess.js';
+import * as segment from '/recognise/segment.js';
+import * as textEngine from '/recognise/text.js';
+import * as formulas from '/recognise/formulas.js';
+import * as assemble from '/latex/assemble.js';
+import * as local from '/recognise/local.js';
+import { staticValidate, unsafeConstructs } from '/latex/validate.js';
+import { repair, sanitiseMath } from '/latex/repair.js';
+import { compile } from '/latex/compile.js';
+import { convertDocument, FallbackNotAuthorized, notice } from '/convert.js';
+
+window.convertDocument = convertDocument;
+window.FallbackNotAuthorized = FallbackNotAuthorized;
+
+const say = (m) => { document.getElementById('out').textContent = m || 'ready'; };
+
+async function bytesOf(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function mimeOf(url) {
+  if (/\.pdf(data)?$/.test(url)) return 'application/pdf';
+  if (url.endsWith('.jpg') || url.endsWith('.jpeg')) return 'image/jpeg';
+  return 'image/png';
+}
+
+/** One image as one unit, the shape pages.js aiUnits() produces. */
+async function unitFor(url, number = 1) {
+  return { number, bytes: await bytesOf(url), name: url.split('/').pop(),
+           mime: mimeOf(url) };
+}
+
+// -- what is loaded, and when ------------------------------------------------
+
+window.enginesReady = () => ({ text: textEngine.ready(), formulas: formulas.ready() });
+
+window.warm = async () => {
+  const t0 = performance.now();
+  await local.warm(say);
+  return Math.round(performance.now() - t0);
+};
+
+// -- the individual stages, so a failure can be located ----------------------
+
+window.readLines = async (url) => {
+  const unit = await unitFor(url);
+  const { canvas } = await preprocess.decodeImage(unit.bytes, { type: unit.mime });
+  const prepared = preprocess.prepare(canvas, {});
+  const lines = await textEngine.extractLines(prepared.canvas);
+  return { lines, notes: prepared.notes,
+           width: prepared.canvas.width, height: prepared.canvas.height };
+};
+
+window.segmentPage = async (url) => {
+  const unit = await unitFor(url);
+  const { canvas } = await preprocess.decodeImage(unit.bytes, { type: unit.mime });
+  const prepared = preprocess.prepare(canvas, {});
+  const masked = segment.inkMask(prepared.grey, prepared.canvas.width,
+                                prepared.canvas.height);
+  return { boxes: segment.segmentBoxes(masked, { allowEmpty: true }),
+           width: prepared.canvas.width, height: prepared.canvas.height };
+};
+
+window.skewOf = async (url) => {
+  const unit = await unitFor(url);
+  const { canvas } = await preprocess.decodeImage(unit.bytes, { type: unit.mime });
+  const grey = preprocess.greyscale(preprocess.pixelsOf(canvas));
+  return preprocess.estimateSkew(grey, canvas.width, canvas.height);
+};
+
+// -- the whole path ----------------------------------------------------------
+
+/**
+ * One document through the complete local pipeline, exactly as app.js runs it:
+ * decode, condition, recognise, assemble, repair, validate.
+ */
+window.convertLocally = async (urls) => {
+  const t0 = performance.now();
+  const units = [];
+  for (const [index, url] of urls.entries()) units.push(await unitFor(url, index + 1));
+
+  const result = await local.localDocument(units, { onProgress: say });
+  const repaired = repair(result.tex);
+  const issues = staticValidate(repaired.tex);
+  const unsafe = unsafeConstructs(repaired.tex);
+
+  const uncertain = result.items.filter(
+    (i) => i.kind === 'text' && i.uncertain && i.text.trim());
+
+  return {
+    tex: repaired.tex,
+    beforeRepair: result.tex,
+    fixes: repaired.fixes,
+    notes: result.notes,
+    equations: result.equations.map((e) => e.latex),
+    issues,
+    unsafe,
+    textBlocks: result.items.filter((i) => i.kind === 'text').length,
+    uncertainLines: uncertain.length,
+    pages: urls.length,
+    ms: Math.round(performance.now() - t0),
+    heap: performance.memory?.usedJSHeapSize ?? 0,
+  };
+};
+
+/** …and then through the engine, which is the rest of the user's journey. */
+window.compileTex = async (tex) => {
+  const out = await compile(tex);
+  return { ok: out.ok, reason: out.reason || '', attempted: out.attempted,
+           missingPackages: out.missingPackages || [],
+           bytes: out.pdf ? out.pdf.length : 0,
+           errors: (out.errors || '').slice(0, 400) };
+};
+
+// -- the whole app decision tree, with a scripted Gemini ---------------------
+//
+// convert.js takes its I/O through `api`, so an outage, a rate limit, or a
+// model that dies on page three is a fixture rather than a wait. This is the
+// same convertDocument() app.js calls.
+
+/**
+ * `plan` describes the Gemini this conversion gets:
+ *   available     what /api/ai-status answers
+ *   pages         one entry per page: 'ok', or an error body to return
+ */
+window.convertWith = async (urls, plan) => {
+  const units = [];
+  for (const [index, url] of urls.entries()) units.push(await unitFor(url, index + 1));
+
+  const calls = [];
+  let call = 0;
+  const api = {
+    aiStatus: async () => plan.available,
+    convertPage: async ({ mime, attempt, thinking }) => {
+      const which = plan.pages[Math.min(call, plan.pages.length - 1)];
+      calls.push({ mime, attempt, thinking });
+      call += 1;
+      if (which === 'ok') {
+        return {
+          ok: true,
+          headers: { get: () => 'gemini-2.5-flash' },
+          json: async () => ({ candidates: [{ content: { parts: [{
+            text: '```latex\n\\documentclass{article}\n\\begin{document}\n'
+                  + 'A page the model converted.\n\\end{document}\n```' }] } }] }),
+        };
+      }
+      return { ok: false, headers: { get: () => null }, json: async () => which };
+    },
+  };
+
+  const statuses = [];
+  try {
+    const out = await window.convertDocument({
+      units, total: urls.length, api, allowFallback: plan.allowFallback === true,
+      ui: { status: (m) => { statuses.push(m); say(m); } },
+    });
+    const repaired = out.tex;
+    return {
+      ok: true, tex: repaired, summary: out.summary, issues: out.issues,
+      unsafe: window.pure.unsafeConstructs(repaired),
+      equations: out.equations.map((e) => e.latex),
+      calls, statuses,
+    };
+  } catch (err) {
+    return { ok: false, name: err.name, message: err.message,
+             status: err.status || null, calls, statuses };
+  }
+};
+
+// -- degraded inputs, made here so the corpus does not have to carry them -----
+
+/**
+ * The conditions a photographed page actually arrives in. Applied to a clean
+ * bench page so the comparison is against a known-good result rather than
+ * against another guess.
+ */
+window.convertDegraded = async (url, kind) => {
+  const bytes = await bytesOf(url);
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: mimeOf(url) }));
+  const w = bitmap.width;
+  const h = bitmap.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  if (kind === 'skew') {
+    // Seven degrees. bench measured a rotated page taking Tesseract from
+    // 99.84% to 28.44%, and at PSM 3 to an empty string.
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(7 * Math.PI / 180);
+    ctx.drawImage(bitmap, -w / 2, -h / 2);
+  } else {
+    ctx.drawImage(bitmap, 0, 0);
+  }
+
+  if (kind === 'noise' || kind === 'camera') {
+    const image = ctx.getImageData(0, 0, w, h);
+    const d = image.data;
+    let seed = 12345;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = (y * w + x) * 4;
+        let v = d[p];
+        if (kind === 'camera') {
+          // Uneven light: a soft diagonal falloff, as a hand-held phone gives.
+          const shade = 1 - 0.34 * ((x / w) * 0.6 + (y / h) * 0.4);
+          v = v * shade + 18;
+        }
+        v += (rand() - 0.5) * (kind === 'camera' ? 40 : 26);
+        const c = Math.min(255, Math.max(0, v));
+        d[p] = c; d[p + 1] = c; d[p + 2] = c;
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  const blob = await new Promise((resolve) => canvas.toBlob(
+    resolve, kind === 'camera' ? 'image/jpeg' : 'image/png',
+    kind === 'camera' ? 0.55 : undefined));
+  const unit = { number: 1, bytes: new Uint8Array(await blob.arrayBuffer()),
+                 name: `degraded.${kind}`, mime: blob.type };
+  const result = await window.localDocument([unit]);
+  return result;
+};
+
+/** Raw bytes straight into the local path, for the malformed cases. */
+window.convertBytes = async (bytes, name, mime) => {
+  const unit = { number: 1, bytes: new Uint8Array(bytes), name, mime };
+  return window.localDocument([unit]);
+};
+
+window.localDocument = async (units) => {
+  const result = await local.localDocument(units, { onProgress: say });
+  const repaired = repair(result.tex);
+  return {
+    tex: repaired.tex, fixes: repaired.fixes, notes: result.notes,
+    equations: result.equations.map((e) => e.latex),
+    issues: staticValidate(repaired.tex),
+    unsafe: unsafeConstructs(repaired.tex),
+    textBlocks: result.items.filter((i) => i.kind === 'text').length,
+    uncertainLines: result.items.filter(
+      (i) => i.kind === 'text' && i.uncertain && i.text.trim()).length,
+  };
+};
+
+// -- pure functions, for the cases no image can produce on demand -------------
+
+window.pure = {
+  nominate: (lines, boxes, width) => assemble.nominate(lines, boxes, width),
+  assemble: (lines, equations) => assemble.assemble(lines, equations),
+  toTex: (items) => assemble.toTex(items, textEngine.escapeTex),
+  escapeTex: (s) => textEngine.escapeTex(s),
+  unwrapText: (s) => assemble.unwrapText(s),
+  looksLikeEquation: (s) => assemble.looksLikeEquation(s),
+  isCentred: (box, width) => assemble.isCentred(box, width),
+  isProse: (s) => assemble.isProse(s),
+  repair: (tex) => repair(tex),
+  sanitiseMath: (s) => sanitiseMath(s),
+  staticValidate: (tex) => staticValidate(tex),
+  unsafeConstructs: (tex) => unsafeConstructs(tex),
+  notice: (o) => notice(o),
+};
+
+window.ready = true;
+say('ready');
+</script>

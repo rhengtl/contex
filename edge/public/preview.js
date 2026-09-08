@@ -32,6 +32,48 @@ async function getPdfjs() {
   return pdfjsPromise;
 }
 
+// pdf2image's default, and therefore what the Python pipeline's OCR has always
+// been calibrated on. 200 DPI is also roughly where Tesseract stops improving:
+// below it strokes thin out, above it costs memory for nothing.
+const RASTER_DPI = 200;
+
+/**
+ * Rasterise one page of a PDF to a canvas -- pdf2image's convert_from_path,
+ * for the local fallback.
+ *
+ * The AI path never calls this: it sends the PDF page to the model as a PDF.
+ * The recognisers cannot read one, so this is where a page becomes pixels.
+ */
+export async function rasterise(bytes, { dpi = RASTER_DPI, limit = 10 } = {}) {
+  const pdfjs = await getPdfjs();
+  const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+  try {
+    // EVERY page, not the first. aiUnits() usually splits a PDF into one unit
+    // per page before this is reached, but not always -- a PDF that pdf-lib
+    // will not split arrives whole, and rendering only page one silently
+    // dropped the rest of the document.
+    const canvases = [];
+    for (let n = 1; n <= Math.min(doc.numPages, limit); n++) {
+      const pg = await doc.getPage(n);
+      const viewport = pg.getViewport({ scale: dpi / 72 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      // White behind the page: a PDF with no background paints nothing, and
+      // "nothing" composites to black, which every ink threshold reads as
+      // solid.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pg.render({ canvasContext: ctx, viewport }).promise;
+      canvases.push(canvas);
+    }
+    return canvases;
+  } finally {
+    await doc.destroy();
+  }
+}
+
 /**
  * Render every page of `bytes` into `container` as canvases.
  *

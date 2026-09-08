@@ -12,8 +12,16 @@
 
     what is sent to the model     worker/gemini.js  convertPage(), uploadPage()
     the page is deleted after     worker/gemini.js  deleteFile()
-    NO downscaling before send    public/app.js  run() - preprocess.py is not
-                                  ported; the file goes as chosen
+    NO downscaling before send    public/convert.js  convertDocument() sends
+                                  unit.bytes as chosen. recognise/preprocess.js
+                                  exists but runs ONLY on the offline path
+    the offline path sends        public/convert.js  convertDocument() reaches
+      nothing anywhere            recognise/local.js without any fetch; the
+                                  recognisers are static files from this origin
+    the offline path is offered,  public/convert.js  FallbackNotAuthorized;
+      never taken silently        public/app.js  askAboutFallback()
+    no third-party CDN for the    tools/build-models.mjs vendors ORT,
+      recognisers                 tesseract.js and eng.traineddata locally
     per-page PDF splitting        public/pages.js  splitPdf(), MAX_PDF_PAGES
     .docx NOT extracted           public/pages.js  aiUnits() - run.py's
                                   _convert_docx() is not ported
@@ -223,7 +231,26 @@
     <li>
       <strong>Guest history never leaves your browser.</strong>
     </li>
+    <li>
+      <strong>The offline conversion sends your document nowhere at all.</strong>
+      When the AI service is unavailable, ConTeX offers to convert your
+      document on your own device instead. If you accept, the text and formula
+      recognisers are downloaded as ordinary static files (about 50&nbsp;MB,
+      once) and run inside the page. <strong>Your document is not uploaded to
+      Google or to us, and no part of it is sent to any third party.</strong>
+      It is also the lower-quality path, and ConTeX says so before you choose
+      it &mdash; it is never taken without your agreement, and your agreement
+      applies only to that one conversion.
+    </li>
   </ul>
+  <p>
+    Those recognisers are served from this site and not from anyone else's.
+    That is deliberate: the software they are built from normally fetches its
+    language data from a third-party CDN, which would tell that CDN when you
+    used the offline path. This build's content-security policy forbids the
+    page from contacting anything except the services listed in section 6, so
+    that request cannot happen.
+  </p>
 
   <h4>5. Why we process it, and on what legal basis</h4>
   <table class="doc-table">

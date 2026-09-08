@@ -45,3 +45,11 @@
 
 /texmf/*
   Cache-Control: public, max-age=31536000, immutable
+
+# The offline recognisers: 61 MB of ONNX Runtime, pix2text-mfr and Tesseract's
+# language data, all fixed by build. They are fetched only when someone accepts
+# the offline conversion, and refetching them on the next one would make that
+# path unusable on a phone. Static assets are free and unmetered, so caching
+# them for a year costs nothing and saves the user the bytes.
+/models/*
+  Cache-Control: public, max-age=31536000, immutable

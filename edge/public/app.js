@@ -5,18 +5,26 @@
  * cover: the shell context, the terms gate, sign-in, the upload, the page-by-
  * page conversion and merge, the preview, and both kinds of history.
  *
- * Three responsibilities moved here from the server, and each is deliberate:
+ * WHAT THIS FILE IS NOW. The page: elements, listeners, and the two questions
+ * only a person can answer -- do you accept the terms, and will you accept a
+ * conversion without the AI. Everything with a decision in it has moved out:
  *
- *   the model chain   a stream cannot be replayed, so the retry loop that
- *                     lived in services/llm/ lives here now. The order and the
- *                     outage semantics are unchanged.
- *   page splitting    run.py _ai_units, so a multi-page PDF is still converted
- *                     a page at a time and a partial conversion still survives.
- *   the merge         latex/documents.py, because the pages it joins are here.
+ *   convert.js        run.py convert() and _convert_pages(): the model chain,
+ *                     the page-by-page conversion, where to resume when the AI
+ *                     stops part way, and the fallback authorisation gate.
+ *   recognise/        the local recognisers and the layout analysis behind it.
+ *   input.js          the four ways a page gets in -- picker, drag-and-drop,
+ *                     camera, canvas.
  *
- * A fourth used to be here and is gone: base64 encoding. The Worker now pipes
- * the raw bytes into the Gemini Files API, so there is nothing to encode --
- * which is what closed the injection hole, and incidentally deleted the
+ * That split is not tidying. A pipeline whose failure modes can only be
+ * exercised by clicking is a pipeline whose failure modes are not tested, and
+ * the failure modes are the point of Stage 4: tests/fallback.mjs drives the
+ * whole thing against a Gemini that is down, rate-limited, or dies on page
+ * three, without a browser click anywhere.
+ *
+ * One thing used to be here and is gone entirely: base64 encoding. The Worker
+ * pipes the raw bytes into the Gemini Files API, so there is nothing to encode
+ * -- which is what closed the injection hole, and incidentally deleted the
  * chunked-encode loop a 19 MB image needed.
  *
  * What did NOT move: who this visitor is, and whether they may convert. Those
@@ -26,11 +34,12 @@
 
 import { staticValidate } from '/latex/validate.js';
 import { compile } from '/latex/compile.js';
-import { mergeDocuments } from '/latex/documents.js';
 import { renderPdf, downloadPdf } from '/preview.js';
 import { aiUnits, checkInput, extensionOf, ACCEPTED } from '/pages.js';
+import { convertDocument, FallbackNotAuthorized } from '/convert.js';
 import * as auth from '/auth.js';
 import * as history from '/history.js';
+import * as input from '/input.js';
 
 const el = (id) => document.getElementById(id);
 const state = {
@@ -62,176 +71,104 @@ function toast(message) {
 function clearError() { el('error').hidden = true; }
 function setStatus(message) { el('status').textContent = message || ''; }
 
-/** ai.py fenced_latex(), ported. Prefers the last block that is a document. */
-export function fencedLatex(text) {
-  if (!text) return null;
-  const fenced = [...text.matchAll(/```(?:latex|tex)?\s*\n([\s\S]*?)```/g)]
-    .map((m) => m[1]);
-  if (fenced.length) {
-    for (let i = fenced.length - 1; i >= 0; i--) {
-      if (fenced[i].includes('\\documentclass') ||
-          fenced[i].includes('\\begin{document}')) return fenced[i].trim();
-    }
-    return fenced[fenced.length - 1].trim();
-  }
-  const m = text.match(/(\\documentclass[\s\S]*?\\end\{document\})/);
-  return m ? m[1].trim() : null;
-}
-
-// ---------------------------------------------------------------------------
-// The model chain
-// ---------------------------------------------------------------------------
-
-/**
- * One conversion's journey through the model chain -- ai.py Rotation.
- *
- * A round is one conversion, however many pages it has. It opens on the
- * preferred model and stays there; when that model reports itself out of quota
- * the round advances and stays advanced for the remaining pages, rather than
- * re-probing an exhausted model once per page. A new conversion builds a new
- * round and opens on the preferred model again.
- */
-class Rotation {
-  constructor() { this.attempt = 0; this.exhausted = false; this.fatal = ''; }
-  advance(to) {
-    if (to === null || to === undefined) { this.exhausted = true; return; }
-    this.attempt = Math.max(this.attempt, to);
-  }
-}
-
-/**
- * One page through the Worker.
- *
- * `rotation` is the real round when a quota error is to be believed, and a
- * throwaway one during the speculative concurrent pass -- where a 429 caused
- * by our own burst must not retire a model the service would serve happily one
- * request at a time.
- */
-async function convertOne(unit, rotation, { speculative = false } = {}) {
-  // Raw bytes, not base64. The Worker pipes them into the Gemini Files API
-  // untouched and then writes the generateContent JSON itself, so there is
-  // nothing here to encode -- and nothing a payload could break out of.
-  const body = unit.bytes instanceof Uint8Array
-    ? unit.bytes : new Uint8Array(unit.bytes);
-  let attempt = rotation.attempt;
-  let thinking = true;
-
-  for (let guard = 0; guard < 10; guard++) {
-    const query = `attempt=${attempt}${thinking ? '' : '&thinking=off'}`;
-    const res = await fetch(`/api/convert/page?${query}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/octet-stream',
-                 'x-image-mime': unit.mime },
-      body,
-    });
-    if (res.ok) {
-      const payload = await res.json();
-      const text = payload?.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text || '').join('') || '';
-      const tex = fencedLatex(text);
-      if (tex) return { ok: true, tex, model: res.headers.get('x-contex-model') };
-      return { ok: false, fatal: true,
-               message: 'The conversion failed. Please try a different file.' };
-    }
-
-    const err = await res.json().catch(() => ({}));
-    if (!err.retryable) {
-      return { ok: false, fatal: true,
-               message: err.error || 'The conversion failed. Please try a different file.' };
-    }
-    if (speculative) {
-      // Records nothing and moves nothing. A page that fails here is merely
-      // not done yet; the sequential pass will decide what it means.
-      return { ok: false, message: err.error || '' };
-    }
-    if (err.nextAttempt === null || err.nextAttempt === undefined) {
-      rotation.exhausted = true;
-      rotation.fatal = err.error || 'Every AI model has reached its quota.';
-      return { ok: false, message: rotation.fatal };
-    }
-    if (err.retryWithoutThinking) {
-      // This model does not accept a thinking level. Drop it once and retry
-      // the same model -- gemini.py ask() does exactly this.
-      thinking = false;
-    } else {
-      attempt = err.nextAttempt;
-      thinking = true;
-      rotation.advance(attempt);
-      setStatus(`${err.model || 'That model'} is unavailable — trying the next one…`);
-    }
-  }
-  return { ok: false, message: 'The AI conversion service is temporarily unavailable.' };
-}
-
-/** run.py _ai_workers: three by default, never more than there are pages. */
-function aiWorkers(count) {
-  return count < 2 ? 1 : Math.max(1, Math.min(3, count));
-}
-
-/**
- * Convert every unit of a document, in page order -- run.py _convert_units.
- *
- * Pages are independent, so they go out concurrently first. That pass is
- * speculative: a free tier counts requests per minute, and treating a burst's
- * 429 as "this model is finished" would rotate onto a weaker model -- speed
- * bought with accuracy, which is the one trade this pipeline may not make.
- * Whatever is left is retried one at a time through the real round, where a
- * quota error means what it has always meant.
- *
- * Returns {documents, failedAt, reason}: documents in page order up to the
- * first failure, then the page number that failed and why.
- */
-async function convertUnits(units, rotation) {
-  const done = new Map();
-  const workers = aiWorkers(units.length);
-
-  if (workers > 1) {
-    const queue = [...units];
-    await Promise.all(Array.from({ length: workers }, async () => {
-      while (queue.length) {
-        const unit = queue.shift();
-        // A pinned round: one model, and failures private to it.
-        const pinned = new Rotation();
-        pinned.attempt = rotation.attempt;
-        const page = await convertOne(unit, pinned, { speculative: true })
-          .catch(() => ({ ok: false }));
-        if (page.ok) done.set(unit.number, page);
-        setStatus(`Converting… ${done.size} of ${units.length} pages`);
-      }
-    }));
-  }
-
-  const documents = [];
-  for (const unit of units) {
-    let page = done.get(unit.number);
-    if (!page || !page.ok) {
-      if (rotation.exhausted) {
-        return { documents, failedAt: unit.number,
-                 reason: rotation.fatal || 'Every AI model has reached its quota.' };
-      }
-      setStatus(`Converting page ${unit.number} of ${units.length}…`);
-      // Sequential, through the real round: this is where a quota error is
-      // believed and allowed to move the conversion onto another model.
-      page = await convertOne(unit, rotation);
-    }
-    if (!page.ok) {
-      return { documents, failedAt: unit.number,
-               reason: page.message || 'The AI conversion was unavailable.' };
-    }
-    documents.push(page.tex);
-  }
-  return { documents, failedAt: null, reason: '' };
-}
-
 // ---------------------------------------------------------------------------
 // Converting
 // ---------------------------------------------------------------------------
+
+/**
+ * What leaves this module. convert.js takes its I/O through this so the whole
+ * decision tree -- including the AI being down, or dying on page three -- can
+ * be driven by tests/fallback.mjs without a browser click.
+ */
+const api = {
+  aiStatus: () => fetch('/api/ai-status').then((r) => r.json()).catch(() => ({
+    available: false,
+    message: 'The AI conversion service could not be reached.',
+  })),
+  convertPage: ({ body, mime, attempt, thinking }) => fetch(
+    `/api/convert/page?attempt=${attempt}${thinking ? '' : '&thinking=off'}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-image-mime': mime },
+      body,
+    }),
+};
+
+/**
+ * The user's answer to the AI-unavailable warning, for this attempt only.
+ *
+ * Deliberately not sticky. Someone who accepted a degraded conversion of one
+ * document has not agreed to degrade the next one, and a flag that outlived
+ * the conversion would turn the next upload's silent downgrade into exactly
+ * the thing run.py refuses to do.
+ */
+let allowFallback = false;
+
+/**
+ * Offer the choice, and wait for it. Resolves true to continue locally, false
+ * to cancel.
+ *
+ * Three ways out, as the Flask dialog had: check again (the outage may be
+ * over, and a warning must not outlive it), continue without AI, or cancel and
+ * wait. Nothing is converted until one of them is chosen.
+ */
+function askAboutFallback(status) {
+  const dialog = el('ai-modal');
+  el('ai-modal-reason').textContent =
+    status?.message || 'The AI conversion service is temporarily unavailable.';
+  const recovery = el('ai-modal-recovery');
+  if (status?.retryAt) {
+    const when = new Date(status.retryAt * 1000);
+    recovery.textContent = `Expected back around ${when.toLocaleTimeString()}.`;
+  } else {
+    recovery.textContent = 'Not known.';
+  }
+  el('ai-modal-checked').textContent =
+    `Checked at ${new Date().toLocaleTimeString()}.`;
+
+  return new Promise((resolve) => {
+    const finish = (answer) => {
+      recheck.removeEventListener('click', onRecheck);
+      go.removeEventListener('click', onGo);
+      cancel.removeEventListener('click', onCancel);
+      dialog.close();
+      resolve(answer);
+    };
+    const recheck = el('ai-recheck');
+    const go = el('ai-continue');
+    const cancel = el('ai-cancel');
+
+    const onRecheck = async () => {
+      recheck.disabled = true;
+      recheck.textContent = 'Checking…';
+      const fresh = await api.aiStatus();
+      recheck.disabled = false;
+      recheck.textContent = 'Check again';
+      if (fresh && fresh.available) {
+        toast('AI conversion is available again.');
+        finish(true);
+        return;
+      }
+      el('ai-modal-reason').textContent =
+        fresh?.message || 'Still unavailable.';
+      el('ai-modal-checked').textContent =
+        `Checked at ${new Date().toLocaleTimeString()}.`;
+      toast('Still unavailable.');
+    };
+    const onGo = () => finish(true);
+    const onCancel = () => finish(false);
+
+    recheck.addEventListener('click', onRecheck);
+    go.addEventListener('click', onGo);
+    cancel.addEventListener('click', onCancel);
+    if (!dialog.open) dialog.showModal();
+  });
+}
 
 async function run() {
   clearError();
   el('notice').replaceChildren();
   el('notice').hidden = true;
-  const file = el('file').files[0];
+  const file = input.selectedFile();
   if (!file) { showError('No file selected.'); return; }
   if (file.size === 0) { showError('That file was empty.'); return; }
 
@@ -280,30 +217,48 @@ async function run() {
     }
     if (units.length > 1) setStatus(`Converting ${units.length} pages…`);
 
-    const rotation = new Rotation();
-    const { documents, failedAt, reason } = await convertUnits(units, rotation);
-
-    if (!documents.length) {
-      throw new Error(reason || 'The conversion failed. Please try a different file.');
+    let result;
+    try {
+      result = await convertDocument({
+        units, total, api, allowFallback, ui: { status: setStatus },
+      });
+    } catch (err) {
+      if (!(err instanceof FallbackNotAuthorized)) throw err;
+      // The AI is down and nothing has been converted. Ask, then either run
+      // the local path or stop -- never quietly produce a lesser document.
+      setStatus('');
+      if (!await askAboutFallback(err.status)) {
+        toast('Cancelled. Your document was not converted.');
+        return;
+      }
+      allowFallback = true;
+      setStatus('Converting without AI…');
+      result = await convertDocument({
+        units, total, api, allowFallback: true, ui: { status: setStatus },
+      });
     }
 
-    // Several complete documents, one per page, spliced into one. Four copies
-    // of \usepackage{amsmath} compiles with warnings at best, and four
-    // \maketitle calls is three spurious title pages.
-    const tex = mergeDocuments(documents);
+    const { tex, summary, issues } = result;
     state.tex = tex;
     state.name = file.name;
     el('tex').textContent = tex;
     el('result').hidden = false;
 
-    if (failedAt !== null) {
-      // Never silently truncate. run.py says which page the document ends at
-      // and that what is here is unaffected; the local fallback that would
-      // convert the rest is Stage 4.
-      notice(`Only the first ${documents.length} of ${units.length} pages ` +
-             `could be converted.`,
-             'The AI stopped part way through, so the document ends at page ' +
-             `${documents.length}. What is here is unaffected.`, reason);
+    // The one notice about a degraded conversion, shown once, here, on the
+    // finished document -- not while it was running.
+    if (summary.fallbackNotice) {
+      const n = summary.fallbackNotice;
+      notice(n.headline, n.detail, n.reason);
+    }
+    // Per-page notes: a page that could not be read is missing from the
+    // output, and that is not something the user can see from the preview.
+    if (summary.notes.length) {
+      notice('Notes on this conversion', summary.notes.join(' '));
+    }
+    if (summary.uncertainLines) {
+      notice(`${summary.uncertainLines} line(s) may be misread.`,
+             'Those lines were recognised with low confidence — handwriting, '
+             + 'usually. Check them against your original before using this.');
     }
 
     // Save before the preview: a conversion that compiled badly is still the
@@ -315,9 +270,6 @@ async function run() {
     });
     if (saved.items) state.guest = saved.items;
 
-    // Structural check before the engine, exactly as the pipeline does. Issues
-    // are reported but never block the .tex.
-    const issues = staticValidate(tex);
     setStatus('Building the preview…');
     await showPreview(tex, issues);
   } catch (err) {
@@ -325,6 +277,7 @@ async function run() {
     showError(err.message);
   } finally {
     el('go').disabled = false;
+    allowFallback = false;
   }
 }
 
@@ -602,7 +555,10 @@ function clearWorkspace() {
   el('notice').replaceChildren();
   el('notice').hidden = true;
   el('download-pdf').hidden = true;
-  el('file').value = '';
+  // The chosen page as well as the converted one. A camera capture is held in
+  // this module rather than in the file input, so clearing the input alone
+  // would leave the previous visitor's photograph attached and ready to send.
+  input.clearInput();
   setStatus('');
   clearError();
   history.clear();
@@ -669,6 +625,8 @@ document.addEventListener('click', (event) => {
   showLegal(trigger.dataset.legal);
 });
 el('legal-close').addEventListener('click', () => el('legal').close());
+
+input.init({ toast, onChange: () => { clearError(); } });
 
 el('go').addEventListener('click', run);
 el('download').addEventListener('click', () => downloadTex(state.tex, state.name));

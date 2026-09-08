@@ -6,3 +6,4 @@ tests/out/
 public/texmf/
 public/models/
 public/vendor/ort/
+public/vendor/tesseract/

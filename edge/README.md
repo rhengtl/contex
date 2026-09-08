@@ -100,7 +100,7 @@ npm install
 #   SESSION_HMAC_KEY=...           # any long random value
 #   FIREBASE_SERVICE_ACCOUNT={...} # the service account JSON, on one line
 npx wrangler dev --port 8788
-npm test                           # all four suites
+npm test                           # every suite, in dependency order
 ```
 
 Before a first deploy: create the KV namespace and put the real id in
@@ -738,29 +738,274 @@ directly comparable to the ones S2 decided on.
 The mismatches that remain are the ones S2 reported too — `\operatorname*{lim}`
 for `\lim`, `{\bf1}` for `1`.
 
+### The local text recogniser — done and verified
+
+`public/recognise/text.js`, the browser port of
+`pipeline/recognise/tesseract.py`.
+
+Not "an OCR engine that also runs in a browser": **tesseract.js is Tesseract
+itself**, compiled to WebAssembly, and `tools/build-models.mjs` copies *this
+machine's* `eng.traineddata` — the very file the Python pipeline reads through
+pytesseract. Same engine, same language data, same page-segmentation mode
+(PSM 3, pytesseract's default). That is what makes comparing the two a
+measurement rather than an analogy, and the first thing it bought was a
+sanity check: on `bench/img_pages/mixed_hi.png` the two produce the **same
+eight lines, with the same boxes and the same per-word confidences**.
+
+Self-hosted, and that is forced as well as preferred. tesseract.js fetches its
+core and language data from `tessdata.projectnaptha.com` by default;
+`connect-src` is `'self'`, so those fetches are blocked — correctly. This is
+the one path on which nothing about the user's document leaves their machine,
+and reaching a third party the moment it runs would make the Privacy Policy
+untrue.
+
+### The layout analysis, the gate, and the QA pass
+
+| new module | what it is |
+|---|---|
+| `public/recognise/preprocess.js` | `preprocess.py`: flatten alpha, EXIF, deskew, upscale |
+| `public/recognise/segment.js` | `formulas.py`'s ink mask, banding, `tighten()` |
+| `public/latex/assemble.js` | `assemble.py`: `nominate()`, `assemble()`, `to_tex()` |
+| `public/recognise/local.js` | `run.py`'s `analyse_page()` and `_local_document()` |
+| `public/convert.js` | `run.py`'s `convert()` and `_convert_pages()` — the chain, the resume point, and the fallback gate |
+| `public/latex/repair.js` | the QA pass, and the screen on recognised mathematics |
+| `public/input.js` | picker, drag-and-drop, camera, writing canvas |
+
+`convert.js` exists as its own module for a reason that is not tidying. It
+takes its I/O through an injected `api`, so the whole decision tree — the AI
+being down, rate-limited, or dying on page three — is driven by
+`tests/fallback.mjs` without a browser click anywhere. A pipeline whose failure
+modes can only be reached by clicking is a pipeline whose failure modes are not
+tested, and the failure modes are the entire point of the fallback.
+
+**The gate.** `run.py`'s rule is kept exactly: the AI being unavailable raises
+`FallbackNotAuthorized` rather than quietly returning a lesser document. The
+user is shown what is down, offered *check again / continue without AI / cancel
+and wait*, and their answer applies to **that conversion only** — someone who
+accepted a degraded conversion of one document has not agreed to degrade the
+next one. Once a conversion is under way the question is not re-asked: the AI
+was up when they pressed Convert, and re-prompting mid-document would throw
+away the pages that already converted.
+
+### The QA pass, and the one place untrusted LaTeX gets in
+
+Everything the local path writes as *prose* goes through `escapeTex()`, so a
+page with `\input{/etc/passwd}` printed on it becomes `\textbackslash{}input…`.
+But a recognised formula is inserted between `\[` and `\]` **verbatim**,
+because escaping it would destroy it. pix2text-mfr's output is therefore the
+one place arbitrary LaTeX enters a document this app compiles, and it is not a
+trustworthy writer.
+
+`sanitiseMath()` is that boundary, and it is a **screen, not a rewriter**: an
+expression that reaches outside the document is dropped whole. A formula
+containing `\input` is not a formula with a mistake in it — it is a region
+misread badly enough to emit a file primitive, and whatever the right
+transcription was, it was not that. Editing it would leave a plausible-looking
+expression that is certainly wrong. Structural damage *is* repaired, because
+the transcription is still good: unclosed braces, `\left` without `\right`,
+half a `\begin{matrix}`, a stray `$`.
+
+Behind it, `compile()` still refuses an unsafe construct before the engine is
+loaded. This is a repair; the gate is downstream and stays there.
+
+**And "it validates" is not "it builds".** `staticValidate()` checks that
+braces, environments and delimiters balance. It cannot know that `\tag` is
+fatal outside a numbered equation — which is exactly what the fallback
+produced on a page of Fourier transforms, where the model saw the printed
+"(2)" beside the equation and dutifully transcribed it as
+`\tag * { \omega } ( 2 )`. Only the engine could say so. So the suite asks the
+engine, about **every page in the corpus**, not a sample.
+
+---
+
+## Is the fallback any good? — `npm run test:fallback`
+
+**108 checks.** The AI path is the one ConTeX advertises; the fallback is the
+one that decides whether it is *dependable*. A free-tier key runs out, a model
+is rate-limited, a service has an outage — and on every one of those days the
+question is not whether the conversion was as good as usual but whether the
+user got a document at all.
+
+So the suite measures the **output**, against `bench/`'s ground truth and
+against the Python pipeline's own numbers on the same images, rather than
+asserting that functions were called. Regenerate the reference with
+`npm run reference:fallback`.
+
+### Against the Python pipeline, on the same corpus
+
+| | this, in the browser | `pipeline/run.py` |
+|---|---|---|
+| mean text accuracy | **96.53%** | 96.53% |
+| mean structure | **100.00%** | 100.00% |
+| mean maths | **90.49%** | 77.87% |
+
+Text and structure are identical to two decimals on **every page**. The maths
+gap is one image: `hand_math.png` carries two handwritten expressions, and the
+browser segments them apart where Python merges them into a single band —
+`E = mc^2` and `a^2+b^2=c^2` separately, against one run-on blob. On the
+printed-formula pages the two produce **exactly the same expressions**, once
+`score_math.py`'s normalisation is applied.
+
+Where they differ at all, it is the tokenizer: `E_{\mathrm{k}}` here against
+`E_{\bf k}` there, from crops that differ by a pixel or two of ink threshold.
+Both are the same subscript. Judging that per page at two points would be
+measuring the tokenizer, so the aggregate is the claim and a 15-point per-page
+floor sits under it to catch a real collapse.
+
+### What it covers
+
+| group | what it proves |
+|---|---|
+| the AI path never pays for the fallback | a successful conversion fetches **nothing** from `/models/`, ORT or tesseract, and leaves both recognisers unloaded. Runs first, because a warmed cache would make this pass for the wrong reason |
+| the gate | AI down + not authorised → `FallbackNotAuthorized`, nothing sent; authorised → a document, one notice, naming the reason |
+| outage and rate limit | quota exhausted mid-conversion finishes locally; a rate limit that **names a next model rotates instead of falling back**; a model that refuses a thinking level is retried without one |
+| the AI stops part way | the AI pages are kept and not redone, the rest converts locally, the notice says at which page, and the seam carries a `\clearpage` |
+| content | handwritten and typed prose, handwritten and typed formulas, every combination of the two, several equations on one page |
+| multi-page | a three-page PDF, page order, one `\clearpage` per seam, equation numbering across the document |
+| degraded input | 7° skew, sensor noise, and a simulated phone photograph (uneven light + noise + JPEG) |
+| malformed input | empty file, truncated PNG, a text file wearing a `.png` name, a broken PDF, a blank page, a solid black page, a 420px capture |
+| the security boundary | all 13 file/shell primitives dropped from recognised mathematics, 5 look-alikes kept, 10 kinds of structural damage repaired, and the engine's own refusal behind them |
+| the end of the chain | every document in the corpus compiles to a PDF |
+
+### Four bugs it found
+
+**The deskew was inverted.** `Image.rotate()` negates the angle before it
+builds its matrix; the port had the un-negated form, so the estimator returned
+the angle's opposite and the deskew rotated a crooked page *further*. Measured:
+a 7° page came out at 14°, and Tesseract's line count fell from 7 to 3. A
+straight page estimates ~0 either way, which is why nothing caught it until a
+deliberately skewed one was measured.
+
+**A multi-page PDF lost everything after page one.** `aiUnits()` usually splits
+a PDF into one unit per page — but not always, and a PDF pdf-lib will not split
+arrives whole. `rasterise()` rendered page one and returned it.
+
+**A solid dark page produced mathematics that was never on it.** Mean 0,
+standard deviation 0, so the Otsu-style split floors at 60, every pixel is
+below it, the whole page becomes one band of "ink", and it is nominated and
+handed to the formula model, which duly returns an expression. Fixed with an
+upper ink-ratio bound — an addition `formulas.py` does not have. Real displayed
+formulas measure 0.2–20% ink against their own crop; nothing legitimate comes
+near 90%.
+
+**Greedy decoding loops.** On a heavily degraded photograph the formula model
+returned `\sin\theta` twenty-four times, `unwrap_text()` duly recovered "sin
+theta sin theta cos theta…", and `assemble()` put it in the document as a line
+of prose the page did not contain. Salvage is a best effort, so *declining* to
+salvage is always an available answer; inventing a sentence is not.
+
+And one that was the test's fault, recorded because it cost real time: **Edge
+answers a same-origin `fetch` for any URL ending in `.pdf` with 204 and an
+empty body**, whatever the server sent. The multi-page fixture is named
+`.pdfdata` for that reason. The app is unaffected — an uploaded PDF arrives as
+a `File` and is never fetched by URL.
+
+### What it deliberately does not claim
+
+Handwritten *mathematics* is a documented weakness: pix2text-mfr is trained on
+printed formulas, and `bench/README.md` says so. The bar in the suite is the
+reference implementation rather than a number picked in advance — and on this
+corpus that bar is cleared comfortably, but a page of cursive algebra is still
+the case where this path is worst.
+
+The bigger honesty is structural. In Python the AI review sits *behind* the
+local converters and repairs what they produce, marking headings and prose
+`not_an_equation` unprompted. Here there is no AI — being without it is the
+whole reason this code is running — so `looksLikeEquation()` is the last line
+of defence rather than the second-to-last. What is gone is the safety net
+behind it. That is the real cost of the fallback, and it is what the notice on
+the finished document is telling the user about.
+
+---
+
+## The input methods
+
+`public/input.js`. Four ways in — picker, drag-and-drop, camera, writing canvas
+— converging on **one file**, because the Flask app's rule holds here too: the
+user is never asked which engine reads their page, since that was always a
+question about our implementation rather than about their document.
+
+Two of them hold operating-system resources. The camera holds a `MediaStream`
+and the canvas holds an offscreen sheet that grows to 4096², and both have to
+be released on *every* exit path — cancel, Escape, backdrop click, capture.
+A camera light that stays on after the dialog closes is the kind of bug that
+costs the user's trust rather than their conversion, so the release is hung on
+the dialog's own `close` event, which fires for all of them.
+
+The canvas exports the **ink**, not the sheet: a 4096-square canvas of which
+someone used a corner is a mostly-blank page, and a mostly-blank page is one
+the recognisers have to be told to ignore most of. It also clears to white
+rather than transparent — `preprocess.js` composites transparency onto white
+anyway, but a drawing that *looks* white and exports transparent is how the
+Python app once got a black page.
+
+`npm run test:input` — **36 checks**, driving the real `index.html` with real
+pointer and drag events, and a fake camera device. It asserts the things a
+pipeline test cannot see: that the drop zone's highlight survives the pointer
+crossing a child element (`dragenter`/`dragleave` fire per element, so the
+highlight is *counted*, not toggled); that a file dropped anywhere else does
+not navigate away and lose the session; that an untouched sheet is refused
+rather than converted; that the export is cropped to the ink; that a capture
+replaces a picked file rather than competing with it, so only one page can
+ever be sent; and that **the camera is released on all three ways out** —
+capture, Cancel, and Escape — checked on the track's `readyState`, because
+`srcObject` going null is housekeeping and `ended` is the light going off.
+
+Two things about that suite are worth knowing before editing it. Chromium's
+fake device **disappears once its tracks are stopped**, so each of the three
+close paths needs its own browser process — the app handles the failure
+correctly, showing the camera error rather than hanging, which is how this was
+found. And headless Chromium decodes that device's frames at **2×2** however
+the track is configured, so the suite asserts the requested resolution on the
+track's settings and only "not 0×0" on the captured frame.
+
 ### Building the assets
 
-The runtime and the model are kept out of git, like `public/texmf/`:
+The runtime, the models and the language data are kept out of git, like
+`public/texmf/`:
 
 ```bash
 npm run build:models -- <path-to-pix2text-mfr-int8>
 ```
 
-42.5 MiB in six files: ONNX Runtime Web (single-threaded SIMD — the site is not
-cross-origin isolated, so there is no SharedArrayBuffer and the threaded build
-would be dead weight), plus the encoder, decoder and tokenizer. The script
-refuses any asset over Pages' 25 MiB limit rather than letting a deploy find it.
+**50.4 MiB in ten files**, none of it fetched unless a conversion actually
+falls back:
+
+| | |
+|---|---|
+| ONNX Runtime Web | 10.76 MiB — single-threaded SIMD; the site is not cross-origin isolated, so there is no SharedArrayBuffer and the threaded build would be dead weight |
+| pix2text-mfr, INT8 | 31.77 MiB — encoder, decoder, tokenizer |
+| tesseract.js + core | 3.94 MiB — SIMD, LSTM-only, which is the engine Tesseract 5 uses for `eng` anyway |
+| `eng.traineddata` | 3.92 MiB — copied from the installed Tesseract, so the browser and the reference are the same recogniser |
+
+The script refuses any asset over Pages' 25 MiB per-file limit rather than
+letting a deploy find it.
+
+### Verified — 950 checks across seven suites
+
+```
+npm run test:security        165/165   the Gemini endpoint cannot be steered
+npm run test:stage2          226/226   validation + compile parity
+npm run test:merge           211/211   multi-page merge, byte-exact vs Python
+npm run test:stage3          134/134   sessions, auth, history, deletion
+npm run test:stage3:browser   63/63    guest-history contract, end to end
+npm run test:input            36/36    picker, drop, camera, canvas
+npm run test:fallback        115/115   the whole offline pipeline
+```
+
+plus `python tests/test_contex.py` — **182 passed, 0 failed**, and
+`npm run test:formulas` — **16/16**, which is kept out of `npm test` because it
+reads all 75 benchmark images and takes two minutes.
 
 ### Still to come in Stage 4
 
-- **Text recognition** (tesseract.js), and its language data self-hosted — the
-  CSP is `connect-src 'self'`, so the default CDN fetch is not an option.
-- **`pipeline/latex/assemble.py`**: `nominate()`, `assemble()` and `to_tex()` —
-  the layout analysis that decides which regions are formulas and interleaves
-  them with the text into a reading order.
-- **The fallback authorisation gate**: `allow_fallback` and
-  `FallbackNotAuthorized`, so a downgrade is never silent, plus the outage
-  notice and its re-check control.
-- **The rest of the input UI**: camera capture, canvas drawing, drag-and-drop.
-- **The AI QA / repair loop** (`ai.finalise_document`).
 - **Error pages** (`web/errors.py`) in the app's own shell.
+- **The AI-side QA repair** (`ai.finalise_document`) for a merged multi-page
+  document on the *AI* path. The local path's QA is done and does not want it:
+  `run.py` reaches its fallback with the AI either off or just failed, so
+  asking a dead service for a repair would spend the full retry backoff to
+  arrive at the same answer, on exactly the path where the user is already
+  waiting longer than usual. Doing it on the AI path needs a Worker endpoint
+  that accepts **text**, which is a real widening of the surface
+  `tests/security.mjs` exists to keep narrow — so it is a decision to take
+  deliberately rather than a gap to fill quietly.

@@ -114,7 +114,7 @@ for (const cond of ['clean', 'lowres', 'noisy', 'blur', 'photo']) {
   if (!set.length) continue;
   const a = { ce: 0, nc: 0, te: 0, nt: 0, ex: 0, n: 0 };
   for (const m of set) {
-    const r = await page.evaluate((u) => window.readFormula(u), `/bench/${m.file}`);
+    const r = await page.evaluate((u) => window.readFormula(u), `/bench/img_math/${m.file}`);
     const g = normalize(m.gt);
     const p = normalize(r.latex);
     a.ce += lev(g, p); a.nc += g.length;

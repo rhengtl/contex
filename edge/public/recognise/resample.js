@@ -23,7 +23,6 @@
 //   |x| < 1   ((a + 2)|x| - (a + 3))x^2 + 1
 //   |x| < 2   (((|x| - 5)|x| + 8)|x| - 4) * a
 const A = -0.5;
-const SUPPORT = 2.0;
 
 function bicubic(x) {
   const t = Math.abs(x);
@@ -32,17 +31,41 @@ function bicubic(x) {
   return 0.0;
 }
 
+/** Pillow's sinc_filter. */
+function sinc(x) {
+  if (x === 0.0) return 1.0;
+  const t = x * Math.PI;
+  return Math.sin(t) / t;
+}
+
+/** Pillow's lanczos_filter: sinc windowed by a sinc three lobes wide. */
+function lanczos(x) {
+  if (x <= -3.0 || x >= 3.0) return 0.0;
+  return sinc(x) * sinc(x / 3.0);
+}
+
+/**
+ * The two filters this project needs, named as Pillow names them.
+ *
+ * BICUBIC is what the formula model's preprocessor_config.json asks for.
+ * LANCZOS is what preprocess.py enlarges a low-resolution capture with, and
+ * enlarging is the one place the choice is visible: a bicubic upscale of small
+ * text is softer, and softer strokes are what binarisation loses.
+ */
+export const BICUBIC = { fn: bicubic, support: 2.0 };
+export const LANCZOS = { fn: lanczos, support: 3.0 };
+
 /**
  * The weights for one axis -- Pillow's precompute_coeffs.
  *
  * Returns { bounds, kk, kmax }: for output pixel i, the source run starts at
  * bounds[i*2], is bounds[i*2+1] long, and its weights are kk[i*kmax ...].
  */
-function coefficients(inSize, outSize) {
+function coefficients(inSize, outSize, filter) {
   const scale = inSize / outSize;
   // A reduction spreads the filter; an enlargement does not narrow it.
   const filterScale = Math.max(1.0, scale);
-  const support = SUPPORT * filterScale;
+  const support = filter.support * filterScale;
   const kmax = Math.ceil(support) * 2 + 1;
 
   const bounds = new Int32Array(outSize * 2);
@@ -61,7 +84,7 @@ function coefficients(inSize, outSize) {
     const base = xx * kmax;
     let sum = 0;
     for (let x = 0; x < count; x++) {
-      const w = bicubic((x + xmin - center + 0.5) / filterScale);
+      const w = filter.fn((x + xmin - center + 0.5) / filterScale);
       kk[base + x] = w;
       sum += w;
     }
@@ -82,9 +105,9 @@ function coefficients(inSize, outSize) {
  * only throw precision away. Pillow rounds because it returns an image; this
  * does not because it returns numbers.
  */
-export function resize(src, srcW, srcH, dstW, dstH) {
+export function resize(src, srcW, srcH, dstW, dstH, filter = BICUBIC) {
   // Horizontal pass: srcW -> dstW, height unchanged.
-  const h = coefficients(srcW, dstW);
+  const h = coefficients(srcW, dstW, filter);
   const middle = new Float32Array(dstW * srcH * 4);
   for (let y = 0; y < srcH; y++) {
     const rowIn = y * srcW * 4;
@@ -111,7 +134,7 @@ export function resize(src, srcW, srcH, dstW, dstH) {
   }
 
   // Vertical pass: srcH -> dstH.
-  const v = coefficients(srcH, dstH);
+  const v = coefficients(srcH, dstH, filter);
   const out = new Float32Array(dstW * dstH * 4);
   for (let y = 0; y < dstH; y++) {
     const ymin = v.bounds[y * 2];
