@@ -1,0 +1,341 @@
+<!--
+  Privacy Policy -- the Cloudflare build.
+
+  Adapted from templates/legal/privacy.html. Every factual statement was
+  re-derived by reading THIS implementation, because the data flow genuinely
+  changed: the PDF is now compiled in your browser, nothing generated is stored
+  on any server, and the page image reaches Google through the Files API rather
+  than inside a JSON request. A policy carried over unchanged would have
+  described a system that no longer exists.
+
+  Each claim and the code it comes from, so the two can be kept in step:
+
+    what is sent to the model     worker/gemini.js  convertPage(), uploadPage()
+    the page is deleted after     worker/gemini.js  deleteFile()
+    NO downscaling before send    public/app.js  run() - preprocess.py is not
+                                  ported; the file goes as chosen
+    per-page PDF splitting        public/pages.js  splitPdf(), MAX_PDF_PAGES
+    .docx NOT extracted           public/pages.js  aiUnits() - run.py's
+                                  _convert_docx() is not ported
+    browser-side compile          public/latex/compile.js, public/preview.js
+    nothing generated is stored   there is no server-side result store at all
+    guest history                 public/history.js  contex_guest_history
+    signed-in history             worker/history.js  save()
+    profile fields                worker/history.js  upsertProfile(),
+                                  setTermsAccepted()
+    session cookie contents       worker/session.js  startSession()
+    rate-limit records            worker/ratelimit.js  RateLimiter
+    outage record                 worker/gemini.js  recordOutage() - a status
+                                  and a timestamp, no user content
+    third-party browser hosts     public/_headers  connect-src / script-src
+
+  NOT reviewed by a lawyer, and no claim of compliance is made.
+-->
+<div class="doc">
+
+  <div class="note-caution">
+    <p class="note-title">Please read this first</p>
+    <p>
+      This policy describes accurately what ConTeX does with your data &mdash;
+      it was written from the source code, not from a template. It has
+      <strong>not been reviewed by a lawyer</strong>, and nothing here is a
+      claim that ConTeX complies with the Data Privacy Act, the GDPR, the CCPA
+      or any other law.
+    </p>
+  </div>
+
+  <p class="doc-version">
+    Version <span data-terms-version>&mdash;</span> &middot; Effective on the
+    date you accept it
+  </p>
+
+  <h4>1. Who is responsible for your data</h4>
+  <p>
+    ConTeX is a personal, non-commercial project operated by an individual. For
+    the purposes of the Data Privacy Act of 2012 (Republic Act No. 10173) it
+    acts as the <strong>Personal Information Controller</strong>, and for the
+    purposes of the GDPR as the <strong>controller</strong>, for the data
+    described below.
+  </p>
+  <p>
+    All privacy questions, data-subject requests and deletion requests go to
+    <a href="mailto:rheniergustilo06@gmail.com">rheniergustilo06@gmail.com</a>.
+    No Data Protection Officer has been appointed; requests are handled
+    personally by the operator.
+  </p>
+
+  <h4>2. What ConTeX collects</h4>
+  <table class="doc-table">
+    <thead><tr><th>What</th><th>Detail</th><th>When</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Documents you convert</td>
+        <td>Images, PDFs, camera photographs and canvas drawings, plus the file
+            name. May contain personal data if your document does. The file is
+            passed through to the AI provider; ConTeX itself keeps no copy.</td>
+        <td>Each conversion</td>
+      </tr>
+      <tr>
+        <td>The LaTeX produced</td>
+        <td><strong>Stays in your browser.</strong> The <code>.tex</code> and
+            the PDF preview are produced and held by the page you are looking
+            at. They reach a server only if you are signed in, in which case
+            the <code>.tex</code> is saved to your history.</td>
+        <td>Each conversion</td>
+      </tr>
+      <tr>
+        <td>Account details</td>
+        <td>Email address, display name, and a user ID issued by Firebase
+            Authentication. Passwords are held by Firebase, never by ConTeX.</td>
+        <td>If you sign up</td>
+      </tr>
+      <tr>
+        <td>Account activity</td>
+        <td>Account creation time, last sign-in time, and which version of the
+            Terms you accepted and when.</td>
+        <td>If you sign in</td>
+      </tr>
+      <tr>
+        <td>Saved history</td>
+        <td>For signed-in users: file name, the generated LaTeX (truncated at
+            60,000 characters) and a timestamp.</td>
+        <td>If you sign in</td>
+      </tr>
+      <tr>
+        <td>Session cookie</td>
+        <td>A signed cookie holding your sign-in state (user ID, email address,
+            display name) and your Terms acceptance. It is signed, not
+            encrypted, and holds nothing secret.</td>
+        <td>Always</td>
+      </tr>
+      <tr>
+        <td>Abuse-prevention counters</td>
+        <td>To enforce the request limits in the Terms, ConTeX keeps a short
+            list of request times against a caller key &mdash; your user ID if
+            you are signed in, otherwise your IP address. No document content
+            is involved.</td>
+        <td>Always</td>
+      </tr>
+      <tr>
+        <td>Server request logs</td>
+        <td>The Service is hosted on Cloudflare, whose ordinary edge logs may
+            record your IP address, the time and the resource requested. ConTeX
+            itself writes no analytics.</td>
+        <td>Always</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    ConTeX has <strong>no analytics, no advertising and no tracking
+    cookies</strong>, and does not build a profile of you or make automated
+    decisions that produce legal or similarly significant effects about you.
+  </p>
+
+  <h4>3. Where your document goes</h4>
+  <p>
+    Your document is transmitted to a third-party AI provider &mdash; currently
+    Google, through the Gemini API &mdash; which reads it and returns LaTeX.
+    Specifically:
+  </p>
+  <ul>
+    <li>
+      The file is uploaded to Google's <strong>Files API</strong> and then
+      referenced in the conversion request. ConTeX
+      <strong>deletes the uploaded file as soon as the reply arrives</strong>.
+      Until that delete completes, and if it fails, the file is subject to
+      Google's own retention for uploaded files.
+    </li>
+    <li>
+      The file is sent <strong>as you chose it</strong>. It is not resized,
+      re-encoded or reduced first.
+    </li>
+    <li>
+      A PDF is split in your browser and sent <strong>one page at a
+      time</strong>, up to <strong>10 pages</strong>. Pages beyond the tenth
+      are not converted and are not sent.
+    </li>
+    <li>Canvas drawings and camera photographs are sent as images.</li>
+  </ul>
+  <div class="note-caution">
+    <p class="note-title">Free-tier training</p>
+    <p>
+      If ConTeX is running on Google's free API tier, Google may use documents
+      sent to it to <strong>train its models</strong>. In that situation Google
+      acts on its own behalf and not merely on ours, and
+      <strong>we cannot undo, retract or limit that use</strong> once a
+      document has been sent &mdash; deleting the uploaded file does not
+      withdraw it. Please do not upload confidential, personal or sensitive
+      material.
+    </p>
+  </div>
+  <p>
+    ConTeX keeps a small record of whether the AI service is currently failing,
+    so it can warn the next person. That record contains only a status code and
+    a timestamp &mdash; never any part of anyone's document.
+  </p>
+
+  <h4>4. What happens in your browser and nowhere else</h4>
+  <p>
+    This build does more on your own device than a server-rendered one can, and
+    the difference is a privacy difference rather than only a technical one:
+  </p>
+  <ul>
+    <li>
+      <strong>The PDF preview is compiled on your device.</strong> A complete
+      LaTeX engine and font set are downloaded as ordinary static files and run
+      in the page. The generated <code>.tex</code> is never sent anywhere to be
+      compiled.
+    </li>
+    <li>
+      <strong>The generated <code>.tex</code> is never stored on a server</strong>
+      unless you are signed in and it is saved to your history.
+    </li>
+    <li>
+      <strong>Splitting a PDF into pages happens on your device.</strong>
+    </li>
+    <li>
+      <strong>Guest history never leaves your browser.</strong>
+    </li>
+  </ul>
+
+  <h4>5. Why we process it, and on what legal basis</h4>
+  <table class="doc-table">
+    <thead><tr><th>Purpose</th><th>Basis (GDPR Art. 6)</th><th>Basis (RA 10173 Sec. 12)</th></tr></thead>
+    <tbody>
+      <tr><td>Converting your document and giving you the result</td>
+          <td>Art. 6(1)(b) &mdash; performance of a contract with you</td>
+          <td>Sec. 12(b) &mdash; necessary to fulfil a contract with the data subject</td></tr>
+      <tr><td>Running your account and saved history</td>
+          <td>Art. 6(1)(b)</td><td>Sec. 12(b)</td></tr>
+      <tr><td>Recording that you accepted the Terms</td>
+          <td>Art. 6(1)(f) &mdash; legitimate interest in keeping a record of acceptance</td>
+          <td>Sec. 12(f) &mdash; legitimate interests of the controller</td></tr>
+      <tr><td>Keeping the Service secure and preventing abuse</td>
+          <td>Art. 6(1)(f)</td><td>Sec. 12(f)</td></tr>
+    </tbody>
+  </table>
+  <p>Where a legitimate interest is relied on, you may object &mdash; see Section 9.</p>
+
+  <h4>6. Who else receives your data</h4>
+  <p>Services ConTeX sends data to on the server side:</p>
+  <ul>
+    <li><strong>Google &mdash; Gemini API (including the Files API).</strong>
+        Receives your document to convert it. Subject to the free-tier training
+        note in Section 3.</li>
+    <li><strong>Google &mdash; Firebase Authentication.</strong> Handles
+        sign-up, sign-in, password reset and Google sign-in. Holds your email
+        address, display name and password credentials.</li>
+    <li><strong>Google &mdash; Cloud Firestore.</strong> Stores your profile and
+        your saved history.</li>
+    <li><strong>Cloudflare.</strong> Hosts the Service and serves every page and
+        file. It processes your IP address and request metadata as a hosting
+        provider, and stores the abuse-prevention counters described in
+        Section 2.</li>
+  </ul>
+  <p>Services your browser contacts directly when a ConTeX page loads:</p>
+  <ul>
+    <li><code>www.gstatic.com</code> and <code>apis.google.com</code> &mdash;
+        the Firebase JavaScript library and the sign-in frame, loaded only when
+        you open the sign-in view.</li>
+    <li><code>identitytoolkit.googleapis.com</code>,
+        <code>securetoken.googleapis.com</code> and your project's
+        <code>firebaseapp.com</code> address &mdash; contacted by that library
+        during Google sign-in.</li>
+  </ul>
+  <p>
+    These receive your IP address and browser user-agent because your browser
+    requests files from them &mdash; not because ConTeX sends them anything
+    about you. <strong>They never receive your documents.</strong> The LaTeX
+    engine, its fonts, the PDF renderer and the PDF splitter are all served from
+    ConTeX's own address, so using them contacts nobody else.
+  </p>
+  <p>
+    Each of these providers processes what it receives under its own privacy
+    terms, which apply in addition to this policy. We do not sell your personal
+    information, and we do not share it for cross-context behavioural
+    advertising.
+  </p>
+
+  <h4>7. International transfers</h4>
+  <p>
+    Google's and Cloudflare's services operate globally, so your document and
+    your account data may be processed on servers outside the Philippines and
+    outside your own country, including in the United States. Where personal
+    data of people in the European Economic Area or the United Kingdom is
+    transferred, both providers state that they rely on the European
+    Commission's Standard Contractual Clauses and their own adequacy
+    arrangements.
+  </p>
+  <p>
+    ConTeX is a personal project and has not itself entered into transfer
+    agreements with these providers beyond accepting their standard terms. If
+    that matters for your data, do not upload it.
+  </p>
+
+  <h4>8. How long things are kept</h4>
+  <table class="doc-table">
+    <thead><tr><th>Data</th><th>Kept for</th></tr></thead>
+    <tbody>
+      <tr><td>Your uploaded file</td>
+          <td>Streamed through to Google without being stored by ConTeX, then
+              <strong>deleted from Google's Files API as soon as the reply
+              arrives</strong>. See the training note in Section 3 for what
+              deletion does not undo.</td></tr>
+      <tr><td>The generated <code>.tex</code> and PDF preview</td>
+          <td><strong>Held only by your browser tab</strong>, for as long as
+              you leave it open. No server holds a copy.</td></tr>
+      <tr><td>Guest history</td>
+          <td>Stored only in your own browser. Cleared when you refresh the
+              page or close the tab. <strong>It never reaches the
+              server.</strong></td></tr>
+      <tr><td>Signed-in history and profile</td>
+          <td>Until you ask us to delete it, or until you delete your account.
+              There is no automatic expiry.</td></tr>
+      <tr><td>Session cookie</td>
+          <td>Until you close your browser, or <strong>30 days</strong> if you
+              chose &ldquo;keep me signed in&rdquo;. Signing out clears it.</td></tr>
+      <tr><td>Abuse-prevention counters</td>
+          <td><strong>Five minutes</strong> from each request.</td></tr>
+      <tr><td>Data held by Google and Cloudflare</td>
+          <td>Under their own retention terms, which we do not control.
+              Free-tier training data cannot be recalled.</td></tr>
+    </tbody>
+  </table>
+
+  <h4>9. Your rights</h4>
+  <p>
+    Depending on where you live, you have some or all of the rights below.
+    ConTeX applies them to everyone who asks, regardless of location: to be
+    informed, to access a copy of the personal data held about you, to correct
+    data that is inaccurate, to have it erased, to object to processing based on
+    a legitimate interest, to restrict processing, and to receive your data in a
+    portable form.
+  </p>
+  <p>
+    <strong>Please note:</strong> ConTeX has no self-service delete or export
+    for saved history. Write to the address in Section 1 and the operator will
+    do it by hand. There is no charge, and no account is needed to ask.
+  </p>
+
+  <h4>10. Children</h4>
+  <p>
+    ConTeX is not intended for anyone under 16. If you believe someone under 16
+    has created an account, tell us and we will delete it and its data.
+  </p>
+
+  <h4>11. Security</h4>
+  <p>
+    Traffic is served over HTTPS only. The session cookie is signed and marked
+    <code>HttpOnly</code>, <code>Secure</code> and <code>SameSite=Lax</code>.
+    Saved history is scoped to its owner's user ID by the server on every read,
+    so one account cannot reach another's documents. Passwords are held by
+    Firebase and are never seen by ConTeX. No system is perfectly secure, and
+    ConTeX is a personal project rather than an audited service.
+  </p>
+
+  <h4>12. Changes to this policy</h4>
+  <p>
+    If this policy changes materially, the version identifier is increased and
+    you are asked to accept it again before your next conversion.
+  </p>
+</div>

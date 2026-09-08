@@ -200,6 +200,21 @@ const UNSAFE_CONSTRUCTS = [
   [/\\(?:Input|)IfFileExists\b/, '\\IfFileExists (probes the filesystem)'],
   [/\\directlua(?![a-zA-Z])/, '\\directlua (runs Lua)'],
   [/\\latelua(?![a-zA-Z])/, '\\latelua (runs Lua)'],
+  // pdfTeX's own file primitives. Each takes a filename directly -- no
+  // \openin, no stream number -- and \pdffiledump typesets the file's bytes
+  // into the output as hex. Measured against the Python engine on MiKTeX with
+  // openin_any=p: a canary file outside the working directory was read and
+  // rendered into the PDF.
+  //
+  // pdftex.wasm has no host filesystem to reach, so here the blast radius is
+  // whatever the package fetcher can pull from our own origin. That is much
+  // smaller, and it is still not a thing a generated document ever needs.
+  [/\\pdffiledump(?![a-zA-Z])/, '\\pdffiledump (reads files)'],
+  [/\\pdffilesize(?![a-zA-Z])/, '\\pdffilesize (probes the filesystem)'],
+  [/\\pdffilemoddate(?![a-zA-Z])/, '\\pdffilemoddate (probes the filesystem)'],
+  [/\\pdfmdfivesum(?![a-zA-Z])/, '\\pdfmdfivesum (reads files)'],
+  [/\\pdfximage(?![a-zA-Z])/, '\\pdfximage (reads another file)'],
+  [/\\pdfobj(?![a-zA-Z])/, '\\pdfobj (can embed a file)'],
   [/\\ShellEscape\b/, '\\ShellEscape (runs shell commands)'],
   [/\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bshellesc\b/,
    'the shellesc package (runs shell commands)'],

@@ -226,6 +226,55 @@ async function attach(page, name, bytes, mime) {
   await context.close();
 }
 
+// -- the terms are readable before they are accepted ------------------------
+//
+// A gate that asks you to accept a document you cannot open is not consent.
+// The Flask app served /legal/<document> as a fragment for the in-app modal;
+// this checks the same thing is reachable here, and that what it shows names
+// the version actually being enforced.
+{
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log('PAGEERROR ' + e.message.slice(0, 200)));
+  await openApp(page, { shell: { hasAcceptedTerms: false } });
+
+  check('the terms checkbox is shown to someone who has not accepted',
+        await page.isVisible('#terms'));
+  for (const [which, title] of [['terms', 'Terms of Service'],
+                                ['privacy', 'Privacy Policy']]) {
+    await page.click(`#terms [data-legal="${which}"]`);
+    await page.waitForSelector('#legal[open] .doc', { timeout: 10000 });
+    check(`${which}: opens from the acceptance control itself`,
+          (await page.textContent('#legal-title')) === title,
+          await page.textContent('#legal-title'));
+    const shown = await page.textContent('#legal-body [data-terms-version]');
+    check(`${which}: names the version being enforced`,
+          shown === '1.0-2026-08-24', shown);
+    await page.click('#legal-close');
+  }
+
+  // The statements this build must not repeat from the Flask policy.
+  const privacy = await (await fetch(`${BASE}/legal/privacy.html`)).text();
+  check('the privacy policy no longer claims a one-hour server retention',
+        !/one hour/i.test(privacy.replace(/<!--[\s\S]*?-->/, '')),
+        'the stale retention claim is still there');
+  check('and says the PDF is compiled in the browser',
+        /compiled (on your device|in your own browser)/i.test(privacy));
+  check('and discloses the Files API upload and its deletion',
+        /Files API/.test(privacy) && /deletes the uploaded file/i.test(privacy));
+  check('and discloses Cloudflare as the host',
+        /Cloudflare/.test(privacy));
+  check('and discloses the abuse-prevention counters',
+        /Abuse-prevention counters/i.test(privacy));
+  const terms = await (await fetch(`${BASE}/legal/terms.html`)).text();
+  check('the terms no longer promise a one-hour result',
+        !/kept[\s\S]{0,40}one hour/i.test(terms));
+  check('and state the request limits the Worker actually enforces',
+        /30 in any 5 minutes/.test(terms) && /20 in any 5 minutes/.test(terms));
+
+  await context.close();
+}
+
 // -- a signed-in user converts ----------------------------------------------
 {
   const context = await browser.newContext();
@@ -282,6 +331,54 @@ async function attach(page, name, bytes, mime) {
   await page.waitForSelector('#history-list .panel canvas, #history-list .panel img',
                              { timeout: 120000 });
   check('a saved conversion previews from its stored LaTeX', true);
+  await context.close();
+}
+
+// -- signing in does not inherit the previous visitor's document -------------
+//
+// session.py start_session() clears the whole session for this reason: on a
+// shared computer the person signing in is not necessarily the person who was
+// just using it. In Flask the danger was a result token left in the cookie;
+// here the document itself is in the page, so the page has to be cleared.
+{
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log('PAGEERROR ' + e.message.slice(0, 200)));
+  await openApp(page);
+  await page.route('**/api/auth/login', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ ok: true, isAuthenticated: true, displayName: 'Ada L',
+                           email: 'ada@example.com', hasAcceptedTerms: true,
+                           maxUploadMb: 32, termsVersion: '1.0-2026-08-24',
+                           firebaseConfig: null }),
+  }));
+
+  await attach(page, 'private.png', [0x89, 0x50, 0x4e, 0x47], 'image/png');
+  await page.click('#go');
+  await page.waitForFunction(
+    () => /Done|No preview/.test(document.getElementById('status').textContent),
+    { timeout: 120000 });
+  check('the guest has a converted document on screen',
+        !(await page.locator('#result').isHidden()) &&
+        (await page.textContent('#tex')).includes('documentclass'));
+  const guestBefore = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('contex_guest_history') || '[]').length);
+  check('and an entry in their guest history', guestBefore === 1);
+
+  await page.click('#nav-signin');
+  await page.fill('#login-email', 'ada@example.com');
+  await page.fill('#login-password', 'pw');
+  await page.click('#login');
+  await page.waitForSelector('#signed-in:not([hidden])');
+
+  check('signing in hides the previous visitor\'s result',
+        await page.locator('#result').isHidden());
+  check('and drops the document itself, not just the panel',
+        (await page.textContent('#tex')) === '',
+        await page.textContent('#tex'));
+  check('and clears their guest history',
+        (await page.evaluate(() =>
+          sessionStorage.getItem('contex_guest_history'))) === null);
   await context.close();
 }
 

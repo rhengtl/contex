@@ -35,7 +35,7 @@ import { withSecurityHeaders, makeNonce } from './security.js';
 import {
   loadSession, sign, setCookie, clearCookie, emptySession, startSession,
   currentUserUid, termsAccepted, termsAcceptedInSession, shellContext,
-  TERMS_VERSION, MAX_UPLOAD_MB,
+  termsVersion, MAX_UPLOAD_MB,
 } from './session.js';
 import { rateLimited } from './ratelimit.js';
 import { convertPage, aiStatus } from './gemini.js';
@@ -44,7 +44,10 @@ import * as history from './history.js';
 
 export { RateLimiter } from './ratelimit.js';
 
-const MAX_BODY_BYTES = Math.ceil(MAX_UPLOAD_MB * 1024 * 1024 * 4 / 3) + 1024;
+// The body is the page's raw bytes now, not base64 of them, so the 4/3
+// inflation this used to allow for is gone -- see the note in gemini.js. It is
+// the same limit app.py sets with MAX_CONTENT_LENGTH.
+const MAX_BODY_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 function json(body, status = 200, extraHeaders) {
   const headers = new Headers({ 'content-type': 'application/json' });
@@ -283,7 +286,7 @@ async function handle(request, env, ctx) {
     const body = shellContext(session, accepted, env);
     if (cache) {
       // Cache it in the session so the next request does not hit Firestore.
-      return withSession(env, { ...session, terms: TERMS_VERSION }, body);
+      return withSession(env, { ...session, terms: termsVersion(env) }, body);
     }
     return json(body);
   }
@@ -294,17 +297,18 @@ async function handle(request, env, ctx) {
     const version = body.version;
     // pages.py accept_terms(): an acceptance of a version we are no longer
     // serving is refused rather than silently upgraded.
-    if (version !== undefined && version !== null && version !== TERMS_VERSION) {
+    const current = termsVersion(env);
+    if (version !== undefined && version !== null && version !== current) {
       return json({ ok: false,
                     error: 'Those terms are out of date. Please reload the page.' },
                   409);
     }
-    const next = { ...session, terms: TERMS_VERSION };
+    const next = { ...session, terms: current };
     const uid = currentUserUid(session);
     // A signed-in user's acceptance goes on their profile, so it survives
     // signing out; a guest's lives only in the session.
-    if (uid) await history.setTermsAccepted(env, uid, TERMS_VERSION);
-    return withSession(env, next, { ok: true, accepted: true, version: TERMS_VERSION });
+    if (uid) await history.setTermsAccepted(env, uid, current);
+    return withSession(env, next, { ok: true, accepted: true, version: current });
   }
 
   // -- authentication ----------------------------------------------------
@@ -349,7 +353,7 @@ async function handle(request, env, ctx) {
     // The session's own answer only. A signed-in user whose acceptance lives
     // in Firestore has it cached into the cookie by /api/session, which the
     // page loads first -- so this stays a pure CPU check on the hot path.
-    if (!termsAcceptedInSession(session)) {
+    if (!termsAcceptedInSession(session, env)) {
       const { accepted, cache } = await termsAccepted(env, session);
       if (!accepted) {
         return json({
@@ -358,7 +362,7 @@ async function handle(request, env, ctx) {
           needsTerms: true,
         }, 403);
       }
-      if (cache) session.terms = TERMS_VERSION;
+      if (cache) session.terms = termsVersion(env);
     }
 
     if (!request.body) {

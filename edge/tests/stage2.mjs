@@ -81,7 +81,9 @@ for (const d of docs) {
 console.log('\n=== control-word boundary (no over-match) ===');
 for (const body of ['\\includegraphics[width=3cm]{plot.png}',
                     '\\inputencoding{utf8}', '\\openinput{x}',
-                    '\\opening{Dear Sir}', '\\readline\\x', '\\writes']) {
+                    '\\opening{Dear Sir}', '\\readline\\x', '\\writes',
+                    '\\pdffiledumper{x}', '\\pdfximages{x}',
+                    '\\pdfobjcompresslevel=2', '\\pdfmdfivesums{x}']) {
   const got = await page.evaluate((b) => window.validate(
     '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'),
     body);

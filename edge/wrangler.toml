@@ -37,6 +37,10 @@ FIREBASE_AUTH_DOMAIN = ""
 FIREBASE_PROJECT_ID = ""
 FIREBASE_API_KEY = ""
 
+# session.py reads this from configuration, so this does too. Bump it to make
+# every user accept the terms again.
+TERMS_VERSION = "1.0-2026-08-24"
+
 # Secrets, set with `wrangler secret put` and never committed:
 #   GEMINI_API_KEY            the conversion key
 #   SESSION_HMAC_KEY          signs the session cookie

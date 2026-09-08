@@ -26,3 +26,18 @@ header #who{color:#4a5652;font-size:.9rem;margin-right:.4rem}
 #auth-view input[type=email],#auth-view input[type=password],#auth-view input[type=text]{display:block;width:100%;max-width:22rem;padding:.4rem .5rem;margin-top:.2rem}
 #auth-view h2{font-size:1.1rem;margin:1.75rem 0 .5rem}
 #auth-success{color:#1F5D3A;background:#E6F4EA}
+footer{margin-top:2.5rem;padding-top:.8rem;border-top:1px solid #e2e8e6}
+.linkish{background:none;border:0;padding:0;margin:0 .5rem 0 0;font:inherit;color:#0E7C86;text-decoration:underline;cursor:pointer}
+label .linkish{margin:0}
+dialog#legal{max-width:46rem;width:calc(100% - 2rem);max-height:80vh;border:1px solid #d6dede;border-radius:6px;padding:0}
+dialog#legal::backdrop{background:rgba(23,28,26,.45)}
+.legal-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.25rem;border-bottom:1px solid #e2e8e6;position:sticky;top:0;background:#fff}
+.legal-head h2{margin:0;font-size:1.1rem}
+#legal-body{padding:1.25rem;overflow-y:auto;max-height:calc(80vh - 4rem)}
+.doc h4{margin:1.6rem 0 .4rem;font-size:1rem}
+.doc p,.doc li{font-size:.9375rem}
+.doc-version{color:#5F6E70;font-size:.8125rem}
+.doc-table{border-collapse:collapse;width:100%;margin:.6rem 0;font-size:.875rem;display:block;overflow-x:auto}
+.doc-table th,.doc-table td{border:1px solid #e2e8e6;padding:.4rem .55rem;text-align:left;vertical-align:top}
+.note-caution{background:#FFF7E6;border:1px solid #F0D9A8;border-radius:4px;padding:.7rem .9rem;margin:.8rem 0}
+.note-title{font-weight:600;margin:0 0 .3rem}

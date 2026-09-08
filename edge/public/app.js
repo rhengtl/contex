@@ -46,16 +46,6 @@ function showError(message) {
 function clearError() { el('error').hidden = true; }
 function setStatus(message) { el('status').textContent = message || ''; }
 
-function toBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const CHUNK = 0x8000;
-  let out = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    out += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(out);
-}
-
 /** ai.py fenced_latex(), ported. Prefers the last block that is a document. */
 export function fencedLatex(text) {
   if (!text) return null;
@@ -102,7 +92,11 @@ class Rotation {
  * request at a time.
  */
 async function convertOne(unit, rotation, { speculative = false } = {}) {
-  const base64 = toBase64(unit.bytes.buffer ? unit.bytes.buffer : unit.bytes);
+  // Raw bytes, not base64. The Worker pipes them into the Gemini Files API
+  // untouched and then writes the generateContent JSON itself, so there is
+  // nothing here to encode -- and nothing a payload could break out of.
+  const body = unit.bytes instanceof Uint8Array
+    ? unit.bytes : new Uint8Array(unit.bytes);
   let attempt = rotation.attempt;
   let thinking = true;
 
@@ -110,8 +104,9 @@ async function convertOne(unit, rotation, { speculative = false } = {}) {
     const query = `attempt=${attempt}${thinking ? '' : '&thinking=off'}`;
     const res = await fetch(`/api/convert/page?${query}`, {
       method: 'POST',
-      headers: { 'content-type': 'text/plain', 'x-image-mime': unit.mime },
-      body: base64,
+      headers: { 'content-type': 'application/octet-stream',
+                 'x-image-mime': unit.mime },
+      body,
     });
     if (res.ok) {
       const payload = await res.json();
@@ -515,16 +510,93 @@ function authSuccess(message) {
   box.hidden = !message;
 }
 
+/**
+ * Drop everything the previous visitor left in this tab.
+ *
+ * session.py start_session() clears the whole session on sign-in, and says
+ * why: "On a shared computer the person signing in is not necessarily the
+ * person who was just using it, and a token left in the cookie would let them
+ * download the document that person converted." The tokens are gone here --
+ * the document is held in the page instead -- so the same rule has to be
+ * applied to the page, or the result panel is the leak the tokens used to be.
+ */
+function clearWorkspace() {
+  state.tex = null;
+  state.name = null;
+  state.pdf = null;
+  el('tex').textContent = '';
+  el('result').hidden = true;
+  el('preview').replaceChildren();
+  el('preview-error').hidden = true;
+  el('notice').hidden = true;
+  el('download-pdf').hidden = true;
+  el('file').value = '';
+  setStatus('');
+  clearError();
+  history.clear();
+  state.guest = [];
+}
+
 async function afterSignIn(result) {
   if (!result.ok) { authError(result.error || 'Authentication failed'); return; }
   applyShell(result);
-  // A signed-in user must never see leftovers from an earlier guest session in
-  // the same tab.
-  history.clear();
-  state.guest = [];
+  // Everything the previous visitor had goes -- their guest history and the
+  // document still on screen alike.
+  clearWorkspace();
   authError(''); authSuccess('');
   show('convert-view');
 }
+
+// ---------------------------------------------------------------------------
+// The legal documents
+// ---------------------------------------------------------------------------
+//
+// A dialog rather than a page, for the reason pages.py gives: the requirement
+// is that a user can read the terms WITHOUT LEAVING what they were doing --
+// and being asked to accept a document you cannot open is not consent at all.
+//
+// The fragment is inserted as markup because that is what it is: a static file
+// this app ships, not anything a user or a model supplied. Nothing that came
+// from a conversion ever goes near innerHTML.
+const legalCache = new Map();
+
+async function showLegal(which) {
+  if (which !== 'terms' && which !== 'privacy') return;
+  const dialog = el('legal');
+  el('legal-title').textContent =
+    which === 'terms' ? 'Terms of Service' : 'Privacy Policy';
+  const body = el('legal-body');
+
+  if (!legalCache.has(which)) {
+    body.textContent = 'Loading…';
+    try {
+      const res = await fetch(`/legal/${which}.html`);
+      if (!res.ok) throw new Error(String(res.status));
+      legalCache.set(which, await res.text());
+    } catch {
+      body.textContent = 'That document could not be loaded. Please try again.';
+      if (!dialog.open) dialog.showModal();
+      return;
+    }
+  }
+  body.innerHTML = legalCache.get(which);
+  // Stamp the version actually in force, which the Worker reports -- the
+  // Flask template interpolated the same value.
+  for (const slot of body.querySelectorAll('[data-terms-version]')) {
+    slot.textContent = state.shell.termsVersion || '—';
+  }
+  if (!dialog.open) dialog.showModal();
+}
+
+// One delegated listener, so a control inside a document that was just
+// inserted -- the Privacy Policy link inside the Terms -- works too.
+document.addEventListener('click', (event) => {
+  const trigger = event.target.closest('[data-legal]');
+  if (!trigger) return;
+  event.preventDefault();
+  showLegal(trigger.dataset.legal);
+});
+el('legal-close').addEventListener('click', () => el('legal').close());
 
 el('go').addEventListener('click', run);
 el('download').addEventListener('click', () => downloadTex(state.tex, state.name));
@@ -587,10 +659,10 @@ el('forgot').addEventListener('click', async () => {
 el('logout').addEventListener('click', async () => {
   const result = await auth.logout();
   applyShell(result);
-  // Signing out drops the session; the guest list starts empty rather than
-  // inheriting anything from the account that was just here.
-  history.clear();
-  state.guest = [];
+  // auth.py's logout is session.clear(): the whole session goes, not just the
+  // sign-in half. Nothing of the account that was just here is left behind for
+  // whoever uses this tab next.
+  clearWorkspace();
   show('convert-view');
 });
 

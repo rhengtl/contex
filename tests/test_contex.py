@@ -3474,6 +3474,46 @@ def _():
         check(not found, f'{label} was refused: {found}')
 
 
+@test('a file cannot be read through pdfTeX\'s own primitives')
+def _():
+    # The sharpest of the file readers, and the last to be found. These need no
+    # \openin and no stream number: each takes a filename directly, and
+    # \pdffiledump typesets the file's bytes into the output as hex.
+    #
+    # Measured before this guard covered them: a canary file outside the
+    # working directory was read and rendered into the PDF, on this project's
+    # own MiKTeX, with openin_any=p already set. That is exactly the case the
+    # note in validate.py warns about - MiKTeX ignores the kpathsea settings,
+    # so the source check is the layer that has to work.
+    attacks = {
+        'dumping a file into the output': r'\pdffiledump offset 0 length 400 {/etc/passwd}',
+        'asking how big it is':           r'\pdffilesize{/etc/passwd}',
+        'asking when it changed':         r'\pdffilemoddate{/etc/passwd}',
+        'hashing it':                     r'\pdfmdfivesum file {/etc/passwd}',
+        'opening it as an image':         r'\pdfximage{/etc/passwd}',
+        'embedding it as an object':      r'\pdfobj file {/etc/passwd}',
+    }
+    for label, body in attacks.items():
+        tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        check(latex.unsafe_constructs(tex),
+              f'{label} was not recognised as unsafe')
+        result = latex.compile_tex(tex, want_pdf=True)
+        check(not result['attempted'],
+              f'{label} reached the engine instead of being refused first')
+        check(result['pdf'] is None, f'{label} produced a PDF')
+        check('reach outside itself' in (result['reason'] or ''),
+              f'{label} was refused without saying why')
+
+    # Longer control words that merely start with the same letters.
+    for body in (r'\pdffiledumper{x}', r'\pdfximages{x}',
+                 r'\pdfobjcompresslevel=2', r'\pdfmdfivesums{x}'):
+        tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        found = latex.unsafe_constructs(tex)
+        check(not found, f'{body} was refused: {found}')
+
+
 @test('an ordinary document is not mistaken for a hostile one')
 def _():
     # The guard is blunt on purpose, so the thing to prove is that it is not
@@ -3887,6 +3927,102 @@ def _():
     check('.env' in gitignored, '.env is no longer ignored by git')
     check('*.json' in gitignored,
           'service account keys are no longer ignored by git')
+
+
+@test('an account keeps the date it was created')
+def _():
+    # createdAt used to sit in the same dictionary as lastLogin, under a
+    # comment claiming merge=True would leave an existing value alone. It does
+    # not - a merge writes every field it is given - so every login overwrote
+    # the creation date with the current time, and the two fields were always
+    # the same instant. Nothing in the app reads createdAt today, which is
+    # exactly why it went unnoticed: the damage is silent and the true date is
+    # not recoverable afterwards.
+    #
+    # data/users.py is stubbed out for the rest of this suite, so the real one
+    # is loaded here against a Firestore double.
+    import importlib.util
+
+    class _Snapshot:
+        def __init__(self, data):
+            self.exists = data is not None
+            self._data = data
+
+        def to_dict(self):
+            return dict(self._data) if self._data is not None else None
+
+    class _Document:
+        def __init__(self, store, uid):
+            self._store = store
+            self._uid = uid
+
+        def get(self, field_paths=None):
+            data = self._store.get(self._uid)
+            if data is None:
+                return _Snapshot(None)
+            if field_paths:
+                return _Snapshot({k: v for k, v in data.items()
+                                  if k in field_paths})
+            return _Snapshot(data)
+
+        def set(self, payload, merge=False):
+            clock = self._store.setdefault('_clock', [0])
+            written = {}
+            for key, value in payload.items():
+                if value is firestore.SERVER_TIMESTAMP:
+                    clock[0] += 1
+                    written[key] = clock[0]
+                else:
+                    written[key] = value
+            if merge and self._uid in self._store:
+                self._store[self._uid].update(written)
+            else:
+                self._store[self._uid] = written
+
+    class _Collection:
+        def __init__(self, store):
+            self._store = store
+
+        def document(self, uid):
+            return _Document(self._store, uid)
+
+    class _Db:
+        def __init__(self, store):
+            self._store = store
+
+        def collection(self, _name):
+            return _Collection(self._store)
+
+    from firebase_admin import firestore
+
+    store = {}
+    saved_db = _fake_firebase.db
+    _fake_firebase.db = _Db(store)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            '_real_users', os.path.join(_ROOT, 'contex', 'data', 'users.py'))
+        real_users = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(real_users)
+
+        real_users.upsert_profile('uid-1', 'ada@example.com', 'Ada L')
+        first = store['uid-1']['createdAt']
+        check(first, 'a new profile got no createdAt at all')
+
+        real_users.upsert_profile('uid-1', 'ada@example.com', 'Ada L')
+        check(store['uid-1']['createdAt'] == first,
+              f"createdAt moved on the second login: {first} -> "
+              f"{store['uid-1']['createdAt']}")
+        check(store['uid-1']['lastLogin'] != store['uid-1']['createdAt'],
+              'lastLogin did not move, so the profile was not refreshed at all')
+
+        # A profile written by an older version has no createdAt; the next
+        # login is the only chance to give it one.
+        store['uid-2'] = {'uid': 'uid-2', 'email': 'grace@example.com'}
+        real_users.upsert_profile('uid-2', 'grace@example.com', 'Grace H')
+        check(store['uid-2'].get('createdAt'),
+              'a profile with no createdAt was not healed')
+    finally:
+        _fake_firebase.db = saved_db
 
 
 @test('the history query has the index it needs')

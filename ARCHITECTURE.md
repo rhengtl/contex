@@ -608,7 +608,7 @@ Defaults shown; full list in `.env.example`.
 | `AI_QA_ENABLED` | `true` | `false` turns the AI off; users are warned and offered the fallback. |
 | `AI_FIRST` | `true` | `false` pins every conversion to the local path (still warned). |
 | `AI_OUTAGE_ASSUME_SECONDS` | `900` | How long a per-model outage with no provider retry time is assumed to last. |
-| `TERMS_VERSION` | `2026-08-24-draft` | Bump to make every user re-accept. |
+| `TERMS_VERSION` | `1.0-2026-08-24` | Bump to make every user re-accept. |
 | `GEMINI_PAID_TIER` | `false` | `true` replaces the training warning with a quieter notice. |
 | `AI_QA_PROVIDER` | `gemini` | `gemini` or `anthropic`. |
 | `AI_QA_MODEL_DOCUMENT` | `gemini-3.1-flash-lite` | *Preferred* model for reading documents. The built-in chain still stands behind it; a comma-separated list sets your own order. |

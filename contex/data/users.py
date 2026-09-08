@@ -33,14 +33,31 @@ def upsert_profile(uid, email, display_name):
     if not db:
         return False
     try:
-        db.collection('users').document(uid).set({
+        document = db.collection('users').document(uid)
+        profile = {
             'uid': uid,
             'email': email,
             'displayName': display_name,
             'lastLogin': firestore.SERVER_TIMESTAMP,
-            # Only set on first write; merge=True leaves an existing value alone.
-            'createdAt': firestore.SERVER_TIMESTAMP,
-        }, merge=True)
+        }
+
+        # createdAt is written only when there is nothing there to preserve.
+        #
+        # It used to sit in the dictionary above, with a comment claiming
+        # merge=True would leave an existing value alone. It does not: a merge
+        # writes every field it is given, and this one was given createdAt on
+        # every login - so an account's creation date was really its last login
+        # date, and lastLogin beside it was the same instant. One read is what
+        # it costs to be right, and this runs once per sign-in.
+        #
+        # A row written before this fix has a createdAt that is wrong rather
+        # than missing, and nothing here can recover the true date - but a row
+        # that never got one at all is healed on the next login.
+        snapshot = document.get(field_paths=['createdAt'])
+        if not snapshot.exists or not (snapshot.to_dict() or {}).get('createdAt'):
+            profile['createdAt'] = firestore.SERVER_TIMESTAMP
+
+        document.set(profile, merge=True)
         return True
     except Exception as e:
         # Never block a valid login on a Firestore hiccup.

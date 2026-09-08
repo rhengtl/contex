@@ -30,7 +30,15 @@ const MAX_AGE = 60 * 60 * 24 * 30;
 // including users who already accepted an older version -- is then asked
 // again. Mirrors session.py TERMS_VERSION; it is deliberately not a date
 // alone: the version is what was agreed to.
+//
+// session.py reads this from configuration, so termsVersion(env) does too:
+// setting TERMS_VERSION in [vars] and leaving this constant alone would
+// otherwise look like it worked and quietly change nothing.
 export const TERMS_VERSION = '1.0-2026-08-24';
+
+export function termsVersion(env) {
+  return (env && env.TERMS_VERSION) || TERMS_VERSION;
+}
 
 // web/session.py shell_context(): what the application shell needs on every
 // page. app.py MAX_CONTENT_LENGTH is derived from the same number.
@@ -150,8 +158,8 @@ export function currentUserUid(session) {
 }
 
 /** The session's own answer, with no Firestore round trip. */
-export function termsAcceptedInSession(session) {
-  return session.terms === TERMS_VERSION;
+export function termsAcceptedInSession(session, env) {
+  return session.terms === termsVersion(env);
 }
 
 /**
@@ -169,9 +177,9 @@ export function termsAcceptedInSession(session) {
  * request does not hit Firestore.
  */
 export async function termsAccepted(env, session) {
-  if (termsAcceptedInSession(session)) return { accepted: true, cache: false };
+  if (termsAcceptedInSession(session, env)) return { accepted: true, cache: false };
   const uid = currentUserUid(session);
-  if (uid && await getTermsAccepted(env, uid) === TERMS_VERSION) {
+  if (uid && await getTermsAccepted(env, uid) === termsVersion(env)) {
     return { accepted: true, cache: true };
   }
   return { accepted: false, cache: false };
@@ -188,7 +196,7 @@ export function shellContext(session, accepted, env = {}) {
     displayName: session.name || null,
     email: session.email || null,
     maxUploadMb: MAX_UPLOAD_MB,
-    termsVersion: TERMS_VERSION,
+    termsVersion: termsVersion(env),
     hasAcceptedTerms: !!accepted,
     firebaseConfig: browserFirebase(env),
   };

@@ -1,0 +1,203 @@
+<!--
+  Terms of Service -- the Cloudflare build.
+
+  Adapted from templates/legal/terms.html. The legal sections are carried over
+  unchanged; the sections that make FACTUAL claims about the Service were
+  re-derived from this implementation:
+
+    32 MB upload limit        worker/index.js  MAX_BODY_BYTES; MAX_UPLOAD_MB
+    10 PDF pages              public/pages.js  MAX_PDF_PAGES
+    60,000-character history  worker/history.js  HISTORY_RESULT_LIMIT
+    request limits            worker/ratelimit.js  LIMITS
+    no server-side retention  there is no result store; see Section 9
+    accounts                  worker/accounts.js
+
+  NOT reviewed by a lawyer.
+-->
+<div class="doc">
+
+  <div class="note-caution">
+    <p class="note-title">Please read this first</p>
+    <p>
+      These Terms were written for this project rather than copied from a
+      template, but they have <strong>not been reviewed by a lawyer</strong>.
+    </p>
+  </div>
+
+  <p class="doc-version">
+    Version <span data-terms-version>&mdash;</span> &middot; Effective on the
+    date you accept it
+  </p>
+
+  <h4>1. Who provides ConTeX</h4>
+  <p>
+    ConTeX (&ldquo;the Service&rdquo;) is a personal, non-commercial project
+    operated by an individual. Contact:
+    <a href="mailto:rheniergustilo06@gmail.com">rheniergustilo06@gmail.com</a>.
+  </p>
+
+  <h4>2. Accepting these Terms</h4>
+  <p>
+    You accept these Terms and the Privacy Policy by ticking the box shown
+    before your first conversion. If they change materially the version
+    identifier is increased and you are asked again. If you do not accept them,
+    do not use the Service.
+  </p>
+
+  <h4>3. Who may use ConTeX</h4>
+  <p>
+    You must be at least 16. If you use the Service on behalf of an
+    organisation, you confirm you may accept these Terms for it.
+  </p>
+
+  <h4>4. What ConTeX does</h4>
+  <p>
+    You provide a page &mdash; an image, a PDF, a photograph or a drawing
+    &mdash; and the Service returns LaTeX source and, where it can, a compiled
+    PDF preview. The transcription is produced by a third-party AI model. The
+    PDF preview is compiled <strong>in your own browser</strong>; the generated
+    LaTeX is not sent anywhere to be rendered.
+  </p>
+
+  <h4>5. Accuracy is not guaranteed</h4>
+  <p>
+    The Service transcribes what a model believes it sees. It can misread
+    characters, mis-set mathematics, drop content, invent content, and produce
+    LaTeX that does not compile. <strong>Check the output before relying on
+    it.</strong> Do not use it for anything where an error would be costly
+    without reviewing every line yourself.
+  </p>
+
+  <h4>6. Your content</h4>
+  <p>
+    You keep all rights in what you upload and in the LaTeX produced from it.
+    You grant the Service only what it needs to do the conversion: to transmit
+    your document to the AI provider, to return the result to you, and &mdash;
+    if you are signed in &mdash; to store the generated LaTeX in your history
+    until you ask for it to be removed.
+  </p>
+  <p>
+    You confirm you have the right to upload what you upload. Read the Privacy
+    Policy before uploading anything confidential: on the free AI tier, the
+    provider may use what is sent to train its models, and that cannot be
+    undone.
+  </p>
+
+  <h4>7. Acceptable use</h4>
+  <p>You agree not to:</p>
+  <ul>
+    <li>upload anything unlawful, or anything you have no right to upload;</li>
+    <li>use the Service to process material at a scale or rate that interferes
+        with it for others, or to work around the limits in Section 9;</li>
+    <li>use the conversion endpoint for anything other than converting a page
+        &mdash; it exists to transcribe documents, not as general access to an
+        AI model;</li>
+    <li>attempt to reach another user's documents, account or history;</li>
+    <li>probe, scan or attack the Service or the services it depends on.</li>
+  </ul>
+
+  <h4>8. Accounts</h4>
+  <p>
+    You can use ConTeX without an account. Signing in adds saved history that
+    persists between visits. Accounts are provided through Firebase
+    Authentication, using either an email address and password or a Google
+    sign-in.
+  </p>
+  <p>
+    You are responsible for keeping your sign-in credentials secure and for
+    activity that takes place under your account. Tell us at the address in
+    Section 1 if you believe your account has been accessed by someone else.
+    You may ask us to delete your account and everything stored with it at any
+    time; see Section 11 and the Privacy Policy.
+  </p>
+
+  <h4>9. Limits, availability and changes</h4>
+  <ul>
+    <li>Uploads are limited to <strong>32 MB</strong> per file.</li>
+    <li>At most <strong>10 pages</strong> of a PDF are converted. Later pages
+        are ignored.</li>
+    <li>Conversions are limited to <strong>30 in any 5 minutes</strong>, and
+        sign-in attempts to <strong>20 in any 5 minutes</strong>.</li>
+    <li>A generated <code>.tex</code> file and its PDF preview are held
+        <strong>only by your browser</strong>. Nothing is kept on a server for
+        you to come back to, and closing or reloading the page loses them.
+        <strong>Download anything you want to keep.</strong></li>
+    <li>Saved history entries are truncated at <strong>60,000
+        characters</strong>; a longer document is stored in shortened form and
+        cannot be re-rendered from history.</li>
+  </ul>
+  <p>
+    ConTeX is not a storage service. The Service is provided as-is and may be
+    slow, unavailable, changed, limited or withdrawn at any time and without
+    notice, including because a third-party service it depends on has stopped,
+    changed its terms, or exhausted a free allowance.
+  </p>
+
+  <h4>10. No warranty</h4>
+  <p>
+    The Service is provided <strong>&ldquo;as is&rdquo; and &ldquo;as
+    available&rdquo;</strong>, without warranty of any kind, express or implied,
+    including merchantability, fitness for a particular purpose,
+    non-infringement, accuracy, or uninterrupted or error-free operation. Some
+    jurisdictions do not allow the exclusion of certain warranties, in which
+    case those exclusions do not apply to you.
+  </p>
+
+  <h4>11. Limitation of liability</h4>
+  <p>
+    To the fullest extent permitted by law, the operator is not liable for any
+    indirect, incidental, special, consequential or exemplary damages, nor for
+    loss of data, profits, revenue or goodwill, arising from your use of or
+    inability to use the Service &mdash; including damages arising from an
+    inaccurate transcription, a lost result, or the acts of a third-party
+    provider.
+  </p>
+  <p>
+    ConTeX is free and non-commercial. Nothing in these Terms excludes liability
+    that cannot lawfully be excluded, including for death or personal injury
+    caused by negligence, or for fraud.
+  </p>
+
+  <h4>12. Your responsibility for your use</h4>
+  <p>
+    You are responsible for what you upload and for what you do with the output,
+    including checking it before relying on it and complying with any rules that
+    apply to the material you are converting.
+  </p>
+
+  <h4>13. Suspension and ending your use</h4>
+  <p>
+    You may stop using ConTeX at any time, and may ask us to delete your account
+    and data. The operator may limit or end access where it is being used in
+    breach of Section 7, or where doing so is necessary to keep the Service
+    running for others.
+  </p>
+
+  <h4>14. Changes to these Terms</h4>
+  <p>
+    These Terms may change. A material change increases the version identifier,
+    and you are asked to accept the new version before your next conversion.
+    Continuing to use the Service after that means you accept them.
+  </p>
+
+  <h4>15. Governing law and disputes</h4>
+  <p>
+    These Terms are governed by the laws of the Republic of the Philippines, and
+    the courts of the Philippines have jurisdiction. If you are a consumer
+    resident elsewhere, this does not deprive you of the protection of the
+    mandatory law of your own country.
+  </p>
+
+  <h4>16. General</h4>
+  <p>
+    If any provision is held unenforceable, the rest remains in effect. A
+    failure to enforce a provision is not a waiver of it. These Terms and the
+    Privacy Policy are the whole agreement between you and the operator about
+    the Service.
+  </p>
+
+  <h4>17. Contact</h4>
+  <p>
+    <a href="mailto:rheniergustilo06@gmail.com">rheniergustilo06@gmail.com</a>
+  </p>
+</div>

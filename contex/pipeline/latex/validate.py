@@ -246,6 +246,23 @@ _UNSAFE_CONSTRUCTS = (
     (r'\\(?:Input|)IfFileExists\b', r'\IfFileExists (probes the filesystem)'),
     (r'\\directlua(?![a-zA-Z])', r'\directlua (runs Lua)'),
     (r'\\latelua(?![a-zA-Z])', r'\latelua (runs Lua)'),
+    # pdfTeX's own file primitives, and the sharpest of the lot. Each takes a
+    # filename directly - no \openin, no stream number, nothing the entries
+    # above match - and \pdffiledump typesets the file's bytes straight into
+    # the output as hex.
+    #
+    # Measured, on this project's own MiKTeX with openin_any=p set: a canary
+    # file outside the working directory was read and rendered into the PDF.
+    # That is the same measurement that put \input on this list, and the same
+    # reason the kpathsea settings in engine.py cannot be relied on - MiKTeX
+    # ignores them, as the note above says.
+    (r'\\pdffiledump(?![a-zA-Z])', r'\pdffiledump (reads files)'),
+    (r'\\pdffilesize(?![a-zA-Z])', r'\pdffilesize (probes the filesystem)'),
+    (r'\\pdffilemoddate(?![a-zA-Z])',
+     r'\pdffilemoddate (probes the filesystem)'),
+    (r'\\pdfmdfivesum(?![a-zA-Z])', r'\pdfmdfivesum (reads files)'),
+    (r'\\pdfximage(?![a-zA-Z])', r'\pdfximage (reads another file)'),
+    (r'\\pdfobj(?![a-zA-Z])', r'\pdfobj (can embed a file)'),
     (r'\\ShellEscape\b', r'\ShellEscape (runs shell commands)'),
     (r'\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bshellesc\b',
      r'the shellesc package (runs shell commands)'),

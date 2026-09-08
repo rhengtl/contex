@@ -142,9 +142,25 @@ export async function recent(env, uid, limit = 10) {
  */
 export async function upsertProfile(env, uid, email, displayName) {
   if (!configured(env) || !uid) return false;
+
+  // createdAt is written only when there is nothing there to preserve.
+  //
+  // users.py used to include it in every merge, with a comment claiming
+  // merge=True would leave an existing value alone. It does not: a merge
+  // writes every field it is given, so an account's creation date was really
+  // its last login date. Fixed in both implementations; one read is what it
+  // costs to be right, and this runs once per sign-in.
+  //
+  // A row that never got a createdAt at all is healed on the next login. One
+  // written before the fix has a date that is wrong rather than missing, and
+  // nothing here can recover the true one.
+  const existing = await getDocument(env, `users/${uid}`);
+  const stamps = existing && existing.createdAt
+    ? ['lastLogin'] : ['lastLogin', 'createdAt'];
+
   return mergeDocument(env, `users/${uid}`, {
     uid, email: email || '', displayName: displayName || '',
-  }, ['lastLogin', 'createdAt']);
+  }, stamps);
 }
 
 /**

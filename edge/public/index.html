@@ -30,7 +30,11 @@
   <section id="convert-view">
     <section id="terms" hidden>
       <label><input type="checkbox" id="accept">
-        I accept the Terms of Service and Privacy Policy.</label>
+        I accept the
+        <button type="button" class="linkish" data-legal="terms">Terms of
+          Service</button> and
+        <button type="button" class="linkish" data-legal="privacy">Privacy
+          Policy</button>.</label>
     </section>
 
     <section id="convert">
@@ -86,6 +90,22 @@
     <button type="button" id="forgot">Email me a reset link</button>
   </section>
 </main>
+
+<!-- The legal documents, read without leaving what you were doing. pages.py
+     served these as fragments for the same reason; here they are static files
+     the page fetches. -->
+<dialog id="legal">
+  <div class="legal-head">
+    <h2 id="legal-title"></h2>
+    <button type="button" id="legal-close" aria-label="Close">Close</button>
+  </div>
+  <div id="legal-body"></div>
+</dialog>
+
+<footer>
+  <button type="button" class="linkish" data-legal="terms">Terms of Service</button>
+  <button type="button" class="linkish" data-legal="privacy">Privacy Policy</button>
+</footer>
 <script type="module" src="/app.js"></script>
 </body>
 </html>
