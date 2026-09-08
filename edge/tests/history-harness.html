@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ConTeX guest-history harness</title>
+<pre id="out">loading…</pre>
+<script type="module">
+// Imports the real shipped module -- nothing is reimplemented for the test.
+import * as history from '/history.js';
+window.history_ = history;
+window.ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>

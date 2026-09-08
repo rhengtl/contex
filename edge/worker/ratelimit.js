@@ -18,6 +18,14 @@
 export const LIMITS = {
   convert: [30, 300],
   auth: [20, 300],
+  // Not in security.py, and forced by the architecture rather than chosen. In
+  // Flask, saving a conversion to history happened INSIDE the convert route,
+  // so it was already covered by that route's brake. Here the Worker streams
+  // the model's reply through without reading it, so it never sees the .tex --
+  // the browser posts the finished document back, and that post is a route of
+  // its own and needs a brake of its own. Matched to convert's allowance,
+  // because a client cannot produce history faster than it can convert.
+  history: [30, 300],
 };
 
 export class RateLimiter {

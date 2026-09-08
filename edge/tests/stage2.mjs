@@ -25,9 +25,13 @@ const REF = resolve(process.env.REF ||
 // DETECTION is checked separately and is the behaviour that matters.
 const ENV_DEPENDENT = new Set(['missing-package']);
 
-// Documents where the edge port is deliberately STRICTER than validate.py:
-// \openin1= slips past the original's \b. See public/latex/validate.js.
-const STRICTER = new Set(['unsafe-openin']);
+// Was: documents where the edge port was deliberately stricter than
+// validate.py, because \openin1= slipped past the original's \b. That defect
+// is now fixed in validate.py itself (and in five sibling constructs), so the
+// two implementations agree again and nothing belongs in this set. Kept as an
+// empty set rather than deleted: the next divergence should be declared here
+// and justified, not quietly accepted.
+const STRICTER = new Set([]);
 
 const ref = JSON.parse(await readFile(REF, 'utf8'));
 const docs = [];
@@ -68,6 +72,21 @@ for (const d of docs) {
           JSON.stringify(got.unsafe) === JSON.stringify(want.unsafe),
           `edge=${JSON.stringify(got.unsafe)} python=${JSON.stringify(want.unsafe)}`);
   }
+}
+
+// Tightening the control-word boundary must not have started matching a
+// LONGER command that merely begins with one of these names. JS and Python
+// regex dialects agree here, but "agree" is worth proving in the browser that
+// actually runs it -- \includegraphics is in any document with a figure.
+console.log('\n=== control-word boundary (no over-match) ===');
+for (const body of ['\\includegraphics[width=3cm]{plot.png}',
+                    '\\inputencoding{utf8}', '\\openinput{x}',
+                    '\\opening{Dear Sir}', '\\readline\\x', '\\writes']) {
+  const got = await page.evaluate((b) => window.validate(
+    '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'),
+    body);
+  check(`${body}: not mistaken for a file primitive`, got.unsafe.length === 0,
+        JSON.stringify(got.unsafe));
 }
 
 console.log('\n=== compile ===');
@@ -133,9 +152,10 @@ console.log('\n=== preview render (pdf.js) ===');
 const sample = [...pdfs.entries()].slice(0, 3);
 for (const [key, bytes] of sample) {
   const r = await page.evaluate(async (b) => {
-    const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc =
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    // The vendored copy, which is the one that ships -- a CDN build would be
+    // testing somebody else's bytes.
+    const pdfjs = await import('/vendor/pdfjs/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
     const doc = await pdfjs.getDocument({ data: new Uint8Array(b) }).promise;
     const pg = await doc.getPage(1);
     const vp = pg.getViewport({ scale: 1.5 });

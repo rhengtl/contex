@@ -11,3 +11,18 @@ button{padding:.45rem .9rem;margin-right:.4rem}
 .notice{color:#8A2C2C;background:#FAE7E4;padding:.6rem .8rem;border-radius:4px}
 details{margin-top:1rem}
 summary{cursor:pointer;color:#0E7C86}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;padding-bottom:.6rem;border-bottom:1px solid #e2e8e6}
+header a{font-weight:600;color:#0E7C86;text-decoration:none}
+header nav{display:flex;align-items:baseline;gap:.4rem}
+header #who{color:#4a5652;font-size:.9rem;margin-right:.4rem}
+#history-list{list-style:none;padding:0;margin:0}
+#history-list li{padding:.9rem 0;border-bottom:1px solid #e2e8e6}
+#history-list .row{display:flex;justify-content:space-between;gap:1rem;align-items:baseline}
+#history-list h3{font-size:1rem;font-weight:500;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#history-list time{color:#5F6E70;font-size:.85rem;font-variant-numeric:tabular-nums;flex-shrink:0}
+#history-list .actions{margin:.6rem 0 0}
+#history-list .panel{margin-top:.75rem}
+#auth-view label{display:block;margin:.5rem 0}
+#auth-view input[type=email],#auth-view input[type=password],#auth-view input[type=text]{display:block;width:100%;max-width:22rem;padding:.4rem .5rem;margin-top:.2rem}
+#auth-view h2{font-size:1.1rem;margin:1.75rem 0 .5rem}
+#auth-success{color:#1F5D3A;background:#E6F4EA}

@@ -216,17 +216,36 @@ def static_validate(tex):
 #: matched as whole control words so that \writes or \readline in a package
 #: name is not caught by accident; \write18 is listed first because it is the
 #: shell one and deserves to be named in the message.
+#:
+#: WHY (?![a-zA-Z]) AND NOT \b. A control word ends where a non-letter starts,
+#: and a digit is a non-letter to TeX - but \b is a word boundary, and to a
+#: regex a digit is a word character. So \b does not match between the 'n' of
+#: \openin and the '1' of
+#:
+#:     \openin1=secret.txt
+#:
+#: which is the ORDINARY way to write it, because TeX stream numbers are
+#: digits. Every construct here that a digit can legally follow was reachable
+#: that way: \openin, \openout, \input, \include, \directlua and \latelua all
+#: missed their own commonest form. Two layers hid it - engine.py sets
+#: kpathsea to paranoid mode, and the digit form is not what an attacker
+#: photographs first - but this check is the layer that has to work everywhere,
+#: including on MiKTeX, which ignores those variables entirely.
+#:
+#: The negative lookahead is what a control word actually means, so it costs
+#: nothing: \openinput, \inputencoding and \includegraphics are still ignored,
+#: exactly as they were under \b.
 _UNSAFE_CONSTRUCTS = (
     (r'\\write\s*18\b', r'\write18 (runs shell commands)'),
-    (r'\\(?:immediate\s*)?\\?openout\b', r'\openout (writes files)'),
-    (r'\\openin\b', r'\openin (reads files)'),
+    (r'\\(?:immediate\s*)?\\?openout(?![a-zA-Z])', r'\openout (writes files)'),
+    (r'\\openin(?![a-zA-Z])', r'\openin (reads files)'),
     (r'\\read(?![a-zA-Z])', r'\read (reads files)'),
     (r'\\write(?![a-zA-Z0-9])', r'\write (writes files)'),
-    (r'\\input\b', r'\input (reads another file)'),
-    (r'\\include\b', r'\include (reads another file)'),
+    (r'\\input(?![a-zA-Z])', r'\input (reads another file)'),
+    (r'\\include(?![a-zA-Z])', r'\include (reads another file)'),
     (r'\\(?:Input|)IfFileExists\b', r'\IfFileExists (probes the filesystem)'),
-    (r'\\directlua\b', r'\directlua (runs Lua)'),
-    (r'\\latelua\b', r'\latelua (runs Lua)'),
+    (r'\\directlua(?![a-zA-Z])', r'\directlua (runs Lua)'),
+    (r'\\latelua(?![a-zA-Z])', r'\latelua (runs Lua)'),
     (r'\\ShellEscape\b', r'\ShellEscape (runs shell commands)'),
     (r'\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bshellesc\b',
      r'the shellesc package (runs shell commands)'),

@@ -19,7 +19,8 @@ const TESTS = resolve(process.env.CONTEX_TESTS || 'tests');
 const PORT = Number(process.env.PORT || 8810);
 
 const MIME = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
+  '.css': 'text/css',
   '.wasm': 'application/wasm', '.json': 'application/json',
   '.tex': 'text/plain', '.png': 'image/png',
 };

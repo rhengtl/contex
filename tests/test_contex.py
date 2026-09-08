@@ -3432,6 +3432,48 @@ def _():
           'the shellesc package was not recognised')
 
 
+@test('a file primitive is caught when a digit follows it')
+def _():
+    # The regression this exists for. These patterns used to end in \b, and a
+    # digit is a word character to a regex - so there was no boundary between
+    # the 'n' of \openin and the '1' of \openin1, and the commonest form of
+    # every one of these slipped through untouched. TeX stream numbers ARE
+    # digits, so the form that was missed is the form the primitives are
+    # normally written in.
+    attacks = {
+        'reading a stream by number': r'\openin1=/etc/hosts',
+        'writing one by number':      r'\immediate\openout1=/tmp/x',
+        'an unbraced \\input':        r'\input2secret.txt ',
+        'an unbraced \\include':      r'\include2elsewhere ',
+        'numbered directlua':         r'\directlua0{os.execute("id")}',
+        'numbered latelua':           r'\latelua0{os.execute("id")}',
+    }
+    for label, body in attacks.items():
+        tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        check(latex.unsafe_constructs(tex),
+              f'{label} was not recognised as unsafe')
+        result = latex.compile_tex(tex, want_pdf=True)
+        check(not result['ok'], f'{label} compiled anyway')
+        check(result['pdf'] is None, f'{label} produced a PDF')
+
+    # A control word ends where a non-letter starts, so tightening the boundary
+    # must not have started matching a LONGER command that merely begins with
+    # one of these names. \includegraphics is in the preamble of any document
+    # with a figure in it, and \inputencoding comes from inputenc.
+    longer = {
+        'includegraphics': r'\includegraphics[width=3cm]{plot.png}',
+        'inputencoding':   r'\inputencoding{utf8}',
+        'openinput':       r'\openinput{x}',
+        'opening':         r'\opening{Dear Sir}',
+    }
+    for label, body in longer.items():
+        tex = ('\\documentclass{article}\n\\begin{document}\n' + body +
+               '\n\\end{document}\n')
+        found = latex.unsafe_constructs(tex)
+        check(not found, f'{label} was refused: {found}')
+
+
 @test('an ordinary document is not mistaken for a hostile one')
 def _():
     # The guard is blunt on purpose, so the thing to prove is that it is not

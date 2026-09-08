@@ -179,23 +179,27 @@ export function staticValidate(tex) {
 // Blunt on purpose, and affordable precisely here: this app generates
 // self-contained documents, so a legitimate result never needs any of these.
 
+// WHY (?![a-zA-Z]) AND NOT \b. A control word ends where a non-letter starts,
+// and a digit is a non-letter to TeX -- but \b is a word boundary, and to a
+// regex a digit is a word character. So \b does not match between the 'n' of
+// \openin and the '1' of \openin1=secret.txt, which is the ORDINARY way to
+// write it, because TeX stream numbers are digits.
+//
+// Found during the Stage 2 port and fixed in validate.py as well, so the two
+// implementations agree again. It matters more here: engine.py had a second
+// layer in kpathsea's paranoid mode, and pdftex.wasm has no equivalent, so
+// this text check is the only layer the browser has.
 const UNSAFE_CONSTRUCTS = [
   [/\\write\s*18\b/, '\\write18 (runs shell commands)'],
-  [/\\(?:immediate\s*)?\\?openout\b/, '\\openout (writes files)'],
-  // DELIBERATELY STRICTER THAN validate.py. The original writes \openin\b, and
-  // \b does not match between 'n' and a digit -- so \openin1=secret.txt, the
-  // ordinary form (TeX stream numbers are digits), slips through. The Python
-  // app was covered anyway by engine.py's paranoid kpathsea mode; pdftex.wasm
-  // has no equivalent, so the text check has to be the half that works.
-  // \openinput is still not matched. Worth back-porting to validate.py.
+  [/\\(?:immediate\s*)?\\?openout(?![a-zA-Z])/, '\\openout (writes files)'],
   [/\\openin(?![a-zA-Z])/, '\\openin (reads files)'],
   [/\\read(?![a-zA-Z])/, '\\read (reads files)'],
   [/\\write(?![a-zA-Z0-9])/, '\\write (writes files)'],
-  [/\\input\b/, '\\input (reads another file)'],
-  [/\\include\b/, '\\include (reads another file)'],
+  [/\\input(?![a-zA-Z])/, '\\input (reads another file)'],
+  [/\\include(?![a-zA-Z])/, '\\include (reads another file)'],
   [/\\(?:Input|)IfFileExists\b/, '\\IfFileExists (probes the filesystem)'],
-  [/\\directlua\b/, '\\directlua (runs Lua)'],
-  [/\\latelua\b/, '\\latelua (runs Lua)'],
+  [/\\directlua(?![a-zA-Z])/, '\\directlua (runs Lua)'],
+  [/\\latelua(?![a-zA-Z])/, '\\latelua (runs Lua)'],
   [/\\ShellEscape\b/, '\\ShellEscape (runs shell commands)'],
   [/\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bshellesc\b/,
    'the shellesc package (runs shell commands)'],

@@ -27,10 +27,23 @@ new_sqlite_classes = ["RateLimiter"]
 binding = "OUTAGES"
 id = "0123456789abcdef0123456789abcdef"
 
+# The three settings config.py browser_firebase() hands to the page. Public by
+# design: they identify the project, they are not credentials, and the security
+# rules are what protect the data. FIREBASE_API_KEY is also what the Worker
+# uses to call the Identity Toolkit, which is the same key Flask used for the
+# same calls -- a Web API key is not a secret and Google documents it as such.
 [vars]
 FIREBASE_AUTH_DOMAIN = ""
+FIREBASE_PROJECT_ID = ""
+FIREBASE_API_KEY = ""
 
 # Secrets, set with `wrangler secret put` and never committed:
-#   GEMINI_API_KEY       the conversion key
-#   SESSION_HMAC_KEY     signs the session cookie
-#   FIREBASE_SERVICE_ACCOUNT  (auth stage; 2,376 B, within the 5 KB cap)
+#   GEMINI_API_KEY            the conversion key
+#   SESSION_HMAC_KEY          signs the session cookie
+#   FIREBASE_SERVICE_ACCOUNT  the service account JSON, verbatim. This is the
+#                             edge equivalent of services/firebase.py's key
+#                             file: the Worker reaches Firestore with it and,
+#                             like the Admin SDK, bypasses the security rules --
+#                             so every read is scoped by uid in history.js
+#                             instead, exactly as data/history.py does.
+#                             2,376 B, within the 5 KB per-secret cap.

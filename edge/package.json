@@ -7,12 +7,19 @@
     "dev": "wrangler dev --port 8788",
     "build:engine": "node tools/patch-engine.mjs $SWIFTLATEX_SRC public/vendor",
     "build:texmf": "node tools/build-texmf.mjs public/texmf",
+    "build:pdflib": "node -e \"require('fs').copyFileSync('node_modules/pdf-lib/dist/pdf-lib.esm.min.js','public/vendor/pdf-lib/pdf-lib.esm.min.js')\"",
     "reference": "python tools/python-reference.py ../.contex-python-ref.json tests/fixtures",
+    "reference:merge": "python tools/merge-reference.py ../.contex-merge-ref.json tests/fixtures",
+    "test": "npm run test:stage2 && npm run test:merge && npm run test:stage3 && npm run test:stage3:browser",
     "test:stage2": "node tests/stage2.mjs",
+    "test:merge": "node tests/merge.mjs",
+    "test:stage3": "node tests/stage3.mjs",
+    "test:stage3:browser": "node tests/stage3-browser.mjs",
     "test:perf": "node tests/perf.mjs",
     "test:one": "node tests/one.mjs"
   },
   "devDependencies": {
+    "pdf-lib": "^1.17.1",
     "playwright-core": "^1.56.0",
     "wrangler": "^4.129.0"
   }

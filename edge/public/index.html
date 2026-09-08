@@ -7,33 +7,83 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<main>
+<header>
+  <a href="#" id="nav-convert">ConTeX</a>
+  <nav>
+    <button type="button" id="nav-convert-link" hidden></button>
+    <button type="button" id="nav-history">History</button>
+    <span id="signed-out" hidden><button type="button" id="nav-signin">Sign in</button></span>
+    <span id="signed-in" hidden>
+      <span id="who"></span>
+      <button type="button" id="logout">Sign out</button>
+    </span>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
   <h1>ConTeX</h1>
   <p class="tagline">Turn any page &mdash; handwritten, printed, photographed or
   typed &mdash; into LaTeX.</p>
 
-  <section id="terms" hidden>
-    <label><input type="checkbox" id="accept">
-      I accept the Terms of Service and Privacy Policy.</label>
+  <!-- Converting never requires an account. Signing in only adds persistent
+       history, which is what session.py says and what the sign-in page says. -->
+  <section id="convert-view">
+    <section id="terms" hidden>
+      <label><input type="checkbox" id="accept">
+        I accept the Terms of Service and Privacy Policy.</label>
+    </section>
+
+    <section id="convert">
+      <input type="file" id="file"
+             accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.gif,.pdf,.docx">
+      <button id="go" type="button">Convert</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p id="error" role="alert" hidden></p>
+      <div id="notice" class="notice" role="status" hidden></div>
+    </section>
+
+    <section id="result" hidden>
+      <div class="actions">
+        <button id="download" type="button">Download .tex</button>
+        <button id="download-pdf" type="button" hidden>Download PDF</button>
+        <button id="copy" type="button">Copy</button>
+      </div>
+      <p id="preview-error" class="notice" hidden></p>
+      <div id="preview" aria-label="PDF preview"></div>
+      <details id="source"><summary>LaTeX source</summary><pre id="tex"></pre></details>
+    </section>
   </section>
 
-  <section id="convert">
-    <input type="file" id="file"
-           accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.gif,.pdf,.docx">
-    <button id="go" type="button">Convert</button>
-    <p id="status" role="status" aria-live="polite"></p>
-    <p id="error" role="alert" hidden></p>
+  <section id="history-view" hidden>
+    <h2>History</h2>
+    <p id="history-empty" hidden>Nothing here yet.</p>
+    <ul id="history-list" hidden></ul>
+    <button type="button" id="history-clear" hidden>Clear session history</button>
   </section>
 
-  <section id="result" hidden>
-    <div class="actions">
-      <button id="download" type="button">Download .tex</button>
-      <button id="download-pdf" type="button" hidden>Download PDF</button>
-      <button id="copy" type="button">Copy</button>
-    </div>
-    <p id="preview-error" class="notice" hidden></p>
-    <div id="preview" aria-label="PDF preview"></div>
-    <details id="source"><summary>LaTeX source</summary><pre id="tex"></pre></details>
+  <section id="auth-view" hidden>
+    <p id="auth-error" class="notice" role="alert" hidden></p>
+    <p id="auth-success" class="notice" role="status" hidden></p>
+
+    <h2>Sign in</h2>
+    <label>Email <input type="email" id="login-email" autocomplete="email"></label>
+    <label>Password <input type="password" id="login-password" autocomplete="current-password"></label>
+    <label><input type="checkbox" id="login-remember"> Keep me signed in</label>
+    <button type="button" id="login">Sign in</button>
+    <button type="button" id="google-signin" hidden>Continue with Google</button>
+
+    <h2>Create an account</h2>
+    <label>Full name <input type="text" id="signup-name" autocomplete="name"></label>
+    <label>Email <input type="email" id="signup-email" autocomplete="email"></label>
+    <label>Password <input type="password" id="signup-password" autocomplete="new-password"></label>
+    <label>Confirm password <input type="password" id="signup-confirm" autocomplete="new-password"></label>
+    <label><input type="checkbox" id="signup-terms">
+      I agree to the terms and conditions</label>
+    <button type="button" id="signup">Create account</button>
+
+    <h2>Forgotten password</h2>
+    <label>Email <input type="email" id="forgot-email" autocomplete="email"></label>
+    <button type="button" id="forgot">Email me a reset link</button>
   </section>
 </main>
 <script type="module" src="/app.js"></script>

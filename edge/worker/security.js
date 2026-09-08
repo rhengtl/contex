@@ -31,14 +31,18 @@ function csp(nonce, authDomain) {
     "style-src 'self' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     // blob: for the camera preview, the canvas export and the compiled PDF;
-    // data: for the small inline marks.
-    "img-src 'self' data: blob:",
+    // data: for the small inline marks; googleusercontent for a Google
+    // account's avatar.
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     "media-src 'self' blob:",
     `frame-src 'self' blob: ${firebase}`.trimEnd(),
     // Where fetch() may go: this app, and the Firebase Auth endpoints the
-    // browser SDK calls directly.
-    "connect-src 'self' https://identitytoolkit.googleapis.com " +
-      'https://securetoken.googleapis.com https://www.googleapis.com',
+    // browser SDK calls directly. The authDomain is in `firebase` above, which
+    // is why it is read from config rather than hard-coded -- exactly as
+    // security.py does it.
+    'connect-src \'self\' https://identitytoolkit.googleapis.com ' +
+      'https://securetoken.googleapis.com https://www.googleapis.com ' +
+      firebase,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
