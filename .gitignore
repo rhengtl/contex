@@ -90,6 +90,11 @@ uploads/*
 # See tailwind.config.js. The generated stylesheet IS committed.
 node_modules/
 
+# Cloudflare/Wrangler local files. Keep edge source visible to Git.
+edge/.dev.vars
+edge/.wrangler/
+edge/node_modules/
+
 # Firebase CLI local state: emulator data, deploy caches and debug logs.
 .firebase/
 *.log
