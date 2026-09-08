@@ -1,0 +1,17 @@
+# How often to look for a new image.
+#
+# Two minutes. The build itself takes far longer than that, so this is not the
+# limiting factor in how quickly a push to master reaches the site - it just
+# means the wait after the build is negligible. A pull that finds nothing new
+# is one cheap request to GHCR.
+
+[Unit]
+Description=Check for a new ConTeX image every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=contex-update.service
+
+[Install]
+WantedBy=timers.target

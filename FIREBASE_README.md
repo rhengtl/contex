@@ -4,8 +4,9 @@ Firebase does three things here and nothing else:
 
 - **Authentication** — accounts, passwords, Google sign-in.
 - **Firestore** — the persistent history of signed-in users, and their profile.
-- **Hosting** — the public URL, in front of a Cloud Run service. See
-  [DEPLOYMENT.md](DEPLOYMENT.md); Hosting cannot run this app on its own.
+Firebase *Hosting* is deliberately not one of them: it serves static files and
+cannot run a Flask server that shells out to a TeX engine. The app is a
+container on its own machine — see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Everything the app *does* — converting a document, generating the `.tex`,
 compiling a preview — works with no Firebase at all. Signing in only adds
@@ -21,15 +22,21 @@ history that survives closing the tab.
 pip install -r requirements.txt
 ```
 
-### 2. A service account key (local development only)
+### 2. A service account key
 
 1. [Firebase Console](https://console.firebase.google.com/) → your project
 2. Project Settings → Service Accounts → **Generate new private key**
 3. Save the JSON somewhere outside version control (`*.json` is gitignored)
 
-**Do not do this for production.** On Cloud Run the app uses the service
-account the platform already gives it — leave `FIREBASE_SERVICE_ACCOUNT_PATH`
-unset there and no private key ever enters the image.
+**This key is the Firebase project's master key.** It bypasses every security
+rule. It is gitignored, excluded from the image by `.dockerignore`, and on the
+server it is mounted read-only and owned by the container's unprivileged uid —
+see DEPLOYMENT.md, step 5.
+
+The one place you do *not* need it is Google Cloud, where the platform hands the
+process an identity of its own; leave `FIREBASE_SERVICE_ACCOUNT_PATH` unset
+there. Anywhere else — a laptop, the VM — there is nothing to inherit and the
+key file is how the Admin SDK authenticates.
 
 ### 3. `.env`
 
@@ -194,8 +201,10 @@ uid, so still private, just slower.
 
 ## Troubleshooting
 
-**"Firebase Admin SDK initialized (application default credentials)" locally**
-`FIREBASE_SERVICE_ACCOUNT_PATH` is unset. Fine on Cloud Run, wrong on a laptop.
+**"Firebase Admin SDK initialized (application default credentials)"**
+`FIREBASE_SERVICE_ACCOUNT_PATH` is unset. Correct on Google Cloud, wrong
+anywhere else — on a laptop or the VM it means Firestore is about to be `None`
+and history will silently stop working.
 
 **"Authentication is not configured"**
 `FIREBASE_API_KEY` is missing. Password verification and reset emails both

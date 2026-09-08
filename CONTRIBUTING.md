@@ -38,9 +38,11 @@ python tests/test_contex.py     # 179 offline checks; no network, no API key
 npm install && npm run test:rules   # Firestore rules, needs the emulator + Java
 ```
 
-The Python suite runs in CI on every push and pull request. The rules suite does
-not — run it yourself if you touch `firestore.rules`, and say in the PR that you
-did.
+The Python suite runs in CI on every pull request, and again on `master` as the
+first gate of a release. The rules suite runs only on `master`, immediately
+before the rules are published — so run it yourself if you touch
+`firestore.rules`, and say in the PR that you did, rather than finding out at
+release time.
 
 Checks that need Tesseract, Poppler or a LaTeX engine announce themselves as
 `(skipped: ...)` when the binary is missing, so the suite is still green on a

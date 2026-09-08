@@ -10,6 +10,7 @@ has taken work from a layer that can be tested without a browser.
 
 from flask import Blueprint, jsonify, render_template, request, session
 
+from contex import config
 from contex.data import history as history_store
 from contex.data import users
 from contex.pipeline import latex
@@ -141,5 +142,13 @@ def healthz():
     nothing about Firestore or the model. A health check that calls out to a
     dependency turns that dependency's bad minute into a restart loop, which
     is worse than serving the degraded behaviour the app already handles.
+
+    `revision` is the commit the running image was built from, stamped in by
+    the Dockerfile. Deployment here is pull-based - the server fetches a new
+    image on a timer - so publishing one proves nothing about what is actually
+    serving. This is what lets the release workflow wait for the live site to
+    come back carrying the commit it just built, and fail if it never does.
+    It is a build identifier, not a secret; the source it names is public.
     """
-    return jsonify({'ok': True}), 200
+    return jsonify({'ok': True,
+                    'revision': config.text('CONTEX_REVISION', 'dev')}), 200
