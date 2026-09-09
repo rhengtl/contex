@@ -43,7 +43,12 @@
                 </p>
             </div>
 
-            <form id="signup-form" class="space-y-4">
+            {# method="post" is a backstop, not a route. The handler in auth.js
+               preventDefault()s every submit, so this is never used -- but a form
+               with no method is a GET, and a GET puts the password in the query
+               string. If the script has not loaded, or fails to, this keeps the
+               credentials out of the URL, out of history and out of the Referer. #}
+            <form id="signup-form" method="post" class="space-y-4">
                 <div>
                     <label for="fullname" class="field-label">Full name</label>
                     <input type="text" id="fullname" name="fullname" required

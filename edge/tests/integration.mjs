@@ -570,6 +570,70 @@ heading('on a 360px phone');
 }
 
 // ---------------------------------------------------------------------------
+heading('a submit that arrives before the script has wired the form');
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS. The Flask templates gave each auth form
+// `method="POST" action="{{ url_for('auth.login') }}"`, so a submit that beat
+// the JavaScript still did the right thing. These forms have no action: the
+// handler in auth.js is what submits them. That made the handler's existence
+// load-bearing, and it was installed AFTER `await auth.session()` -- so while
+// that request was in flight, pressing Enter did a native GET and put the
+// password in the query string, in history, and in the next Referer.
+//
+// Found against the deployed application, where the round trip is real.
+{
+  for (const [page_, form] of [['login', 'login-form'],
+                               ['signup', 'signup-form'],
+                               ['forgot-password', 'forgot-form']]) {
+    const html = await readFile(join('public', page_, 'index.html'), 'utf8');
+    const tag = (html.match(new RegExp(`<form id="${form}"[^>]*>`)) || [''])[0];
+    check(`the ${page_} form is a POST, so a native submit cannot put a `
+          + 'password in the URL', /method="post"/i.test(tag), tag);
+  }
+
+  // The real test: hold /api/session open, then submit. Nothing may navigate.
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route('**/api/session', async (route) => {
+    await held;
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ isAuthenticated: false, hasAcceptedTerms: true,
+                             maxUploadMb: 32, termsVersion: '2.0-2026-09-08' }),
+    });
+  });
+  let posted = 0;
+  await page.route('**/api/auth/login', (route) => {
+    posted += 1;
+    return route.fulfill({ status: 200, contentType: 'application/json',
+                           body: JSON.stringify({ ok: true }) });
+  });
+
+  await page.goto(`${BASE}/login/index.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#login-form');
+  const before = page.url();
+  await page.fill('#email', 'someone@example.com');
+  await page.fill('#password', 'correct horse battery staple');
+  await page.click('#login-form button[type="submit"]');
+  await page.waitForTimeout(1500);
+
+  check('the form does not submit itself while the session is still loading',
+        !page.url().includes('password'), page.url());
+  // Signing in navigates to '/' on purpose -- start_session() clears the
+  // session, and a fresh document is how that reaches the page. What must not
+  // happen is a navigation to the login URL carrying the credentials.
+  check('and any navigation is the one the handler chose, not the browser default',
+        !page.url().includes('/login'), `${before} -> ${page.url()}`);
+  check('the handler took the submit instead', posted === 1, `${posted} posts`);
+
+  release();
+  await context.close();
+}
+
+// ---------------------------------------------------------------------------
 
 await browser.close();
 const failed = results.filter((r) => !r.pass);

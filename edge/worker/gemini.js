@@ -283,6 +283,9 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
   try {
     uploaded = await uploadPage(request, env, mediaType);
   } catch (err) {
+    // Not the same thing as Google refusing the upload: this is the request
+    // never completing -- a timeout, or the connection itself failing.
+    console.error('page upload threw:', err && err.stack || err);
     return {
       ok: false, status: 502, retryable: true, model,
       error: 'The conversion failed. Please try a different file.',
@@ -290,6 +293,12 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
     };
   }
   if (!uploaded.ok) {
+    // The upstream status never reaches the browser -- the route sends the
+    // user-facing error only -- so without this line an upload that Google
+    // refused is indistinguishable, from the outside, from one that failed for
+    // any other reason. It is the one thing needed to tell "the file is wrong"
+    // from "we are over quota".
+    console.error(`page upload refused (${uploaded.status}):`, uploaded.detail);
     return {
       ok: false, status: 502, retryable: true, model,
       error: 'The conversion failed. Please try a different file.',

@@ -164,7 +164,22 @@ function onSubmit(id, handler) {
   });
 }
 
-export function setupForms(shell) {
+/**
+ * Wire the three auth forms.
+ *
+ * DELIBERATELY TAKES NOTHING AND AWAITS NOTHING. The Flask templates gave each
+ * form `method="POST" action="{{ url_for('auth.login') }}"`, so a submit that
+ * arrived before any script had run still did the right thing. These forms
+ * have no action, because the handler below is what submits them -- which
+ * means that until this listener exists, a submit is a NATIVE GET to the
+ * current URL and every field goes into the query string, the password
+ * included. It would then sit in history, and in the Referer of the next
+ * navigation.
+ *
+ * So this must not sit behind `await auth.session()`. It is called first, and
+ * the parts that genuinely need the shell are in setupGoogle().
+ */
+export function setupForms() {
   onSubmit('login-form', async () => {
     const result = await login(el('email').value, el('password').value,
                                el('remember')?.checked);
@@ -193,13 +208,16 @@ export function setupForms(shell) {
     if (result.ok) showSuccess(result.success || 'If that address has an account, a reset link is on its way.');
     else showError(result.error || 'An error occurred');
   });
+}
 
+/** The federated button, which cannot be wired until the config has arrived. */
+export function setupGoogle(shell) {
   const google = el('google-signin');
   if (!google) return;
   // No config means no federated sign-in, and a button that cannot work is
   // worse than one that is absent -- which is what the {% if firebase_config %}
   // around this block meant in the Flask template.
-  if (!shell.firebaseConfig) return;
+  if (!shell || !shell.firebaseConfig) return;
   toggle('google-block', true);
 
   google.addEventListener('click', async () => {

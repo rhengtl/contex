@@ -1,4 +1,4 @@
-name = "contex-edge"
+name = "contex"
 main = "worker/index.js"
 compatibility_date = "2026-01-15"
 

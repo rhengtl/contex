@@ -711,6 +711,12 @@ function setupConverter() {
    --------------------------------------------------------------------------- */
 
 (async () => {
+  // BEFORE the first await, and deliberately so. These forms have no action of
+  // their own, so until their submit listener exists a submit is a native GET
+  // that puts the password in the URL. Anything that waits on the network here
+  // is a window in which that can happen.
+  auth.setupForms();
+
   const shell = await auth.session();
   applyShell(shell);
   applyTermsState();
@@ -721,7 +727,7 @@ function setupConverter() {
   history.open(shell);
 
   setupConverter();
-  auth.setupForms(state.shell);
+  auth.setupGoogle(state.shell);
   // The history page compiles a saved document through the same engine the
   // workspace uses. Passed in rather than imported there, so a list of file
   // names does not pull a 12 MB compiler in with it.
