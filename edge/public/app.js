@@ -556,11 +556,25 @@ async function loadPreview(issues) {
 
   toggle(error, false);
   toggle(pages, false);
+  toggle('preview-dropped', false);
   toggle(loading, true);
   setText('preview-loading-text', 'Compiling your document…');
   pages.replaceChildren();
 
   const result = await compile(state.tex);
+
+  // A preview that only exists because a package was dropped is not the same
+  // document as the .tex beside it, and saying so is the whole point of the
+  // repair being visible rather than silent.
+  const dropped = result.droppedPackages || [];
+  if (dropped.length) {
+    setText('preview-dropped-detail',
+      `This document asks for ${dropped.join(', ')}, which `
+      + `${dropped.length === 1 ? 'is' : 'are'} not available here, so `
+      + `${dropped.length === 1 ? 'it was' : 'they were'} left out to render `
+      + 'the preview. Everything else is as converted.');
+    toggle('preview-dropped', true);
+  }
 
   if (result.ok) {
     state.pdf = result.pdf;
@@ -627,6 +641,24 @@ async function previewInto(tex, panel) {
     note.append(title, reason);
     panel.appendChild(note);
     return;
+  }
+
+  // The same caveat the workspace shows, for the same reason: this PDF and the
+  // saved .tex are not the same document.
+  const dropped = result.droppedPackages || [];
+  if (dropped.length) {
+    const note = document.createElement('div');
+    note.className = 'note-caution mb-3';
+    const title = document.createElement('p');
+    title.className = 'note-title';
+    title.textContent = 'Preview built without some packages';
+    const body = document.createElement('p');
+    body.textContent = `${dropped.join(', ')} `
+      + `${dropped.length === 1 ? 'is' : 'are'} not available here, so `
+      + `${dropped.length === 1 ? 'it was' : 'they were'} left out to render `
+      + 'this preview. The saved .tex still asks for them.';
+    note.append(title, body);
+    panel.appendChild(note);
   }
 
   const pages = document.createElement('div');

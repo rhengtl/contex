@@ -329,11 +329,22 @@ await withCamera(async (page) => {
 await withCamera(async (page) => {
   // The list is built after enumerateDevices() answers, which is a moment
   // later than the preview appears -- withCamera waits for the picture.
-  await page.waitForFunction(
-    () => document.getElementById('camera-device').options.length > 0,
-    { timeout: 20000 });
-  const options = await page.$$eval('#camera-device option',
-    (list) => list.map((o) => ({ value: o.value, label: o.textContent })));
+  //
+  // Read in ONE step rather than waiting and then looking. refreshCameraList()
+  // empties the select with replaceChildren() before refilling it, and reruns
+  // on devicechange, so "it had options a moment ago" does not mean it has
+  // them now -- a wait followed by a separate read can land in the gap and see
+  // an empty list that is being rebuilt, not one that is empty.
+  const options = await page.waitForFunction(() => {
+    const select = document.getElementById('camera-device');
+    if (!select || select.options.length === 0) return false;
+    return [...select.options].map((o) => ({ value: o.value, label: o.textContent }));
+  // Generous, because the wait is on the operating system and not on the app.
+  // This suite keeps a second browser open for the other scenarios, and both
+  // ask Chromium for its ONE fake camera; under that contention the video
+  // device can be missing from enumerateDevices for a while after
+  // getUserMedia has already returned a live stream.
+  }, { timeout: 90000 }).then((handle) => handle.jsonValue());
   check('the camera list is populated once permission has been granted',
         options.length >= 1, JSON.stringify(options));
   check('and every camera in it is named',

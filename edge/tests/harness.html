@@ -5,7 +5,8 @@
 <script type="module">
 // Imports the real shipped modules -- nothing is reimplemented for the test.
 import { staticValidate, unsafeConstructs } from '/latex/validate.js';
-import { compile, extractErrors, missingPackages, sourceSha } from '/latex/compile.js';
+import { compile, extractErrors, missingPackages, sourceSha,
+         dropPackages } from '/latex/compile.js';
 
 window.validate = (tex) => ({
   issues: staticValidate(tex),
@@ -21,6 +22,7 @@ window.compileOne = async (tex, wantBytes) => {
     engine: r.engine,
     errors: r.errors,
     missingPackages: r.missingPackages,
+    droppedPackages: r.droppedPackages || [],
     reason: r.reason,
     pdfBytes: r.pdf ? r.pdf.length : 0,
     sourceSha: r.sourceSha,
@@ -31,6 +33,7 @@ window.compileOne = async (tex, wantBytes) => {
   };
 };
 
+window.dropPackages = dropPackages;
 window.sha = sourceSha;
 window.ready = true;
 document.getElementById('out').textContent = 'ready';

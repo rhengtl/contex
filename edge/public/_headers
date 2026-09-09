@@ -47,6 +47,41 @@
 /texmf/*
   Cache-Control: public, max-age=31536000, immutable
 
+# AND THE PATH THE ENGINE ACTUALLY ASKS FOR. The rule above never applied to a
+# single engine fetch. kpathsea requests /pdftex/<format>/<name>, which
+# _redirects rewrites to /texmf/<name> -- but these rules match the REQUEST
+# path, not the rewritten one, so every one of those responses went out with no
+# Cache-Control at all. The 9.88 MB format file was re-downloaded on every
+# visit: 1 s on a desk, ~50 s on a phone at 1.6 Mbps, against a 60 s engine
+# load timeout. That is the stall the comment above was written to prevent.
+#
+# The tree is content-addressed by build, so the same reasoning applies
+# verbatim here; it is the same bytes under a different address.
+/pdftex/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# NOT COMPRESSED, AND MEASURED RATHER THAN ASSUMED. The format file is 95% of
+# a first visit: 10.36 MB of the ~10.9 MB fetched before anything can compile,
+# and it gzips to 2.03 MB. Everything else here arrives compressed -- the .wasm
+# is brotli'd -- but `.fmt` is an extension the edge does not recognise, so it
+# is served with no Content-Type and no compression.
+#
+# Declaring `Content-Type: application/octet-stream` was tried and does not
+# help: the header applies (verified on /texmf/swiftlatexpdftex.fmt) but the
+# edge does not compress that type. The two things that would work are both
+# refused here:
+#
+#   - calling it a text type, which is a lie about a binary;
+#   - shipping it pre-gzipped with Content-Encoding, which has to name the
+#     engine's own address to avoid breaking every other file under /pdftex/.
+#     That address is /pdftex/<format>/<name>, and a middle wildcard such as
+#     `/pdftex/*/swiftlatexpdftex.fmt` does NOT match here (also verified), so
+#     it would have to hard-code the format number -- and if that number ever
+#     changed the browser would hand the engine gzip bytes labelled as plain
+#     ones, which fails as a corrupt format file rather than as a 404.
+#
+# So the first compile stays expensive and the cache above makes it once-only.
+
 # The offline recognisers: 61 MB of ONNX Runtime, pix2text-mfr and Tesseract's
 # language data, all fixed by build. They are fetched only when someone accepts
 # the offline conversion, and refetching them on the next one would make that

@@ -137,6 +137,97 @@ for (const d of docs) {
   }
 }
 
+// -- a package the tree does not carry -------------------------------------
+//
+// WHY THIS EXISTS. The shipped tree is 119 .sty files and the model is not
+// told which ones they are, so it can name one that is not there. Reported
+// from production: Gemini wrote `\usepackage{utf8}` -- which is not a package
+// at all, utf8 being an OPTION to inputenc -- and one wrong preamble line cost
+// the whole preview of an otherwise perfectly good document.
+//
+// compile() now drops what is missing and tries once more. What has to be
+// true is that the preview comes back, that the user is told what was left
+// out, and that the repair never invents a document: if the rest does not
+// compile either, the ORIGINAL failure is what gets reported.
+
+// The rewrite itself, without the engine.
+{
+  const cases = [
+    [String.raw`\usepackage{utf8}`, ['utf8'], ''],
+    [String.raw`\usepackage[T1]{fontenc}`, ['utf8'],
+     String.raw`\usepackage[T1]{fontenc}`],
+    // A line that loads several keeps the ones that exist.
+    [String.raw`\usepackage{utf8,amsmath}`, ['utf8'],
+     String.raw`\usepackage{amsmath}`],
+    [String.raw`\usepackage{amsmath,utf8,array}`, ['utf8'],
+     String.raw`\usepackage{amsmath,array}`],
+    // Nothing missing, nothing touched.
+    [String.raw`\usepackage{amsmath}`, [], String.raw`\usepackage{amsmath}`],
+    // Indentation and options survive.
+    [String.raw`  \usepackage[a]{utf8,amsmath}`, ['utf8'],
+     String.raw`  \usepackage[a]{amsmath}`],
+  ];
+  for (const [input, missing, want] of cases) {
+    const got = await page.evaluate(([t, m]) => window.dropPackages(t, m),
+                                    [input, missing]);
+    check(`dropPackages: ${JSON.stringify(input)} minus ${JSON.stringify(missing)}`,
+          got === want, `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+  }
+}
+
+// End to end, through the real engine.
+{
+  const head = String.raw`\documentclass{article}` + '\n';
+  const body = String.raw`\begin{document}` + '\nHello $x^2$.\n'
+    + String.raw`\end{document}` + '\n';
+  const utf8Line = String.raw`\usepackage{utf8}` + '\n';
+
+  const repaired = await page.evaluate(
+    (t) => window.compileOne(t), head + utf8Line + body);
+  check('a document asking for a package that is not here still previews',
+        repaired.ok === true, `ok=${repaired.ok} errors=${(repaired.errors || '').slice(0, 120)}`);
+  check('and says which package it left out',
+        JSON.stringify(repaired.droppedPackages) === JSON.stringify(['utf8']),
+        JSON.stringify(repaired.droppedPackages));
+  check('and the PDF is real',
+        repaired.pdfBytes > 0 && String.fromCharCode(...repaired.pdf) === '%PDF-1.5',
+        `${repaired.pdfBytes}B`);
+
+  // The .tex the user keeps is the one they were given, so its identity must
+  // be the identity of THAT source and not of the rewritten one.
+  const shaOfOriginal = await page.evaluate(
+    (t) => window.sha(t), head + utf8Line + body);
+  check('the source identity stays that of the .tex, not the repaired copy',
+        repaired.sourceSha === shaOfOriginal,
+        `${repaired.sourceSha} vs ${shaOfOriginal}`);
+
+  // A real package alongside a missing one must survive the repair.
+  const mixed = await page.evaluate(
+    (t) => window.compileOne(t),
+    head + String.raw`\usepackage{utf8,amsmath}` + '\n'
+      + String.raw`\begin{document}` + '\n'
+      + String.raw`\begin{align}x &= 1\end{align}` + '\n'
+      + String.raw`\end{document}` + '\n');
+  check('a real package on the same line as a missing one is kept',
+        mixed.ok === true, `ok=${mixed.ok} errors=${(mixed.errors || '').slice(0, 160)}`);
+
+  // And the repair must not manufacture a document out of one that is broken
+  // for other reasons: tikz is missing AND its body needs it.
+  const stillBroken = await page.evaluate(
+    (t) => window.compileOne(t),
+    head + String.raw`\usepackage{tikz}` + '\n'
+      + String.raw`\begin{document}` + '\n'
+      + String.raw`\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}` + '\n'
+      + String.raw`\end{document}` + '\n');
+  check('a document that needs the missing package still fails',
+        stillBroken.ok === false, `ok=${stillBroken.ok}`);
+  check('and reports the original missing package rather than the repair',
+        JSON.stringify(stillBroken.missingPackages) === JSON.stringify(['tikz'])
+        && stillBroken.droppedPackages.length === 0,
+        `missing=${JSON.stringify(stillBroken.missingPackages)} `
+        + `dropped=${JSON.stringify(stillBroken.droppedPackages)}`);
+}
+
 // -- caching -------------------------------------------------------------
 console.log('\n=== caching ===');
 const before = await (await fetch(`${BASE}/__log`)).json();

@@ -137,6 +137,20 @@
                 </div>
             </div>
 
+            {# Shown when the preview only compiled because a package the tree
+               does not carry was dropped from the preamble. The .tex above is
+               untouched, so the two can disagree -- and that has to be said,
+               not left for the user to discover when the download behaves
+               differently from what is on screen. #}
+            <div id="preview-dropped" class="note-caution mx-4 mt-4 hidden" role="status">
+                <p class="note-title">Preview built without some packages</p>
+                <p id="preview-dropped-detail"></p>
+                <p class="mt-1.5">
+                    Your <code>.tex</code> still asks for them. Download or copy it
+                    above to get exactly what was converted.
+                </p>
+            </div>
+
             <div id="preview-pages" class="pagestack hidden max-h-[75vh]"></div>
         </div>
     </div>

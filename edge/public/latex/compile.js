@@ -10,7 +10,8 @@
  * compile() returns the same shape engine.py's compile_tex() does, so callers
  * that already handle "no engine installed" handle "no WASM support" the same
  * way:
- *   { attempted, ok, engine, errors, missingPackages, reason, pdf, sourceSha }
+ *   { attempted, ok, engine, errors, missingPackages, droppedPackages,
+ *     reason, pdf, sourceSha }
  */
 
 import { unsafeConstructs } from './validate.js';
@@ -23,7 +24,14 @@ const TEXLIVE_ENDPOINT = '/';        // resolves to /pdftex/<format>/<name>
 // made loadEngine() hang forever with no error -- so both waits are bounded
 // here, and both report rather than stall.
 const COMPILE_TIMEOUT_MS = 120_000;
-const ENGINE_LOAD_TIMEOUT_MS = 60_000;
+// Loading the engine means fetching a 9.88 MB format file, so this bounds a
+// DOWNLOAD and not a computation -- and it was set as though it bounded a
+// computation. Measured on an emulated phone at 1.6 Mbps, a cold engine load
+// took 55 s of the 60 s allowed; a slower connection than that failed outright
+// with "the engine could not be loaded" on a document that was never the
+// problem. Sized now for the fetch: three minutes covers roughly 0.5 Mbps,
+// and a user on less than that is not being helped by giving up sooner.
+const ENGINE_LOAD_TIMEOUT_MS = 180_000;
 
 function withTimeout(promise, ms, label) {
   let timer;
@@ -83,6 +91,40 @@ export function missingPackages(log) {
   return [...names].sort();
 }
 
+/**
+ * Remove packages the tree does not carry from a document's preamble.
+ *
+ * WHY. The shipped TeX Live tree is a subset -- 119 .sty files -- and the
+ * model is not told which ones exist, so it can name one that does not. The
+ * commonest is `\usepackage{utf8}`, which is not a package at all: utf8 is an
+ * OPTION to inputenc. One wrong line in the preamble costs the whole preview,
+ * even though every other line of the document is fine.
+ *
+ * A line loading several packages keeps the ones that do exist rather than
+ * being dropped whole, so `\usepackage{utf8,amsmath}` does not take amsmath
+ * with it. Only a line with nothing left goes.
+ *
+ * The .tex the user downloads is NOT this. This rewrite exists to get a
+ * preview out of a document that would otherwise render nothing; what they
+ * keep is what the model wrote.
+ */
+export function dropPackages(tex, names) {
+  if (!names || !names.length) return tex || '';
+  const missing = new Set(names);
+  const out = [];
+  for (const line of (tex || '').split('\n')) {
+    const match = line.match(/^(\s*)\\usepackage\s*(\[[^\]]*\])?\s*\{([^}]*)\}(.*)$/);
+    if (!match) { out.push(line); continue; }
+    const [, indent, options, list, trailer] = match;
+    const asked = list.split(',').map((name) => name.trim()).filter(Boolean);
+    const kept = asked.filter((name) => !missing.has(name));
+    if (!kept.length) continue;
+    if (kept.length === asked.length) { out.push(line); continue; }
+    out.push(`${indent}\\usepackage${options || ''}{${kept.join(',')}}${trailer}`);
+  }
+  return out.join('\n');
+}
+
 /** Identity of a LaTeX source, used to match a cached PDF to its .tex. */
 export async function sourceSha(tex) {
   const bytes = new TextEncoder().encode(tex || '');
@@ -121,7 +163,7 @@ async function getEngine() {
 function refusal(unsafe) {
   return {
     attempted: false, ok: false, engine: 'pdftex.wasm', errors: '',
-    missingPackages: [], pdf: null, sourceSha: null,
+    missingPackages: [], droppedPackages: [], pdf: null, sourceSha: null,
     reason: 'This document asks LaTeX to reach outside itself (' +
             unsafe.join(', ') + '), so it was not compiled. The .tex file is ' +
             'unchanged and can still be downloaded and compiled wherever you ' +
@@ -137,6 +179,29 @@ function refusal(unsafe) {
  * nothing was run.
  */
 export async function compile(tex, { allowFileAccess = false } = {}) {
+  const first = await attempt(tex, { allowFileAccess });
+  // Nothing to repair: it worked, or it never ran, or it failed for a reason
+  // that has nothing to do with a package being absent.
+  if (first.ok || !first.attempted || !first.missingPackages.length) return first;
+
+  const repaired = dropPackages(tex, first.missingPackages);
+  if (repaired === tex) return first;
+
+  const second = await attempt(repaired, { allowFileAccess });
+  // A repair that does not produce a document is not an improvement, and the
+  // second failure is about a source the user never wrote. Report the first.
+  if (!second.ok) return first;
+
+  return {
+    ...second,
+    // sourceSha identifies the .tex, which is the one the user keeps -- not
+    // the rewritten source this PDF was actually built from.
+    sourceSha: await sourceSha(tex),
+    droppedPackages: first.missingPackages,
+  };
+}
+
+async function attempt(tex, { allowFileAccess = false } = {}) {
   const unsafe = allowFileAccess ? [] : unsafeConstructs(tex);
   if (unsafe.length) return refusal(unsafe);
 
@@ -146,7 +211,7 @@ export async function compile(tex, { allowFileAccess = false } = {}) {
   } catch (err) {
     return {
       attempted: false, ok: false, engine: null, errors: '',
-      missingPackages: [], pdf: null, sourceSha: null,
+      missingPackages: [], droppedPackages: [], pdf: null, sourceSha: null,
       reason: err.message === 'no-wasm'
         ? 'This browser cannot run the LaTeX engine, so no preview was built. ' +
           'The .tex file is unchanged and can still be downloaded.'
@@ -168,7 +233,7 @@ export async function compile(tex, { allowFileAccess = false } = {}) {
     const timedOut = err && err.message === 'compile-timeout';
     return {
       attempted: true, ok: false, engine: 'pdftex.wasm', errors: '',
-      missingPackages: [], pdf: null, sourceSha: null,
+      missingPackages: [], droppedPackages: [], pdf: null, sourceSha: null,
       reason: timedOut
         ? `Compilation timed out after ${COMPILE_TIMEOUT_MS / 1000}s.`
         : `Could not run the LaTeX engine: ${err && err.message || err}`,
@@ -183,6 +248,7 @@ export async function compile(tex, { allowFileAccess = false } = {}) {
     engine: 'pdftex.wasm',
     errors: ok ? '' : extractErrors(log),
     missingPackages: ok ? [] : missingPackages(log),
+    droppedPackages: [],
     reason: null,
     pdf: ok ? result.pdf : null,
     sourceSha: ok ? await sourceSha(tex) : null,
