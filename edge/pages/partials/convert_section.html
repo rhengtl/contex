@@ -1,0 +1,355 @@
+{# ---------------------------------------------------------------------------
+   The conversion feature. There is only one.
+   templates/partials/convert_section.html, carried across.
+
+   Five input methods (file picker, drag-and-drop, .docx, camera, canvas) all
+   set name="file" on one input. The user is never asked which engine reads
+   their page, because that was always a question about our implementation
+   rather than about their document. (.docx is off until its extraction path is
+   ported -- see public/pages.js.)
+
+   This file holds BOTH states of the workspace, because they are states and
+   not stacked content: before a conversion you see the input panel, after one
+   you see the document. The old layout kept the upload controls above the
+   result, so the finished document - the thing you came back for - appeared
+   below a control you had already used.
+
+   Flask rendered one state per response and this renders both, hidden, for
+   app.js to swap. That is the whole of the difference: the markup of each
+   state, its classes and its order are the originals.
+
+   Nothing here is usable until the terms checkbox is ticked; the gate is
+   enforced again in the Worker on every /api/convert/page.
+   --------------------------------------------------------------------------- #}
+<section id="convert" class="wrap py-5 sm:py-14">
+
+{# =====================================================================
+   AFTER: the document
+   ===================================================================== #}
+<div id="convert-result" class="hidden">
+
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div class="min-w-0">
+            <p class="eyebrow">Converted</p>
+            <h1 id="result-name" class="mt-1 truncate text-[1.75rem] sm:text-[2rem]"></h1>
+        </div>
+        <a href="/" class="btn-quiet flex-shrink-0">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Convert another
+        </a>
+    </div>
+
+    {# ---------------------------------------------------------------
+       The one notice about a degraded conversion, shown once, here, on
+       the finished document. Not during processing: someone watching a
+       progress screen cannot act on "the AI just stopped", and someone
+       about to use the output can.
+       --------------------------------------------------------------- #}
+    <div id="fallback-notice" class="note-caution mb-5 hidden" role="status">
+        <p class="note-title" id="fallback-notice-title"></p>
+        <p id="fallback-notice-headline" class="mb-1 hidden"></p>
+        <p id="fallback-notice-detail"></p>
+        <p id="fallback-notice-reason" class="mt-2 hidden text-xs opacity-80"></p>
+    </div>
+
+    {# `stats` carries page, text-block and equation counts and the
+       conversion path. None of them are rendered, on purpose: they describe
+       the machinery rather than the document, and the path is already said in
+       plain words in the notice above.
+
+       Only the per-page notes are shown: a page that could not be read is
+       missing from the output, and that is not something the user can see by
+       looking at the preview. #}
+    <div id="convert-notes" class="note-quiet mb-5 hidden">
+        <p class="note-title">Notes on this conversion</p>
+        <ul id="convert-notes-list" class="list-disc space-y-0.5 pl-5"></ul>
+    </div>
+
+    {# ---------------------------------------------------------------
+       Output. The preview is the rendered PDF, not the source: what a
+       user needs to check is the document, and reading LaTeX to work out
+       what it will look like is a job for the compiler.
+       --------------------------------------------------------------- #}
+    <div class="card-lift overflow-hidden">
+        <div class="flex flex-wrap items-center gap-2 border-b border-paper-300 bg-paper-50 px-4 py-3">
+            <a id="download-tex" download class="btn-primary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+                </svg>
+                Download .tex
+            </a>
+            <button type="button" data-action="copy-tex" data-arg="convert-tex" class="btn-secondary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="12" height="12" rx="2"/>
+                    <path d="M6 15H5a2 2 0 01-2-2V5a2 2 0 012-2h8a2 2 0 012 2v1"/>
+                </svg>
+                Copy LaTeX
+            </button>
+            {# Some browsers are set never to display PDFs inline. The
+               rendered document still has to be reachable for them. #}
+            <a id="preview-open" target="_blank" rel="noopener"
+               data-action="open-pdf" class="btn-secondary btn-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h4"/>
+                </svg>
+                Open PDF
+            </a>
+            <button type="button" id="preview-reload" data-action="preview-load"
+                    class="btn-quiet btn-sm ml-auto">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 11A8 8 0 006.3 6.3L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0013.7 4.7L20 15.5M20 20v-4.5h-4.5"/>
+                </svg>
+                Reload preview
+            </button>
+        </div>
+
+        {# The preview is built from page images. In Flask that was because a
+           browser hands an application/pdf response to its own viewer before
+           the page can show it; here the compile happens in this tab and
+           pdf.js rasterises the result, which lands in the same place looking
+           the same way. The real PDF is still one click away, above. #}
+        <div id="preview-panel" class="bg-paper-200">
+
+            <div id="preview-loading" class="empty">
+                <img src="/img/contex-mark.png"
+                     alt="" width="40" height="40" class="h-10 w-10 animate-breathe opacity-70"
+                     loading="lazy" decoding="async">
+                <p id="preview-loading-text" class="empty-body">Compiling your document&hellip;</p>
+            </div>
+
+            <div id="preview-error" class="hidden p-4 text-left">
+                <div class="note-alarm">
+                    <p class="note-title">The document could not be rendered</p>
+                    <p id="preview-error-reason"></p>
+                    <pre id="preview-error-detail"
+                         class="mt-2 hidden max-h-48 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 text-xs"></pre>
+                    <p class="mt-2">
+                        The <code>.tex</code> file itself is unaffected &mdash; you can
+                        still download or copy it above.
+                    </p>
+                </div>
+            </div>
+
+            <div id="preview-pages" class="pagestack hidden max-h-[75vh]"></div>
+        </div>
+    </div>
+
+    {# Secondary to the rendered document, and presented as such. The test
+       suite checks that the preview panel appears before this in the markup,
+       because reading LaTeX to work out what it will look like is the
+       compiler's job, not the reader's. #}
+    <details class="disclosure mt-5">
+        <summary>
+            <svg class="disclosure-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 6l6 6-6 6"/>
+            </svg>
+            LaTeX source
+        </summary>
+        <div class="p-4">
+            <pre id="convert-tex" class="tex-source"></pre>
+        </div>
+    </details>
+</div>
+
+{# =====================================================================
+   BEFORE: the input
+   ===================================================================== #}
+<div id="convert-input">
+    {# Deliberately short on a phone. Everything here is explanation, and
+       explanation that pushes the drop area below the fold has cost more than
+       it can possibly be worth - which is what the four-line version of this
+       measured at 360px wide. The longer account is in the three steps under
+       the converter and in the footer. #}
+    <div class="mb-6 text-center sm:mb-8">
+        {# The heading says the same thing; on a phone the eyebrow is
+           27px that the drop area needs more. #}
+        <p class="eyebrow hidden sm:block">Handwriting and print to LaTeX</p>
+        <h1 class="mx-auto max-w-[18ch] text-[1.75rem] leading-[1.12] sm:mt-2 sm:text-[2.75rem]">
+            Turn any page into LaTeX
+        </h1>
+        <p class="lede mx-auto mt-2.5 text-balance">
+            Handwritten or printed, photographed or typed. You get the
+            <code class="rounded-sm bg-paper-200 px-1 text-ink-700">.tex</code>
+            and the rendered PDF.
+        </p>
+    </div>
+
+    <div class="card-lift mx-auto max-w-3xl p-4 sm:p-7">
+
+        {% include 'partials/qa_notice.html' %}
+        {% include 'partials/terms_gate.html' %}
+
+        {# The page cap, said BEFORE the conversion rather than after it. The
+           Flask app never mentioned this at all: a PDF longer than the cap was
+           converted in part and the Terms disclosed the limit, but nobody
+           reads terms to find out why their document ends at page ten. It
+           appears as soon as such a file is chosen, because once Convert is
+           pressed the processing screen covers the page and a warning behind
+           it is a warning nobody sees. #}
+        <div id="convert-pagelimit" class="note-caution mb-5 hidden" role="status">
+            <p class="note-title">Only the first <span id="pagelimit-kept"></span> pages will be converted</p>
+            <p id="pagelimit-detail"></p>
+        </div>
+
+        <div id="convert-error" class="note-alarm mb-5 hidden">
+            <p class="note-title">That did not work</p>
+            <p id="convert-error-text"></p>
+        </div>
+
+        {# The user asked to convert while the AI was unavailable and did not
+           agree to the fallback. Say so rather than quietly producing a lesser
+           document. #}
+        <div id="convert-blocked" class="note-caution mb-5 hidden">
+            <p class="note-title">AI-powered conversion is currently unavailable</p>
+            <p id="convert-blocked-reason"></p>
+            <p id="convert-blocked-recovery" class="mt-2 hidden"></p>
+            <p class="mt-2">
+                Nothing was converted. Choose a file again and the page will
+                offer you the local fallback, or wait for the service to
+                return.
+            </p>
+        </div>
+
+        <form id="convert-form">
+            {# min-w-0 is not decoration. A <fieldset> carries a browser
+               default of min-width: min-content and will not shrink below its
+               widest child, so a long file name made it 50px wider than the
+               form and pushed the page 13px past the edge of a 360px phone. #}
+            <fieldset id="convert-controls" disabled
+                      class="pointer-events-none min-w-0 opacity-40">
+                <legend class="sr-only">Choose a document to convert</legend>
+
+                {# A <label> for the file input, which is the canonical
+                   accessible upload control: clicking anywhere on it opens the
+                   picker with no JavaScript at all, the input is reachable by
+                   keyboard, and the input takes its accessible name from this
+                   text instead of being announced as an unnamed file control.
+
+                   It used to be a <div> with a click handler - not focusable,
+                   not announced, and unusable without a mouse. #}
+                <label for="convert-file-upload" id="convert-drop-area"
+                       class="dropzone py-8 sm:py-14">
+                    <svg class="h-10 w-10 text-ink-400" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 16V4m0 0L8 8m4-4l4 4"/>
+                        <path d="M4 15v3a3 3 0 003 3h10a3 3 0 003-3v-3"/>
+                    </svg>
+                    <span class="text-[0.9375rem] font-medium text-ink-900">
+                        Drop a page here, or choose a file
+                    </span>
+                    <span class="text-[0.8125rem] text-ink-500">
+                        Images and PDF &middot; up to <span id="max-upload-mb">32</span> MB
+                    </span>
+                    {# sr-only rather than hidden: a display:none input cannot be
+                       focused, which is what made the old markup impossible to
+                       use from a keyboard. The focus ring is drawn on the label
+                       instead - see .dropzone:focus-within. #}
+                    <input type="file" id="convert-file-upload" name="file"
+                           accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.gif,.pdf"
+                           class="sr-only" data-action="choose-file" data-arg="convert">
+                </label>
+
+                <div class="mt-3 flex flex-col gap-3 sm:flex-row">
+                    <div class="flex flex-1 flex-col gap-2">
+                        <button type="button" class="method" data-action="camera-open" data-arg="convert">
+                            <svg class="h-5 w-5 text-ink-500" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h3l2-3h8l2 3h3a2 2 0 012 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            Take a photo
+                        </button>
+                        {# No src attribute at all: src="" resolves to the current page,
+                           so the browser fetches the whole document again to
+                           put it in an image. showPreview() sets a blob URL. #}
+                        <img id="convert-camera-preview" alt=""
+                             class="mx-auto hidden max-h-24 rounded border border-paper-300">
+                        {# Never operated directly: capturePhoto() puts the
+                           blob in. Hidden rather than sr-only so it is not a
+                           tab stop. #}
+                        <input id="convert-camera-upload" type="file" accept="image/*" class="hidden">
+                    </div>
+
+                    <div class="flex flex-1 flex-col gap-2">
+                        <button type="button" class="method" data-action="draw-open" data-arg="convert">
+                            <svg class="h-5 w-5 text-ink-500" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                            </svg>
+                            Write or draw
+                        </button>
+                        <img id="convert-draw-preview" alt=""
+                             class="mx-auto hidden max-h-24 rounded border border-paper-300">
+                        {# As above: saveDrawing() puts the blob in. #}
+                        <input id="convert-draw-upload" type="file" accept="image/png" class="hidden">
+                    </div>
+                </div>
+
+                <div id="convert-file-display"
+                     class="mt-3 hidden items-center justify-between gap-3 rounded-md border border-forest-200 bg-forest-50 px-3.5 py-3">
+                    <span class="flex min-w-0 items-center gap-2.5 text-sm text-ink-900">
+                        <svg class="h-4 w-4 flex-shrink-0 text-forest-800" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" aria-hidden="true">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        {# min-w-0 as well as truncate: a flex item defaults to
+                           min-width:auto, so without it the name refuses to
+                           shrink below its own text and pushes the row wider
+                           than the screen. Measured: 13px of horizontal page
+                           scroll at 360px with a 24-character filename. #}
+                        <span id="convert-file-name" class="min-w-0 truncate font-medium"></span>
+                    </span>
+                    <button type="button" data-action="file-clear"
+                            class="btn-quiet btn-sm -my-1 flex-shrink-0 text-burgundy-600 hover:bg-burgundy-100 hover:text-burgundy-700">
+                        Remove
+                    </button>
+                </div>
+
+                <button type="submit" id="convert-submit" class="btn-primary btn-lg btn-block mt-5">
+                    Convert to LaTeX
+                </button>
+            </fieldset>
+        </form>
+    </div>
+
+    {# How it works. Three lines, below the thing they describe, for someone
+       who wants to know what they are about to get. Not a hero: the converter
+       is above this, not below it. #}
+    <ol class="mx-auto mt-12 grid max-w-3xl gap-px overflow-hidden rounded-lg border border-paper-300 bg-paper-300 sm:grid-cols-3">
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step one</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                Give it a page any way you like &mdash; a file, a photo, or your
+                own handwriting on the canvas.
+            </p>
+        </li>
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step two</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                Prose and mathematics are recognised together, so equations stay
+                where they belong in the text.
+            </p>
+        </li>
+        <li class="bg-paper-50 p-5">
+            <p class="eyebrow">Step three</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-700">
+                You get the <code class="rounded-sm bg-paper-200 px-1">.tex</code>
+                and the compiled PDF, so you can check it before you use it.
+            </p>
+        </li>
+    </ol>
+</div>
+</section>

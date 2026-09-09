@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% set page = 'home' %}
+{# ---------------------------------------------------------------------------
+   The workspace. templates/home.html, carried across.
+
+   This route is the converter. It used to be a four-screen scroll - a hero,
+   then the converter, then About, then History - which put the only thing
+   anyone comes here for below the fold and the finished document below the
+   control that produced it.
+
+   Now the page has two states and nothing else: give it a page, or look at
+   the document it made. History moved to its own route, About moved into the
+   footer.
+   --------------------------------------------------------------------------- #}
+
+{% block main %}
+    {% include 'partials/convert_section.html' %}
+{% endblock %}
+
+{% block dialogs %}
+    {% include 'partials/dialogs_convert.html' %}
+    {% include 'partials/processing.html' %}
+{% endblock %}

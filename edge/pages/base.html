@@ -1,0 +1,89 @@
+{# ---------------------------------------------------------------------------
+   The application shell. templates/base.html, carried across.
+
+   Every page extends this. Before it existed there were four independent
+   documents each carrying their own <head>, which is why they had drifted
+   apart: the home page set its body font one way and the three auth pages
+   another, only one of the four had a background colour, and none of them had
+   a favicon, a description or a social card.
+
+   Two things differ from the Flask original, both forced by static hosting:
+
+   - No {{ csp_nonce }} and no inline <script>. The Worker builds a policy with
+     a nonce for its own responses, but a static asset is served without
+     invoking it, so the flat policy in _headers has no nonce to offer. Nothing
+     here needs one: window.pageData carried what the server knew about this
+     request, and app.js asks /api/session for the same facts instead.
+
+   - Absolute paths rather than url_for(). Pages serves a directory's
+     index.html for the bare path, so /login is still /login.
+
+   Blocks a page may fill:
+     title            <title> text, before the site name
+     description      the meta description and og:description
+     body_class       extra classes on <body>
+     main             the page itself
+     dialogs          extra dialogs beyond the legal one every page needs
+     head             anything else in <head>
+   --------------------------------------------------------------------------- #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}{% endblock %}ConTeX</title>
+    <meta name="description" content="{% block description %}Turn any page - handwritten, printed, photographed or typed - into LaTeX. ConTeX reads the text and the mathematics together and gives you a .tex file and the rendered PDF.{% endblock %}">
+    <meta name="theme-color" content="#F4F1EB">
+
+    <link rel="icon" href="/img/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="ConTeX">
+    <meta property="og:title" content="{% block og_title %}ConTeX{% endblock %}">
+    <meta property="og:image" content="/img/og-card.png">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="stylesheet" href="/app.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    {# Three faces: Poppins for everything you operate, Spectral for display.
+       Both have metric-matched stand-ins in the stylesheet, so display=swap
+       costs no layout shift - the text is already occupying the right space
+       before the real fonts arrive. #}
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap" rel="stylesheet">
+
+    <script type="module" src="/app.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body data-page="{{ page }}"
+      class="min-h-screen font-poppins antialiased {% block body_class %}{% endblock %}">
+
+    <a class="sr-only-focusable" href="#main">Skip to main content</a>
+
+    {% include 'partials/header.html' %}
+
+    <main id="main" tabindex="-1" class="focus:outline-none">
+        {% block main %}{% endblock %}
+    </main>
+
+    {% include 'partials/footer.html' %}
+
+    {% include 'partials/dialog_legal.html' %}
+    {% include 'partials/dialog_confirm.html' %}
+    {% block dialogs %}{% endblock %}
+
+    {# Announcements. Deliberately aria-live rather than role="status": the
+       two are equivalent to a screen reader, and the result page is checked
+       elsewhere for the absence of role="status" as the signal that no
+       degraded-quality notice was rendered. #}
+    <div id="toast" aria-live="polite" aria-atomic="true"
+         class="pointer-events-none fixed inset-x-4 bottom-6 z-[80] hidden sm:right-auto sm:max-w-sm">
+        <p id="toast-text"
+           class="w-fit max-w-full rounded-md bg-ink-900 px-4 py-2.5 text-center text-sm text-paper-50 shadow-dialog sm:text-left"></p>
+    </div>
+</body>
+</html>

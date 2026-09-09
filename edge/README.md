@@ -1134,3 +1134,117 @@ three-page one does, and neither approaches a mobile limit.
 The 50 MiB is the number to weigh. It is paid **once**, only by someone who has
 been shown the size and agreed to it, and `/models/*` is served
 `immutable` for a year so a second offline conversion pays nothing.
+
+---
+
+# The interface
+
+Everything above this line is about what the application *does*. This section
+is about what it looks like, which for most of the migration was: nothing much.
+
+## What was wrong
+
+The edge build had a working frontend and no design at all. `public/app.css`
+was 87 hand-written lines against a semantic skeleton — a bare `<header>`, an
+unstyled drop area, `<dialog>` elements with the browser's own chrome. The
+Flask application it was replacing has a **documented design system**: an
+ink-and-paper palette with every pairing measured against WCAG AA, two
+typefaces with metric-matched fallbacks so nothing moves when the webfonts
+land, a four-rank button vocabulary, one shadow for things that genuinely
+float, and a layer scale that every overlay in the app sits on.
+
+None of that had been carried across. The two applications did the same work
+and did not look like the same product.
+
+## How it was carried across
+
+Not reimplemented by eye. The stylesheet is built from **the Flask
+application's own source**:
+
+    design/app.src.css        ../static/css/tailwind.src.css, unchanged
+    tailwind.config.cjs       ../tailwind.config.js, `content` globs aside
+    npm run build:css         tools/build_css.py, in JavaScript
+
+Both stylesheets are therefore generated from one file. A spacing step or a
+colour cannot drift between them, because there is only one of each.
+
+The markup is the same story. `pages/` holds the templates, and each one is
+`templates/`'s file with the server-side branches replaced: Flask knew whether
+you were signed in and rendered one branch, so this carries both and `app.js`
+unhides one. **`tools/build-pages.mjs` expands them**, implementing the four
+Jinja constructs those templates actually use — `extends`, `block`, `include`
+and a `set`/`if` pair for the one piece of state the *route* knows, which nav
+link is current.
+
+The alternative was hand-copying the shell into six files. `templates/base.html`
+exists precisely because that was tried once: "there were four independent
+documents each carrying their own `<head>`, which is why they had drifted
+apart." Reproducing the fix by reproducing the cause seemed a poor trade for
+sixty lines.
+
+Behaviour came across the same way. `ui.js` is sections 3, 9 and 10 of
+`static/scripts.js` — dialogs with a focus trap, the toast, the drawer, the
+legal reader, the delegated listener they all hang off. `input.js` is sections
+1, 5 and 6 — the growing sheet, coalesced pointer events, the cached bounding
+rect that keeps `pointermove` off the layout path.
+
+## Verified against the original, running
+
+`wsgi.py` on :5001, `wrangler dev` on :8788, the same four pages screenshotted
+at 1280×900 and 390×844 in the same browser. The home, history, sign-in and
+sign-up pages are indistinguishable at both widths.
+
+Three differences are deliberate, and all three are the migration showing
+through rather than a design change:
+
+| | Flask | here |
+|---|---|---|
+| the drop area | `Images, PDF and Word (.docx)` | `Images and PDF` |
+| the footer and the AI notice | the fallback "runs entirely on this server" | "runs entirely in this browser" |
+| the current nav link | never marked | marked |
+
+The first is `.docx`, which is not ported. The second is stronger than the
+sentence it replaces: the offline path sends the document nowhere at all.
+
+The third needs saying plainly. `templates/partials/header.html` compares
+`request.endpoint` against `'home'`, and Flask's endpoint for a blueprint route
+is `'pages.home'` — so the comparison has never once been true and the
+underline that the header's own comment describes ("you can still tell where
+you are") has never appeared. This build emits it. That is the one place the
+port does not reproduce what the original *renders*, and it was chosen because
+the alternative was writing code to suppress a feature the design documents.
+
+## Two defects found in the original by porting it
+
+**The sign-in and sign-up pages leak their own source.** Both carry an inline
+`<script>` whose comment reads *"a value carrying a quote or a `</script>`
+would break out of the string"* — and that literal `</script>`, inside a
+JavaScript comment, closes the element. Everything after it is body text: the
+top of `/login` is currently forty lines of JavaScript, ending with the
+project's Firebase API key. The Google button below it is dead, because the
+handler that binds it never ran.
+
+It cannot happen here. There is no inline script on any page — `auth.js` binds
+that button — which is also why the CSP needs no nonce.
+
+**A file dropped outside the drop zone navigates away.** `setupConvertDragDrop`
+prevents the default on the drop area only, so a near miss hands the file to
+the browser, which replaces the application with it. The session goes, and so
+does any converted document on screen. This build prevents it at the window.
+
+## What this cost the suites
+
+Three of them drive the DOM, and the DOM changed: `input.mjs`, `stage3-browser
+.mjs` and `integration.mjs` were remapped onto the ported markup. Two
+assertions changed meaning rather than selector, and both are worth recording.
+
+The terms gate used to be checked by converting without accepting and reading
+the error. There is no error now, because there is nothing to press — the gate
+disables the whole fieldset, which is what `templates/partials/terms_gate.html`
+does and a stronger guarantee than a message after the fact.
+
+The 404 page used to be checked for loading **no script at all**. It extends
+the shell now, as `templates/error.html` did, so it has the header, the footer
+and the legal dialog. What is asserted instead is the property that mattered:
+the way out is a plain `<a href="/">`, so it works whether or not `app.js` ever
+loads.

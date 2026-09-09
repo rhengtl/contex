@@ -1,31 +1,26 @@
 /**
  * The ConTeX client.
  *
- * Carries the parts of static/scripts.js and the Flask routes that Stages 1-3
- * cover: the shell context, the terms gate, sign-in, the upload, the page-by-
- * page conversion and merge, the preview, and both kinds of history.
+ * Loaded by every page, because every page has the shell: the header's account
+ * state, the legal dialog, the drawer, the toast. Only the workspace has a
+ * converter, and setupConverter() returns immediately when there is not one.
  *
- * WHAT THIS FILE IS NOW. The page: elements, listeners, and the two questions
- * only a person can answer -- do you accept the terms, and will you accept a
- * conversion without the AI. Everything with a decision in it has moved out:
+ * WHAT THIS FILE IS. The page: elements, listeners, and the two questions only
+ * a person can answer -- do you accept the terms, and will you accept a
+ * conversion without the AI. Everything with a decision in it lives elsewhere:
  *
  *   convert.js        run.py convert() and _convert_pages(): the model chain,
  *                     the page-by-page conversion, where to resume when the AI
  *                     stops part way, and the fallback authorisation gate.
  *   recognise/        the local recognisers and the layout analysis behind it.
- *   input.js          the four ways a page gets in -- picker, drag-and-drop,
- *                     camera, canvas.
+ *   input.js          the four ways a page gets in.
+ *   ui.js             dialogs, toasts, the drawer, the legal reader.
  *
  * That split is not tidying. A pipeline whose failure modes can only be
  * exercised by clicking is a pipeline whose failure modes are not tested, and
- * the failure modes are the point of Stage 4: tests/fallback.mjs drives the
- * whole thing against a Gemini that is down, rate-limited, or dies on page
- * three, without a browser click anywhere.
- *
- * One thing used to be here and is gone entirely: base64 encoding. The Worker
- * pipes the raw bytes into the Gemini Files API, so there is nothing to encode
- * -- which is what closed the injection hole, and incidentally deleted the
- * chunked-encode loop a 19 MB image needed.
+ * the failure modes are the point: tests/fallback.mjs drives the whole thing
+ * against a Gemini that is down, rate-limited, or dies on page three, without
+ * a browser click anywhere.
  *
  * What did NOT move: who this visitor is, and whether they may convert. Those
  * are read from the signed session cookie in the Worker and are never the
@@ -34,46 +29,137 @@
 
 import { staticValidate } from '/latex/validate.js';
 import { compile } from '/latex/compile.js';
-import { renderPdf, downloadPdf } from '/preview.js';
-import { aiUnits, checkInput, extensionOf, ACCEPTED } from '/pages.js';
+import { renderPdf } from '/preview.js';
+import { aiUnits, checkInput, extensionOf, totalPages, ACCEPTED,
+         ACCEPTED_EXTENSIONS, MAX_PDF_PAGES } from '/pages.js';
 import { convertDocument, FallbackNotAuthorized } from '/convert.js';
 import * as auth from '/auth.js';
 import * as history from '/history.js';
 import * as input from '/input.js';
+import { el, setText, toggle, toast, openDialog, closeDialog, onDismiss,
+         writeClipboard, setTermsVersion, on } from '/ui.js';
 
-const el = (id) => document.getElementById(id);
 const state = {
-  tex: null, name: null, pdf: null,
-  shell: { isAuthenticated: false, hasAcceptedTerms: false, maxUploadMb: 32,
-           termsVersion: null, firebaseConfig: null },
-  guest: [],
+  tex: null,
+  name: null,
+  pdf: null,
+  pdfUrl: null,
+  texUrl: null,
+  shell: {
+    isAuthenticated: false, hasAcceptedTerms: false, maxUploadMb: 32,
+    termsVersion: null, firebaseConfig: null,
+  },
 };
 
-function showError(message) {
-  const box = el('error');
-  box.textContent = message;
-  box.hidden = false;
+/* ---------------------------------------------------------------------------
+   The shell -- on every page
+   --------------------------------------------------------------------------- */
+
+function applyShell(shell) {
+  state.shell = { ...state.shell, ...shell };
+  setTermsVersion(state.shell.termsVersion);
+
+  const signedIn = !!shell.isAuthenticated;
+  const name = shell.displayName || shell.email || '';
+
+  // The header's account control. Flask rendered one of these two; both are in
+  // the document here and one is unhidden -- with the same suppression the
+  // original had, which is that the sign-in page does not offer a Sign in
+  // button in its own header.
+  const onLoginPage = document.body.dataset.page === 'login';
+  toggle(el('nav-account-in'), signedIn);
+  toggle(el('nav-account-out'), !signedIn && !onLoginPage);
+  toggle(el('sidebar-account-in'), signedIn);
+  toggle(el('sidebar-account-out'), !signedIn);
+  if (el('nav-account-in')) el('nav-account-in').classList.toggle('flex', signedIn);
+  if (el('nav-account-out')) {
+    el('nav-account-out').classList.toggle('flex', !signedIn && !onLoginPage);
+  }
+  setText('nav-account-name', name);
+  if (el('nav-account-name') && shell.email) el('nav-account-name').title = shell.email;
+  setText('sidebar-account-name', name);
 }
 
-/**
- * A transient message, for something that happened rather than something that
- * is wrong. Never a browser dialog: scripts.js does not use one either, and the
- * Python suite has a test that says so.
- */
-let toastTimer = null;
-function toast(message) {
-  const box = el('toast');
-  box.textContent = message;
-  box.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { box.hidden = true; }, 4000);
-}
-function clearError() { el('error').hidden = true; }
-function setStatus(message) { el('status').textContent = message || ''; }
+on('logout', async () => {
+  const result = await auth.logout();
+  // auth.py's logout is session.clear(): the whole session goes, not just the
+  // sign-in half. Nothing of the account that was just here is left behind for
+  // whoever uses this tab next -- including the guest list and any document
+  // still on screen, which is why this reloads rather than patching the DOM.
+  history.clear();
+  applyShell(result);
+  window.location.href = '/';
+});
 
-// ---------------------------------------------------------------------------
-// Converting
-// ---------------------------------------------------------------------------
+/* ---------------------------------------------------------------------------
+   The terms gate
+
+   The checkbox enables the controls; the Worker checks the session again on
+   every /api/convert/page. Disabling the fieldset is a courtesy, not the
+   enforcement.
+   --------------------------------------------------------------------------- */
+
+function lockControls(locked) {
+  const controls = el('convert-controls');
+  if (!controls) return;
+  controls.disabled = locked;
+  controls.classList.toggle('opacity-40', locked);
+  controls.classList.toggle('pointer-events-none', locked);
+}
+
+function showTermsError(message) {
+  const error = el('terms-error');
+  if (!error) return;
+  error.textContent = message;
+  error.classList.remove('hidden');
+}
+
+function applyTermsState() {
+  const accepted = !!state.shell.hasAcceptedTerms;
+  toggle('terms-gate', !accepted);
+  toggle('terms-accepted', accepted);
+  setText('terms-accepted-version', state.shell.termsVersion || '');
+  lockControls(!accepted);
+}
+
+function setupTermsGate() {
+  const box = el('terms-checkbox');
+  if (!box) return;
+
+  box.addEventListener('change', async () => {
+    const error = el('terms-error');
+    if (error) error.classList.add('hidden');
+
+    if (!box.checked) { lockControls(true); return; }
+    box.disabled = true;
+
+    try {
+      const data = await auth.acceptTerms(state.shell.termsVersion);
+      if (data && data.ok) {
+        state.shell.hasAcceptedTerms = true;
+        applyTermsState();
+        toast('Thanks - you can now convert a document.');
+      } else {
+        box.checked = false;
+        box.disabled = false;
+        showTermsError((data && data.error)
+          || 'Could not record your acceptance. Please try again.');
+      }
+    } catch {
+      box.checked = false;
+      box.disabled = false;
+      showTermsError('Could not reach the server. Please try again.');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   AI availability
+
+   Checked immediately before a conversion starts, never after. A user who is
+   about to get a materially worse result is told so while they can still
+   decide not to.
+   --------------------------------------------------------------------------- */
 
 /**
  * What leaves this module. convert.js takes its I/O through this so the whole
@@ -102,6 +188,35 @@ const api = {
  * the thing run.py refuses to do.
  */
 let allowFallback = false;
+let busy = false;
+
+function showAiModal(status) {
+  status = status || {};
+  setText('ai-modal-reason', status.message
+    || 'The AI conversion service is currently unavailable.');
+
+  // Flask listed every configured provider here. There is one, and naming it
+  // is more useful than naming the category.
+  setText('ai-modal-services', status.reason === 'not_configured'
+    ? 'No AI service is configured on this server.'
+    : 'Google Gemini API');
+
+  const source = el('ai-modal-recovery-source');
+  if (status.retryAt) {
+    const when = new Date(status.retryAt * 1000);
+    setText('ai-modal-recovery', `Expected back around ${when.toLocaleTimeString()}.`);
+    if (source) {
+      source.textContent = 'Source: the quota window reported by the provider.';
+      source.classList.remove('hidden');
+    }
+  } else {
+    setText('ai-modal-recovery', 'No estimated recovery time is currently available.');
+    if (source) { source.textContent = ''; source.classList.add('hidden'); }
+  }
+
+  setText('ai-modal-checked', `Checked at ${new Date().toLocaleTimeString()}.`);
+  openDialog('ai-modal');
+}
 
 /**
  * Offer the choice, and wait for it. Resolves true to continue locally, false
@@ -112,93 +227,194 @@ let allowFallback = false;
  * wait. Nothing is converted until one of them is chosen.
  */
 function askAboutFallback(status) {
-  const dialog = el('ai-modal');
-  el('ai-modal-reason').textContent =
-    status?.message || 'The AI conversion service is temporarily unavailable.';
-  const recovery = el('ai-modal-recovery');
-  if (status?.retryAt) {
-    const when = new Date(status.retryAt * 1000);
-    recovery.textContent = `Expected back around ${when.toLocaleTimeString()}.`;
-  } else {
-    recovery.textContent = 'Not known.';
-  }
-  el('ai-modal-checked').textContent =
-    `Checked at ${new Date().toLocaleTimeString()}.`;
-
-  return new Promise((resolve) => {
-    const finish = (answer) => {
-      recheck.removeEventListener('click', onRecheck);
-      go.removeEventListener('click', onGo);
-      cancel.removeEventListener('click', onCancel);
-      dialog.close();
-      resolve(answer);
-    };
-    const recheck = el('ai-recheck');
-    const go = el('ai-continue');
-    const cancel = el('ai-cancel');
-
-    const onRecheck = async () => {
-      recheck.disabled = true;
-      recheck.textContent = 'Checking…';
-      const fresh = await api.aiStatus();
-      recheck.disabled = false;
-      recheck.textContent = 'Check again';
-      if (fresh && fresh.available) {
-        toast('AI conversion is available again.');
-        finish(true);
-        return;
-      }
-      el('ai-modal-reason').textContent =
-        fresh?.message || 'Still unavailable.';
-      el('ai-modal-checked').textContent =
-        `Checked at ${new Date().toLocaleTimeString()}.`;
-      toast('Still unavailable.');
-    };
-    const onGo = () => finish(true);
-    const onCancel = () => finish(false);
-
-    recheck.addEventListener('click', onRecheck);
-    go.addEventListener('click', onGo);
-    cancel.addEventListener('click', onCancel);
-    if (!dialog.open) dialog.showModal();
-  });
+  showAiModal(status);
+  return new Promise((resolve) => { pendingAnswer = resolve; });
 }
 
-async function run() {
-  clearError();
-  el('notice').replaceChildren();
-  el('notice').hidden = true;
-  const file = input.selectedFile();
-  if (!file) { showError('No file selected.'); return; }
-  if (file.size === 0) { showError('That file was empty.'); return; }
+let pendingAnswer = null;
 
-  const ext = extensionOf(file.name);
-  if (ext && !ACCEPTED.has(ext)) {
-    showError(`Unsupported file type: '${ext}'`);
-    return;
-  }
-  const limit = state.shell.maxUploadMb;
-  if (file.size > limit * 1024 * 1024) {
-    showError(`That file is larger than the ${limit} MB limit.`);
-    return;
-  }
+function answerFallback(value) {
+  const resolve = pendingAnswer;
+  pendingAnswer = null;
+  closeDialog('ai-modal');
+  if (resolve) resolve(value);
+}
 
-  el('go').disabled = true;
-  setStatus('Converting…');
+/** Re-check, so a warning cannot outlive the outage that produced it. */
+async function recheckAi() {
+  const button = el('ai-modal-recheck');
+  if (button) { button.disabled = true; button.textContent = 'Checking…'; }
   try {
-    // The terms gate. The Worker refuses the conversion without it too -- this
-    // is so the user is not told "no" after the upload has already gone.
-    if (!state.shell.hasAcceptedTerms) {
-      if (!el('accept').checked) {
-        throw new Error('Please accept the Terms of Service and Privacy ' +
-                        'Policy before converting a document.');
-      }
-      const accepted = await auth.acceptTerms(state.shell.termsVersion);
-      if (!accepted.ok) throw new Error(accepted.error || 'Could not record your acceptance.');
-      state.shell.hasAcceptedTerms = true;
-      el('terms').hidden = true;
+    const fresh = await api.aiStatus();
+    if (fresh && fresh.available) {
+      toast('AI conversion is available again.');
+      answerFallback('ai');
+      return;
     }
+    showAiModal(fresh);
+    toast('Still unavailable.');
+  } catch {
+    toast('Could not check right now.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Check again'; }
+  }
+}
 
+onDismiss('ai-modal', () => {
+  // Dismissing this dialog is cancelling the conversion, not merely hiding a
+  // box -- which is why it does not go through closeDialog() alone.
+  answerFallback(false);
+  toast('Cancelled. Your document was not converted.');
+});
+
+/* ---------------------------------------------------------------------------
+   The processing screen
+
+   No progress bar, on purpose. Neither the Worker nor the model reports how
+   far through a document it is, so a bar drawn here would be measuring
+   nothing. Everything shown instead is true: which file is being read, how
+   long it has actually been running, and an honest range for how long that
+   usually takes.
+   --------------------------------------------------------------------------- */
+
+const PROCESSING_LONG_MS = 120000;
+const PROCESSING_LONG_NOTE =
+  'Still working. Long or dense documents take longer, and the conversion '
+  + 'is not lost - please keep this tab open.';
+const PROCESSING_NOTE =
+  'Most single pages take 10–60 seconds. A long PDF can take a few '
+  + 'minutes. Please keep this tab open.';
+
+let processingTimer = null;
+
+function formatElapsed(ms) {
+  const total = Math.floor(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function showProcessing(detail) {
+  const screen = el('processing');
+  if (!screen) return;
+
+  setText('processing-detail', detail);
+  setText('processing-note', PROCESSING_NOTE);
+  setText('processing-elapsed', '0:00');
+
+  const startedAt = Date.now();
+  clearInterval(processingTimer);
+  processingTimer = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    setText('processing-elapsed', formatElapsed(elapsed));
+    if (elapsed >= PROCESSING_LONG_MS) setText('processing-note', PROCESSING_LONG_NOTE);
+  }, 1000);
+
+  screen.classList.remove('hidden');
+  screen.classList.add('flex');
+  document.documentElement.style.overflow = 'hidden';
+}
+
+function hideProcessing() {
+  const screen = el('processing');
+  clearInterval(processingTimer);
+  processingTimer = null;
+  if (!screen) return;
+  screen.classList.add('hidden');
+  screen.classList.remove('flex');
+  document.documentElement.style.overflow = '';
+}
+
+function describeConversion() {
+  const name = input.chosenFileName();
+  return name
+    ? `Reading ${name} and writing the LaTeX for it.`
+    : 'Reading your page and writing the LaTeX for it.';
+}
+
+function setSubmitting(working, label) {
+  const button = el('convert-submit');
+  if (!button) return;
+  button.disabled = !!working;
+  if (working && label) {
+    button.dataset.idleLabel = button.dataset.idleLabel || button.textContent.trim();
+    button.textContent = label;
+  } else if (!working && button.dataset.idleLabel) {
+    button.textContent = button.dataset.idleLabel;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Converting
+   --------------------------------------------------------------------------- */
+
+function showConvertError(message) {
+  setText('convert-error-text', message);
+  toggle('convert-error', true);
+}
+
+function clearNotices() {
+  toggle('convert-error', false);
+  toggle('convert-blocked', false);
+  toggle('fallback-notice', false);
+  toggle('convert-notes', false);
+  const list = el('convert-notes-list');
+  if (list) list.replaceChildren();
+}
+
+/**
+ * Warn about the page cap as soon as a long PDF is chosen.
+ *
+ * Before the conversion, not after: once Convert is pressed the processing
+ * screen covers the page, so anything shown then is shown to nobody. The Flask
+ * app never said this at all -- a PDF longer than the cap was converted in
+ * part and the Terms disclosed the limit, which is not where anybody looks to
+ * find out why their document ends at page ten.
+ */
+async function checkPageLimit() {
+  const file = input.selectedFile();
+  toggle('convert-pagelimit', false);
+  if (!file || extensionOf(file.name) !== '.pdf') return;
+  try {
+    const total = await totalPages(new Uint8Array(await file.arrayBuffer()), file.name);
+    if (total <= MAX_PDF_PAGES) return;
+    setText('pagelimit-kept', String(MAX_PDF_PAGES));
+    setText('pagelimit-detail',
+      `This PDF has ${total} pages. ConTeX converts at most ${MAX_PDF_PAGES} of `
+      + `them, so pages ${MAX_PDF_PAGES + 1} to ${total} will not be sent and `
+      + 'will not appear in the result. Split the file and convert the rest '
+      + 'separately if you need all of it.');
+    toggle('convert-pagelimit', true);
+  } catch {
+    // An unreadable PDF is the conversion's problem to report, not this one's.
+  }
+}
+
+/** The Flask "blocked" panel: asked to convert, said no to the fallback. */
+function showBlocked(status) {
+  setText('convert-blocked-reason', status?.message
+    || 'The AI conversion service is temporarily unavailable.');
+  const recovery = el('convert-blocked-recovery');
+  if (recovery) {
+    if (status?.retryAt) {
+      const when = new Date(status.retryAt * 1000);
+      recovery.textContent = `Expected back around ${when.toLocaleTimeString()}.`;
+      recovery.classList.remove('hidden');
+    } else {
+      recovery.classList.add('hidden');
+    }
+  }
+  toggle('convert-blocked', true);
+}
+
+async function startConversion(headline, detail) {
+  if (busy) return;
+  busy = true;
+  clearNotices();
+
+  const file = input.selectedFile();
+  setText('processing-title', headline || 'Converting your document');
+  showProcessing(detail || describeConversion());
+
+  try {
     checkInput(file.name);
     const buf = new Uint8Array(await file.arrayBuffer());
     const { units, total, dropped } = await aiUnits(buf, file.name, file.type);
@@ -207,95 +423,122 @@ async function run() {
     // converted in part, and the Python app never mentioned it -- the Terms
     // disclose the limit, but nobody reads terms to find out why their
     // document ends at page ten.
+    const pageNotes = [];
     if (dropped > 0) {
-      notice(`Only the first ${units.length} pages of this ${total}-page PDF ` +
-             'will be converted.',
-             `ConTeX converts at most ${units.length} pages of a PDF. Pages ` +
-             `${units.length + 1} to ${total} are not sent and will not appear ` +
-             'in the result. Split the file and convert the rest separately if ' +
-             'you need all of it.');
+      pageNotes.push(`Only the first ${units.length} pages of this ${total}-page `
+        + 'PDF were converted. Split the file and convert the rest separately '
+        + 'if you need all of it.');
     }
-    if (units.length > 1) setStatus(`Converting ${units.length} pages…`);
+    // Said before the conversion by checkPageLimit(); repeated here so the
+    // finished document carries it too, for anyone who comes back to it later.
 
     let result;
     try {
       result = await convertDocument({
-        units, total, api, allowFallback, ui: { status: setStatus },
+        units, total, api, allowFallback, ui: { status: setProcessingDetail },
       });
     } catch (err) {
       if (!(err instanceof FallbackNotAuthorized)) throw err;
       // The AI is down and nothing has been converted. Ask, then either run
       // the local path or stop -- never quietly produce a lesser document.
-      setStatus('');
-      if (!await askAboutFallback(err.status)) {
-        toast('Cancelled. Your document was not converted.');
-        return;
-      }
-      allowFallback = true;
-      setStatus('Converting without AI…');
+      hideProcessing();
+      const answer = await askAboutFallback(err.status);
+      if (!answer) { showBlocked(err.status); return; }
+      const local = answer !== 'ai';
+      setText('processing-title', local ? 'Converting without AI' : 'Converting your document');
+      showProcessing(local
+        ? 'The AI service is unavailable, so this is being converted in this '
+          + 'browser. Nothing is sent anywhere, and quality will be lower.'
+        : describeConversion());
       result = await convertDocument({
-        units, total, api, allowFallback: true, ui: { status: setStatus },
+        units, total, api, allowFallback: local, ui: { status: setProcessingDetail },
       });
     }
 
-    const { tex, summary, issues } = result;
-    state.tex = tex;
-    state.name = file.name;
-    el('tex').textContent = tex;
-    el('result').hidden = false;
-
-    // The one notice about a degraded conversion, shown once, here, on the
-    // finished document -- not while it was running.
-    if (summary.fallbackNotice) {
-      const n = summary.fallbackNotice;
-      notice(n.headline, n.detail, n.reason);
-    }
-    // Per-page notes: a page that could not be read is missing from the
-    // output, and that is not something the user can see from the preview.
-    if (summary.notes.length) {
-      notice('Notes on this conversion', summary.notes.join(' '));
-    }
-    if (summary.uncertainLines) {
-      notice(`${summary.uncertainLines} line(s) may be misread.`,
-             'Those lines were recognised with low confidence — handwriting, '
-             + 'usually. Check them against your original before using this.');
-    }
-
-    // Save before the preview: a conversion that compiled badly is still the
-    // user's transcription, and losing it to a preview failure would be worse
-    // than showing no preview.
-    const saved = await history.record({
-      isAuthenticated: state.shell.isAuthenticated,
-      fileName: file.name, tex,
-    });
-    if (saved.items) state.guest = saved.items;
-
-    setStatus('Building the preview…');
-    await showPreview(tex, issues);
+    await showResult(file.name, result, pageNotes);
   } catch (err) {
-    setStatus('');
-    showError(err.message);
+    showConvertError(err.message);
   } finally {
-    el('go').disabled = false;
+    hideProcessing();
+    setSubmitting(false);
+    busy = false;
     allowFallback = false;
   }
 }
 
-/**
- * Add one notice. Appends rather than replaces: a long PDF that then loses the
- * model part way through has two things to say, and the second must not erase
- * the first. run() clears the box before each conversion.
- */
-function notice(headline, detail, reason) {
-  const box = el('notice');
-  const item = document.createElement('div');
-  const h = document.createElement('strong');
-  h.textContent = headline;
-  const p = document.createElement('p');
-  p.textContent = detail + (reason ? ` (${reason})` : '');
-  item.append(h, p);
-  box.append(item);
-  box.hidden = false;
+function setProcessingDetail(message) {
+  if (message) setText('processing-detail', message);
+}
+
+/** Swap the workspace from the input state to the document state. */
+async function showResult(name, { tex, summary, issues }, pageNotes) {
+  state.tex = tex;
+  state.name = name;
+
+  setText('result-name', name || 'document');
+  const heading = el('result-name');
+  if (heading) heading.title = name || 'document';
+  setText('convert-tex', tex);
+
+  // The one notice about a degraded conversion, shown once, here, on the
+  // finished document -- not while it was running.
+  if (summary.fallbackNotice) {
+    const notice = summary.fallbackNotice;
+    setText('fallback-notice-title', notice.partial ? 'Incomplete conversion' : notice.headline);
+    const headline = el('fallback-notice-headline');
+    if (headline) {
+      headline.textContent = notice.partial ? notice.headline : '';
+      headline.classList.toggle('hidden', !notice.partial);
+    }
+    setText('fallback-notice-detail', notice.detail);
+    const reason = el('fallback-notice-reason');
+    if (reason) {
+      reason.textContent = notice.reason ? `Reason: ${notice.reason}` : '';
+      reason.classList.toggle('hidden', !notice.reason);
+    }
+    const box = el('fallback-notice');
+    // The alarm variant for a conversion that stopped part way, the caution
+    // variant for one that finished by another route. Whole literal class
+    // strings, because that is what Tailwind's scanner reads.
+    if (box) box.className = notice.partial ? 'note-alarm mb-5' : 'note-caution mb-5';
+    toggle('fallback-notice', true);
+  }
+
+  // Per-page notes: a page that could not be read is missing from the output,
+  // and that is not something the user can see from the preview.
+  const notes = [...pageNotes, ...summary.notes];
+  if (summary.uncertainLines) {
+    notes.push(`${summary.uncertainLines} line(s) were recognised with low `
+      + 'confidence — handwriting, usually. Check them against your original.');
+  }
+  if (notes.length) {
+    const list = el('convert-notes-list');
+    for (const note of notes) {
+      const item = document.createElement('li');
+      item.textContent = note;
+      list.appendChild(item);
+    }
+    toggle('convert-notes', true);
+  }
+
+  // Save before the preview: a conversion that compiled badly is still the
+  // user's transcription, and losing it to a preview failure would be worse
+  // than showing no preview.
+  await history.record({
+    isAuthenticated: state.shell.isAuthenticated, fileName: name, tex,
+  });
+
+  const base = (name || 'converted').replace(/\.[^.]*$/, '') || 'document';
+  if (state.texUrl) URL.revokeObjectURL(state.texUrl);
+  state.texUrl = URL.createObjectURL(new Blob([tex], { type: 'application/x-tex' }));
+  const download = el('download-tex');
+  if (download) { download.href = state.texUrl; download.download = `${base}.tex`; }
+
+  toggle('convert-input', false);
+  toggle('convert-result', true);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+
+  await loadPreview(issues);
 }
 
 /**
@@ -305,407 +548,193 @@ function notice(headline, detail, reason) {
  * costs the .tex, and the reason is named -- the missing package, the unsafe
  * construct, or the engine error -- rather than reported as a generic failure.
  */
-async function showPreview(tex, issues, target = el('preview'),
-                           box = el('preview-error')) {
-  box.hidden = true;
-  el('download-pdf').hidden = true;
-  target.replaceChildren();
+async function loadPreview(issues) {
+  const pages = el('preview-pages');
+  const loading = el('preview-loading');
+  const error = el('preview-error');
+  if (!pages) return;
 
-  const result = await compile(tex);
+  toggle(error, false);
+  toggle(pages, false);
+  toggle(loading, true);
+  setText('preview-loading-text', 'Compiling your document…');
+  pages.replaceChildren();
+
+  const result = await compile(state.tex);
 
   if (result.ok) {
     state.pdf = result.pdf;
-    el('download-pdf').hidden = false;
-    const { pages } = await renderPdf(result.pdf, target);
-    setStatus(`Done. ${pages} page${pages === 1 ? '' : 's'}.`);
+    if (state.pdfUrl) URL.revokeObjectURL(state.pdfUrl);
+    state.pdfUrl = URL.createObjectURL(new Blob([result.pdf], { type: 'application/pdf' }));
+    const open = el('preview-open');
+    if (open) open.href = state.pdfUrl;
+
+    await renderPdf(result.pdf, pages);
+    toggle(loading, false);
+    toggle(pages, true);
     return;
   }
 
   const parts = [];
   if (result.reason) parts.push(result.reason);
   if (result.missingPackages.length) {
-    parts.push('Missing LaTeX packages: ' + result.missingPackages.join(', ') +
-               '. The .tex file is unchanged and can still be downloaded and ' +
-               'compiled wherever those packages are available.');
+    parts.push(`Missing LaTeX packages: ${result.missingPackages.join(', ')}. `
+      + 'The .tex file is unchanged and can still be compiled wherever those '
+      + 'packages are available.');
   } else if (result.attempted && !result.reason) {
-    parts.push('The preview could not be built from this document. ' +
-               'The .tex file is unchanged and can still be downloaded.');
+    parts.push('The preview could not be built from this document.');
   }
-  if (issues && issues.length) parts.push('Validation found: ' + issues.join(' '));
-  box.textContent = parts.join(' ');
-  box.hidden = false;
-  setStatus('Converted. No preview — see the note above.');
-}
+  setText('preview-error-reason', parts.join(' '));
 
-function downloadTex(tex, name) {
-  if (!tex) return;
-  const base = (name || 'converted').replace(/\.[^.]*$/, '') || 'document';
-  const url = URL.createObjectURL(new Blob([tex], { type: 'application/x-tex' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${base}.tex`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
-// ---------------------------------------------------------------------------
-// History
-// ---------------------------------------------------------------------------
-
-function button(label, onClick) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = label;
-  b.addEventListener('click', onClick);
-  return b;
+  const detail = el('preview-error-detail');
+  const found = issues && issues.length ? `Validation found: ${issues.join(' ')}` : '';
+  if (detail) {
+    detail.textContent = found;
+    detail.classList.toggle('hidden', !found);
+  }
+  toggle(loading, false);
+  toggle(error, true);
 }
 
 /**
- * The history view.
- *
- * Signed in -> the persistent list, read back through the Worker.
- * Guest     -> nothing server-side; the browser holds its own list in
- *              sessionStorage and renders it here.
- *
- * Its own view rather than a section of the workspace, for the reason
- * pages.py gives: reaching a past conversion used to mean scrolling past the
- * entire converter.
+ * Compile one document into an arbitrary panel -- what a history row's
+ * "Preview PDF" does. Same engine, same failure wording as the workspace.
  */
-async function renderHistory() {
-  const list = el('history-list');
-  const empty = el('history-empty');
-  const clearBtn = el('history-clear');
-  list.replaceChildren();
+async function previewInto(tex, panel) {
+  panel.replaceChildren();
+  const waiting = document.createElement('div');
+  waiting.className = 'empty';
+  const text = document.createElement('p');
+  text.className = 'empty-body';
+  text.textContent = 'Compiling this document…';
+  waiting.appendChild(text);
+  panel.appendChild(waiting);
 
-  let rows;
-  if (state.shell.isAuthenticated) {
-    const saved = await history.fetchSaved();
-    rows = saved.history.map((r) => ({ ...r, saved: true }));
-    clearBtn.hidden = true;   // there is no self-service delete; see the README
-  } else {
-    rows = state.guest.map((item, index) => ({
-      id: `guest-${index}`, index, fileName: item.fileName, timestamp: item.at,
-      result: item.result, truncated: false, saved: false,
-    }));
-    clearBtn.hidden = !rows.length;
+  const result = await compile(tex);
+  panel.replaceChildren();
+
+  if (!result.ok) {
+    const note = document.createElement('div');
+    note.className = 'note-alarm';
+    const title = document.createElement('p');
+    title.className = 'note-title';
+    title.textContent = 'The document could not be rendered';
+    const reason = document.createElement('p');
+    reason.textContent = result.reason
+      || (result.missingPackages.length
+        ? `Missing LaTeX packages: ${result.missingPackages.join(', ')}.`
+        : 'The preview could not be built from this document.');
+    note.append(title, reason);
+    panel.appendChild(note);
+    return;
   }
 
-  empty.hidden = rows.length > 0;
-  list.hidden = rows.length === 0;
-
-  for (const row of rows) {
-    const li = document.createElement('li');
-    const head = document.createElement('div');
-    head.className = 'row';
-    const name = document.createElement('h3');
-    name.textContent = row.fileName || 'document';
-    const when = document.createElement('time');
-    when.dateTime = row.timestamp || '';
-    when.textContent = history.formatWhen(row.timestamp);
-    head.append(name, when);
-    li.append(head);
-
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-
-    // A saved row's LaTeX is not in the list -- pages.py fetches only the
-    // fields it renders, because a stored document runs to 60 KB and twenty of
-    // them is a megabyte crossing the network to display none of it.
-    const getTex = async () => {
-      if (!row.saved) return { tex: row.result, truncated: false };
-      const found = await history.fetchSavedTex(row.id);
-      return found || { tex: '', truncated: false };
-    };
-
-    actions.append(button('Download .tex', async () => {
-      const { tex } = await getTex();
-      downloadTex(tex, row.fileName);
-    }));
-    actions.append(button('Copy LaTeX', async () => {
-      const { tex } = await getTex();
-      await navigator.clipboard.writeText(tex || '');
-    }));
-
-    // Deleting your own conversion. The Flask app had no such control and its
-    // Privacy Policy said so; this is the erasure right with a button on it.
-    // The Worker re-checks that the row is yours whatever is sent from here.
-    actions.append(button('Delete', async (event) => {
-      const b = event.currentTarget;
-      if (b.dataset.confirming !== 'yes') {
-        // A second click rather than a browser dialog -- the suite pins that
-        // this app never uses one, and an accidental delete is unrecoverable.
-        b.dataset.confirming = 'yes';
-        b.textContent = 'Delete for good?';
-        b.classList.add('danger');
-        setTimeout(() => {
-          if (!b.isConnected || b.dataset.confirming !== 'yes') return;
-          delete b.dataset.confirming;
-          b.textContent = 'Delete';
-          b.classList.remove('danger');
-        }, 6000);
-        return;
-      }
-      b.disabled = true;
-      if (row.saved) {
-        if (!await history.deleteSaved(row.id)) {
-          b.disabled = false;
-          delete b.dataset.confirming;
-          b.textContent = 'Delete';
-          b.classList.remove('danger');
-          toast('That conversion could not be deleted. Please try again.');
-          return;
-        }
-      } else {
-        state.guest = history.removeGuest(row.index);
-      }
-      await renderHistory();
-    }));
-
-    const panel = document.createElement('div');
-    panel.className = 'panel';
-    panel.hidden = true;
-    const panelError = document.createElement('p');
-    panelError.className = 'notice';
-    panelError.hidden = true;
-
-    actions.append(button('Preview PDF', async (event) => {
-      const b = event.currentTarget;
-      if (!panel.hidden) {
-        panel.hidden = true; panel.replaceChildren();
-        panelError.hidden = true;
-        b.textContent = 'Preview PDF';
-        return;
-      }
-      panel.hidden = false;
-      b.textContent = 'Hide preview';
-      const { tex, truncated } = await getTex();
-      if (truncated) {
-        // output.py refuses to compile a stored document that was cut short,
-        // and says so rather than showing a broken preview.
-        panelError.textContent =
-          'This saved document was too long to store in full, so it cannot ' +
-          'be compiled. Convert the original again to get a complete .tex.';
-        panelError.hidden = false;
-        return;
-      }
-      await showPreview(tex, staticValidate(tex), panel, panelError);
-    }));
-
-    li.append(actions, panelError, panel);
-
-    if (row.truncated) {
-      const mark = document.createElement('p');
-      mark.className = 'notice';
-      mark.textContent = 'This document was too long to store in full.';
-      li.append(mark);
-    }
-    list.append(li);
-  }
+  const pages = document.createElement('div');
+  pages.className = 'pagestack max-h-[60vh]';
+  panel.appendChild(pages);
+  await renderPdf(result.pdf, pages);
 }
 
-// ---------------------------------------------------------------------------
-// The shell
-// ---------------------------------------------------------------------------
+/* ---------------------------------------------------------------------------
+   Wiring
+   --------------------------------------------------------------------------- */
 
-function show(view) {
-  for (const id of ['convert-view', 'history-view', 'auth-view']) {
-    el(id).hidden = id !== view;
-  }
-  if (view === 'history-view') renderHistory();
-}
+function setupConverter() {
+  const form = el('convert-form');
+  if (!form) return;
 
-function applyShell(shell) {
-  state.shell = { ...state.shell, ...shell };
-  el('signed-in').hidden = !shell.isAuthenticated;
-  el('signed-out').hidden = !!shell.isAuthenticated;
-  el('who').textContent = shell.displayName || shell.email || '';
-  el('terms').hidden = !!shell.hasAcceptedTerms;
-  el('google-signin').hidden = !shell.firebaseConfig;
-}
+  setupTermsGate();
+  input.init({
+    accepted: ACCEPTED_EXTENSIONS,
+    onChange: () => { toggle('convert-error', false); checkPageLimit(); },
+  });
 
-function authError(message) {
-  const box = el('auth-error');
-  box.textContent = message;
-  box.hidden = !message;
-}
-function authSuccess(message) {
-  const box = el('auth-success');
-  box.textContent = message;
-  box.hidden = !message;
-}
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (busy) return;
 
-/**
- * Drop everything the previous visitor left in this tab.
- *
- * session.py start_session() clears the whole session on sign-in, and says
- * why: "On a shared computer the person signing in is not necessarily the
- * person who was just using it, and a token left in the cookie would let them
- * download the document that person converted." The tokens are gone here --
- * the document is held in the page instead -- so the same rule has to be
- * applied to the page, or the result panel is the leak the tokens used to be.
- */
-function clearWorkspace() {
-  state.tex = null;
-  state.name = null;
-  state.pdf = null;
-  el('tex').textContent = '';
-  el('result').hidden = true;
-  el('preview').replaceChildren();
-  el('preview-error').hidden = true;
-  el('notice').replaceChildren();
-  el('notice').hidden = true;
-  el('download-pdf').hidden = true;
-  // The chosen page as well as the converted one. A camera capture is held in
-  // this module rather than in the file input, so clearing the input alone
-  // would leave the previous visitor's photograph attached and ready to send.
-  input.clearInput();
-  setStatus('');
-  clearError();
-  history.clear();
-  state.guest = [];
-}
-
-async function afterSignIn(result) {
-  if (!result.ok) { authError(result.error || 'Authentication failed'); return; }
-  applyShell(result);
-  // Everything the previous visitor had goes -- their guest history and the
-  // document still on screen alike.
-  clearWorkspace();
-  authError(''); authSuccess('');
-  show('convert-view');
-}
-
-// ---------------------------------------------------------------------------
-// The legal documents
-// ---------------------------------------------------------------------------
-//
-// A dialog rather than a page, for the reason pages.py gives: the requirement
-// is that a user can read the terms WITHOUT LEAVING what they were doing --
-// and being asked to accept a document you cannot open is not consent at all.
-//
-// The fragment is inserted as markup because that is what it is: a static file
-// this app ships, not anything a user or a model supplied. Nothing that came
-// from a conversion ever goes near innerHTML.
-const legalCache = new Map();
-
-async function showLegal(which) {
-  if (which !== 'terms' && which !== 'privacy') return;
-  const dialog = el('legal');
-  el('legal-title').textContent =
-    which === 'terms' ? 'Terms of Service' : 'Privacy Policy';
-  const body = el('legal-body');
-
-  if (!legalCache.has(which)) {
-    body.textContent = 'Loading…';
-    try {
-      const res = await fetch(`/legal/${which}.html`);
-      if (!res.ok) throw new Error(String(res.status));
-      legalCache.set(which, await res.text());
-    } catch {
-      body.textContent = 'That document could not be loaded. Please try again.';
-      if (!dialog.open) dialog.showModal();
+    const file = input.selectedFile();
+    if (!file) {
+      toast('Choose a file, take a photo, or write something first.');
       return;
     }
-  }
-  body.innerHTML = legalCache.get(which);
-  // Stamp the version actually in force, which the Worker reports -- the
-  // Flask template interpolated the same value.
-  for (const slot of body.querySelectorAll('[data-terms-version]')) {
-    slot.textContent = state.shell.termsVersion || '—';
-  }
-  if (!dialog.open) dialog.showModal();
+    clearNotices();
+
+    if (file.size === 0) { showConvertError('That file was empty.'); return; }
+    const extension = extensionOf(file.name);
+    if (extension && !ACCEPTED.has(extension)) {
+      showConvertError(`Unsupported file type: '${extension}'`);
+      return;
+    }
+    const limit = state.shell.maxUploadMb;
+    if (file.size > limit * 1024 * 1024) {
+      showConvertError(`That file is larger than the ${limit} MB limit.`);
+      return;
+    }
+
+    setSubmitting(true, 'Checking…');
+    const status = await api.aiStatus();
+    setSubmitting(false);
+
+    if (status && status.available) {
+      startConversion('Converting your document');
+      return;
+    }
+    // Not available: ask before anything is converted, exactly as the Flask
+    // gate did, and run whichever path the answer names.
+    const answer = await askAboutFallback(status);
+    if (!answer) { showBlocked(status); return; }
+    if (answer === 'ai') {
+      startConversion('Converting your document');
+    } else {
+      allowFallback = true;
+      startConversion('Converting without AI',
+        'The AI service is unavailable, so this is being converted in this '
+        + 'browser. Nothing is sent anywhere, and quality will be lower.');
+    }
+  });
+
+  on({
+    'ai-recheck': () => recheckAi(),
+    'ai-cancel': () => { answerFallback(false); toast('Cancelled. Your document was not converted.'); },
+    'ai-fallback': () => answerFallback('local'),
+    'copy-tex': (element) => writeClipboard(el(element.dataset.arg)?.textContent || '', element),
+    'preview-load': () => loadPreview(state.tex ? staticValidate(state.tex) : []),
+    // The href is a blob URL this page made, so the link works on its own.
+    // Kept as an action so it behaves the same way as every other control.
+    'open-pdf': () => {},
+  });
 }
 
-// One delegated listener, so a control inside a document that was just
-// inserted -- the Privacy Policy link inside the Terms -- works too.
-document.addEventListener('click', (event) => {
-  const trigger = event.target.closest('[data-legal]');
-  if (!trigger) return;
-  event.preventDefault();
-  showLegal(trigger.dataset.legal);
-});
-el('legal-close').addEventListener('click', () => el('legal').close());
+/* ---------------------------------------------------------------------------
+   Start
+   --------------------------------------------------------------------------- */
 
-input.init({ toast, onChange: () => { clearError(); } });
-
-el('go').addEventListener('click', run);
-el('download').addEventListener('click', () => downloadTex(state.tex, state.name));
-el('copy').addEventListener('click', () => navigator.clipboard.writeText(state.tex || ''));
-el('download-pdf').addEventListener('click', () => {
-  if (state.pdf) downloadPdf(state.pdf, state.name);
-});
-
-el('nav-convert').addEventListener('click', () => show('convert-view'));
-el('nav-history').addEventListener('click', () => show('history-view'));
-el('nav-signin').addEventListener('click', () => { authError(''); authSuccess(''); show('auth-view'); });
-
-el('history-clear').addEventListener('click', () => {
-  state.guest = [];
-  history.clear();
-  renderHistory();
-});
-
-el('login').addEventListener('click', async () => {
-  authError(''); authSuccess('');
-  afterSignIn(await auth.login(el('login-email').value,
-                               el('login-password').value,
-                               el('login-remember').checked));
-});
-
-el('google-signin').addEventListener('click', async (event) => {
-  const b = event.currentTarget;
-  b.disabled = true;
-  authError('');
-  try {
-    afterSignIn(await auth.loginWithGoogle(state.shell.firebaseConfig));
-  } catch (err) {
-    authError('Google sign-in did not complete: ' +
-              (err && err.message ? err.message : 'unknown error'));
-  } finally {
-    b.disabled = false;
-  }
-});
-
-el('signup').addEventListener('click', async () => {
-  authError(''); authSuccess('');
-  const result = await auth.signup({
-    fullname: el('signup-name').value,
-    email: el('signup-email').value,
-    password: el('signup-password').value,
-    confirm_password: el('signup-confirm').value,
-    terms: el('signup-terms').checked,
-  });
-  if (result.ok) authSuccess(result.success);
-  else authError(result.error || 'Failed to create account');
-});
-
-el('forgot').addEventListener('click', async () => {
-  authError(''); authSuccess('');
-  const result = await auth.forgotPassword(el('forgot-email').value);
-  if (result.ok) authSuccess(result.success);
-  else authError(result.error || 'An error occurred');
-});
-
-el('logout').addEventListener('click', async () => {
-  const result = await auth.logout();
-  applyShell(result);
-  // auth.py's logout is session.clear(): the whole session goes, not just the
-  // sign-in half. Nothing of the account that was just here is left behind for
-  // whoever uses this tab next.
-  clearWorkspace();
-  show('convert-view');
-});
-
-// -- start ------------------------------------------------------------------
 (async () => {
   const shell = await auth.session();
   applyShell(shell);
-  // The guest-history contract for this page load: a refresh wipes the list, a
-  // signed-in user never sees one, and moving between views does not.
-  state.guest = history.open(shell);
+  applyTermsState();
+  setText('max-upload-mb', String(state.shell.maxUploadMb));
 
-  // Ask before converting, so a warning cannot outlive the outage that caused it.
-  fetch('/api/ai-status').then((r) => r.json()).then((s) => {
-    if (!s.available) setStatus(s.message);
-  }).catch(() => {});
+  // The guest-history contract for this page load: a refresh wipes the list, a
+  // signed-in user never sees one.
+  history.open(shell);
+
+  setupConverter();
+  auth.setupForms(state.shell);
+  // The history page compiles a saved document through the same engine the
+  // workspace uses. Passed in rather than imported there, so a list of file
+  // names does not pull a 12 MB compiler in with it.
+  await history.renderPage(state.shell, { preview: previewInto });
+
+  // Ask before converting, so a warning cannot outlive the outage that caused
+  // it -- but say so up front when the service is not configured at all.
+  if (el('convert-form')) {
+    api.aiStatus().then((status) => {
+      if (status && status.reason === 'not_configured') {
+        toggle('qa-notice-training', false);
+        toggle('qa-notice-unconfigured', true);
+      }
+    }).catch(() => {});
+  }
 })();

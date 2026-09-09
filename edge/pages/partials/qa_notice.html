@@ -1,0 +1,48 @@
+{# ---------------------------------------------------------------------------
+   Shown ABOVE the upload control, deliberately.
+   templates/partials/qa_notice.html, carried across.
+
+   The user has to know where their document goes before they choose a file,
+   not after. Since the AI-first change this notice had to be rewritten: the
+   model now reads the document itself, so "the OCR stays on this server" is no
+   longer true of the normal path. Saying it anyway would be a comfortable
+   falsehood.
+
+   Every fact a reader needs BEFORE choosing a file is here and visible without
+   interaction: where the document goes, that the provider trains on free-tier
+   input, what not to upload, and that the fallback keeps everything on this
+   machine. The test suite asserts each of those individually - if you reword
+   this, keep the facts.
+
+   TWO OF FLASK'S FOUR BRANCHES, not four. Those were chosen by config.py from
+   AI_QA_ENABLED and GEMINI_PAID_TIER; the Worker has neither setting, because
+   adding them would mean either a wider /api surface or a redeploy to change
+   a sentence. What is left is the pair that can actually occur here: the key
+   is set, which on this project's free tier means Google trains on the input,
+   or it is not, which app.js unhides after /api/ai-status answers.
+
+   The fallback sentence differs from Flask's for the same reason as the
+   footer's: it no longer runs "on this server", it runs in this browser.
+   --------------------------------------------------------------------------- #}
+<div id="qa-notice-unconfigured" class="note-caution mb-4 hidden">
+    <p class="note-title">AI conversion is not set up on this server</p>
+    <p>
+        <code>GEMINI_API_KEY</code> is missing, so documents will be
+        converted in this browser instead &mdash; nothing is sent anywhere, but
+        the results are of lower quality. You will be asked first.
+    </p>
+</div>
+
+<div id="qa-notice-training" class="note-caution mb-4">
+    <p class="note-title">Before you upload</p>
+    <p>
+        Your document is sent to Google's Gemini API to be read. This server
+        is on the <strong class="font-semibold">free tier</strong>, and
+        Google uses free-tier input to train its models &mdash; so please do
+        not upload anything confidential, personal or sensitive.
+    </p>
+    <p class="mt-1.5">
+        If that service is unavailable, the fallback OCR runs in this browser
+        and sends nothing anywhere. You are always asked first.
+    </p>
+</div>

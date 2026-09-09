@@ -28,6 +28,8 @@
  * working for as long as the entry does.
  */
 
+import { el, toggle, toast, writeClipboard, confirmAction } from '/ui.js';
+
 const KEY = 'contex_guest_history';
 const MAX_ITEMS = 20;
 
@@ -180,5 +182,218 @@ export async function record({ isAuthenticated, fileName, tex }) {
   } catch (err) {
     console.warn('Could not save this conversion to history:', err);
     return { stored: false, items: [] };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The history page
+// ---------------------------------------------------------------------------
+//
+// templates/history.html rendered the signed-in list on the server and left
+// only the guest list to scripts.js. Both are built here, by the same
+// function, because the two lists offer the same actions and the only real
+// difference is where the .tex comes from.
+//
+// Every class below is a whole literal string. Tailwind's scanner reads this
+// file (see `content` in tailwind.config.cjs) and a class assembled by
+// concatenation at runtime is invisible to it -- it would ship with no styling
+// at all, and nothing would fail until someone looked at the page.
+
+/** One <li>, the shape templates/history.html gave it. */
+function renderItem(row, actions) {
+  const item = document.createElement('li');
+  item.className = 'p-4 sm:p-5';
+  item.dataset.historyId = row.id;
+
+  const head = document.createElement('div');
+  head.className = 'flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1';
+
+  const name = document.createElement('h2');
+  name.className = 'min-w-0 flex-1 truncate font-poppins text-[0.9375rem] font-medium text-ink-900';
+  name.textContent = row.fileName || 'document';
+  name.title = row.fileName || 'document';
+  head.appendChild(name);
+
+  if (row.timestamp) {
+    const when = document.createElement('time');
+    when.className = 'flex-shrink-0 text-xs tabular-nums text-ink-400';
+    when.dateTime = row.timestamp;
+    when.textContent = formatWhen(row.timestamp);
+    head.appendChild(when);
+  }
+  item.appendChild(head);
+
+  if (row.truncated) {
+    const note = document.createElement('div');
+    note.className = 'note-caution mt-3';
+    const title = document.createElement('p');
+    title.className = 'note-title';
+    title.textContent = 'Saved copy is incomplete';
+    const body = document.createElement('p');
+    body.textContent = 'This document was too long to store in full, so the '
+      + 'saved copy is truncated and cannot be rendered.';
+    note.append(title, body);
+    item.appendChild(note);
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'mt-3 flex flex-wrap gap-2';
+  for (const button of actions) bar.appendChild(button);
+  item.appendChild(bar);
+
+  const panel = document.createElement('div');
+  panel.className = 'mt-3 hidden overflow-hidden rounded-md border border-paper-300';
+  // A stable hook. Everything else on this row is a design class that may be
+  // restyled; the preview panel is addressed by tests and has to keep a name.
+  panel.dataset.preview = row.id;
+  item.appendChild(panel);
+  return { item, panel };
+}
+
+function actionButton(label, className, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener('click', () => onClick(button));
+  return button;
+}
+
+/**
+ * Draw the page.
+ *
+ * Signed in -> the persistent list, read back through the Worker.
+ * Guest     -> nothing server-side; the browser holds its own list in
+ *              sessionStorage and renders it here.
+ *
+ * `preview` is how a row compiles its document. It is passed in rather than
+ * imported so this module never pulls in the LaTeX engine: the history page
+ * would otherwise load a 12 MB compiler to show a list of file names.
+ */
+export async function renderPage(shell, { preview } = {}) {
+  const list = el('history-list');
+  if (!list) return;
+
+  const signedIn = !!shell.isAuthenticated;
+  toggle('history-intro-auth', signedIn);
+  toggle('history-intro-guest', !signedIn);
+  list.replaceChildren();
+
+  let rows;
+  if (signedIn) {
+    const saved = await fetchSaved();
+    rows = (saved.history || []).map((row) => ({ ...row, saved: true }));
+    if (saved.limit && el('history-limit')) {
+      el('history-limit').textContent = String(saved.limit);
+    }
+  } else {
+    rows = read().map((entry, index) => ({
+      id: `guest-${index}`, index, fileName: entry.fileName, timestamp: entry.at,
+      result: entry.result, truncated: false, saved: false,
+    }));
+  }
+
+  toggle(list, rows.length > 0);
+  toggle('history-empty-auth', signedIn && rows.length === 0);
+  toggle('history-empty-guest', !signedIn && rows.length === 0);
+  toggle('guest-history-clear', !signedIn && rows.length > 0);
+
+  for (const row of rows) {
+    // A saved row's LaTeX is not in the list -- pages.py fetched only the
+    // fields it rendered, because a stored document runs to 60 KB and twenty
+    // of them is a megabyte crossing the network to display none of it.
+    const getTex = async () => {
+      if (!row.saved) return { tex: row.result, truncated: false };
+      const found = await fetchSavedTex(row.id);
+      return found || { tex: '', truncated: false };
+    };
+
+    const actions = [];
+
+    actions.push(actionButton('Download .tex', 'btn-secondary btn-sm', async () => {
+      const { tex } = await getTex();
+      const base = (row.fileName || 'converted').replace(/\.[^.]*$/, '') || 'document';
+      const url = URL.createObjectURL(new Blob([tex || ''], { type: 'application/x-tex' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${base}.tex`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }));
+
+    actions.push(actionButton('Copy LaTeX', 'btn-secondary btn-sm', async (button) => {
+      const { tex, truncated } = await getTex();
+      writeClipboard(tex || '', button);
+      if (truncated) toast('Copied - note this saved copy was truncated.');
+    }));
+
+    const previewButton = actionButton('Preview PDF', 'btn-quiet btn-sm', () => {});
+    if (row.truncated) previewButton.disabled = true;
+    actions.push(previewButton);
+
+    // Deleting your own conversion. The Flask app had no such control and its
+    // Privacy Policy said so; this is the erasure right with a button on it.
+    // The Worker re-checks that the row is yours whatever is sent from here.
+    actions.push(actionButton(
+      'Delete',
+      'btn-quiet btn-sm text-burgundy-600 hover:bg-burgundy-100 hover:text-burgundy-700',
+      (button) => confirmAction(
+        'Delete this conversion?',
+        `"${row.fileName || 'document'}" will be removed for good. This cannot be undone.`,
+        'Delete for good',
+        async () => {
+          button.disabled = true;
+          if (row.saved && !(await deleteSaved(row.id))) {
+            button.disabled = false;
+            toast('That conversion could not be deleted. Please try again.');
+            return;
+          }
+          if (!row.saved) removeGuest(row.index);
+          await renderPage(shell, { preview });
+        })));
+
+    const { item, panel } = renderItem(row, actions);
+
+    previewButton.addEventListener('click', async () => {
+      if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        panel.replaceChildren();
+        previewButton.textContent = 'Preview PDF';
+        return;
+      }
+      panel.classList.remove('hidden');
+      previewButton.textContent = 'Hide preview';
+      panel.replaceChildren();
+      const { tex, truncated } = await getTex();
+      if (truncated) {
+        // output.py refuses to compile a stored document that was cut short,
+        // and says so rather than showing a broken preview.
+        const note = document.createElement('div');
+        note.className = 'note-alarm';
+        note.textContent = 'This saved document was too long to store in full, '
+          + 'so it cannot be compiled. Convert the original again to get a '
+          + 'complete .tex.';
+        panel.appendChild(note);
+        return;
+      }
+      if (preview) await preview(tex, panel);
+    });
+
+    list.appendChild(item);
+  }
+
+  const clearButton = el('guest-history-clear');
+  if (clearButton && !clearButton.dataset.bound) {
+    clearButton.dataset.bound = 'yes';
+    clearButton.addEventListener('click', () => confirmAction(
+      'Clear this session’s history?',
+      'The conversions listed here will be removed from this tab. The '
+      + 'documents themselves are not stored anywhere else.',
+      'Clear history',
+      async () => {
+        clear();
+        await renderPage(shell, { preview });
+        toast('Session history cleared.');
+      }));
   }
 }

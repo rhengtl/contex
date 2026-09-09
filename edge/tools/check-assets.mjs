@@ -174,12 +174,29 @@ for (const path of DYNAMIC) {
   if (!referenced.has(path)) referenced.set(path, new Set(['(resolved at runtime)']));
 }
 
+/**
+ * A directory's index, which is how a page address becomes a file.
+ *
+ * wrangler.toml sets html_handling = "drop-trailing-slash", so /login is
+ * served from login/index.html -- the address Flask's url_for('auth.login')
+ * gave, without the redirect the default would add. Every internal link in the
+ * shell is one of these, so without this rule the checker calls the whole
+ * navigation missing.
+ */
+function asPage(path) {
+  if (extname(path)) return null;
+  const clean = path.replace(/\/$/, '');
+  return `${clean === '' ? '' : clean}/index.html`;
+}
+
 const missing = [];
 const found = [];
 for (const [path, from] of [...referenced].sort()) {
   const rewritten = applyRedirects(path, rules);
-  const target = rewritten && rewritten.status !== 404 ? rewritten.path : path;
   if (rewritten && rewritten.status === 404) continue;   // deliberately absent
+  const direct = rewritten ? rewritten.path : path;
+  const page = asPage(direct);
+  const target = files.has(direct) ? direct : (page && files.has(page) ? page : direct);
   const entry = { path, target, from: [...from], producer: producer(path) };
   if (files.has(target)) found.push(entry);
   else missing.push(entry);

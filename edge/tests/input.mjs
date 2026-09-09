@@ -61,7 +61,7 @@ async function openApp({ authenticated = false } = {}) {
   page.on('pageerror', (e) => console.log('  PAGEERROR ' + e.message.slice(0, 200)));
   await stubApi(page, { authenticated });
   await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.getElementById('go'));
+  await page.waitForFunction(() => document.getElementById('convert-submit'));
   return { context, page };
 }
 
@@ -81,17 +81,17 @@ heading('drag and drop');
   // dragenter/dragleave fire for every child the pointer crosses, so the
   // highlight is counted rather than toggled. Crossing the label and back must
   // not leave the zone lit.
-  await page.dispatchEvent('#drop', 'dragenter', {});
-  await page.dispatchEvent('#drop-label', 'dragenter', {});
+  await page.dispatchEvent('#convert-drop-area', 'dragenter', {});
+  await page.dispatchEvent('#convert-drop-area span', 'dragenter', {});
   check('the drop zone lights up when a file is dragged over it',
-        await page.evaluate(() => document.getElementById('drop').classList.contains('over')));
-  await page.dispatchEvent('#drop-label', 'dragleave', {});
+        await page.evaluate(() => document.getElementById('convert-drop-area').classList.contains('is-dragging')));
+  await page.dispatchEvent('#convert-drop-area span', 'dragleave', {});
   check('and stays lit while the pointer is still inside it',
-        await page.evaluate(() => document.getElementById('drop').classList.contains('over')),
+        await page.evaluate(() => document.getElementById('convert-drop-area').classList.contains('is-dragging')),
         'crossing a child element is not leaving the zone');
-  await page.dispatchEvent('#drop', 'dragleave', {});
+  await page.dispatchEvent('#convert-drop-area', 'dragleave', {});
   check('and goes out when it really leaves',
-        !await page.evaluate(() => document.getElementById('drop').classList.contains('over')));
+        !await page.evaluate(() => document.getElementById('convert-drop-area').classList.contains('is-dragging')));
 
   const dropped = await page.evaluate(() => {
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -99,23 +99,23 @@ heading('drag and drop');
     transfer.items.add(new File([bytes], 'dragged.png', { type: 'image/png' }));
     const event = new DragEvent('drop', { dataTransfer: transfer,
                                           bubbles: true, cancelable: true });
-    document.getElementById('drop').dispatchEvent(event);
+    document.getElementById('convert-drop-area').dispatchEvent(event);
     return event.defaultPrevented;
   });
   check('a dropped file is taken, not opened by the browser', dropped);
 
   // Waiting on the input rather than sleeping: the drop handler is synchronous
   // but the preview it builds is not.
-  await page.waitForFunction(() => document.getElementById('file').files.length === 1);
+  await page.waitForFunction(() => document.getElementById('convert-file-upload').files.length === 1);
   const file = await chosen(page);
   check('the dropped file becomes the chosen one',
         file && file.name === 'dragged.png', JSON.stringify(file));
   check('and it is on the file input, so the rest of the app sees a plain pick',
-        await page.evaluate(() => document.getElementById('file').files[0]?.name) === 'dragged.png');
+        await page.evaluate(() => document.getElementById('convert-file-upload').files[0]?.name) === 'dragged.png');
   check('the chosen page is shown back to the user',
-        await page.evaluate(() => !document.getElementById('chosen').hidden));
+        await page.evaluate(() => document.getElementById('convert-file-display').classList.contains('flex')));
   check('and can be removed again',
-        await page.evaluate(() => !document.getElementById('clear-input').hidden));
+        await page.evaluate(() => Boolean(document.querySelector('[data-action="file-clear"]'))));
 
   // A file dropped anywhere else would otherwise replace the app with the
   // user's own image, losing the session and any converted document with it.
@@ -129,10 +129,10 @@ heading('drag and drop');
   });
   check('a file dropped outside the zone does not navigate away', elsewhere);
 
-  await page.click('#clear-input');
+  await page.click('[data-action="file-clear"]');
   check('Remove clears the choice', await chosen(page) === null);
   check('and hides the preview with it',
-        await page.evaluate(() => document.getElementById('chosen').hidden));
+        await page.evaluate(() => document.getElementById('convert-file-display').classList.contains('hidden')));
 
   await context.close();
 }
@@ -143,19 +143,19 @@ heading('the writing canvas');
 {
   const { context, page } = await openApp();
 
-  await page.click('#use-draw');
-  check('the canvas opens', await page.evaluate(() => document.getElementById('draw-modal').open));
+  await page.click('[data-action="draw-open"]');
+  check('the canvas opens', await page.evaluate(() => !document.getElementById('draw-modal').classList.contains('hidden')));
   check('it opens with the pen selected',
-        await page.getAttribute('#draw-pen', 'aria-pressed') === 'true');
+        await page.getAttribute('#tool-pen', 'aria-pressed') === 'true');
 
   // An empty sheet is easy to submit by accident and would waste a minute of
   // the user's time on a page with nothing on it.
-  await page.click('#draw-done');
+  await page.click('[data-action="draw-save"]');
   check('an untouched sheet is refused rather than converted',
-        (await page.textContent('#toast')).includes('Nothing has been drawn'),
-        await page.textContent('#toast'));
+        (await page.textContent('#toast-text')).includes('The canvas is empty'),
+        await page.textContent('#toast-text'));
   check('and the dialog stays open so it can be drawn on',
-        await page.evaluate(() => document.getElementById('draw-modal').open));
+        await page.evaluate(() => !document.getElementById('draw-modal').classList.contains('hidden')));
 
   /** Draw a stroke with real pointer events, in canvas coordinates. */
   async function stroke(points) {
@@ -179,14 +179,14 @@ heading('the writing canvas');
   });
   check('a stroke appears on the canvas immediately', sheet.ink > 100, JSON.stringify(sheet));
 
-  await page.click('#draw-eraser');
+  await page.click('#tool-eraser');
   check('the eraser can be selected',
-        await page.getAttribute('#draw-eraser', 'aria-pressed') === 'true'
-        && await page.getAttribute('#draw-pen', 'aria-pressed') === 'false');
-  await page.click('#draw-pen');
+        await page.getAttribute('#tool-eraser', 'aria-pressed') === 'true'
+        && await page.getAttribute('#tool-pen', 'aria-pressed') === 'false');
+  await page.click('#tool-pen');
 
-  await page.click('#draw-done');
-  await page.waitForFunction(() => !document.getElementById('draw-modal').open);
+  await page.click('[data-action="draw-save"]');
+  await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
   const drawing = await chosen(page);
   check('Use this hands the drawing to the converter',
         drawing && drawing.name === 'drawing.png' && drawing.type === 'image/png',
@@ -208,9 +208,9 @@ heading('the writing canvas');
 
   // 64 megapixels of RGBA held after the dialog closes is 64 MB kept for
   // nothing, on a device that may not have it to spare.
-  await page.click('#use-draw');
-  await page.click('#draw-cancel');
-  await page.waitForFunction(() => !document.getElementById('draw-modal').open);
+  await page.click('[data-action="draw-open"]');
+  await page.click('[data-action="draw-close"]');
+  await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
   check('cancelling keeps the drawing that was already accepted',
         (await chosen(page))?.name === 'drawing.png');
 
@@ -248,8 +248,8 @@ async function withCamera(fn) {
     page.on('pageerror', (e) => console.log('  PAGEERROR ' + e.message.slice(0, 200)));
     await stubApi(page);
     await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
-    await page.waitForFunction(() => document.getElementById('go'));
-    await page.click('#use-camera');
+    await page.waitForFunction(() => document.getElementById('convert-submit'));
+    await page.click('[data-action="camera-open"]');
     await page.waitForFunction(
       () => document.getElementById('camera-stream').videoWidth > 0, { timeout: 20000 });
     await page.evaluate(() => {
@@ -268,11 +268,11 @@ const released = (page) => page.evaluate(() => ({
 
 await withCamera(async (page) => {
   check('the camera dialog opens',
-        await page.evaluate(() => document.getElementById('camera-modal').open));
+        await page.evaluate(() => !document.getElementById('camera-modal').classList.contains('hidden')));
   check('a stream reaches the preview',
         await page.evaluate(() => Boolean(document.getElementById('camera-stream').srcObject)));
   check('and no error was shown',
-        await page.evaluate(() => document.getElementById('camera-error').hidden));
+        await page.evaluate(() => document.getElementById('camera-error').classList.contains('hidden')));
 
   // The constraints are a preference, not a requirement -- an exact one is how
   // a laptop webcam ends up refusing outright -- so what is checked is that a
@@ -281,9 +281,16 @@ await withCamera(async (page) => {
   check('it asks for a resolution a page can be read at',
         settings.width >= 1280 && settings.height >= 720, JSON.stringify(settings));
 
-  await page.click('#camera-shoot');
-  await page.waitForFunction(() => !document.getElementById('camera-modal').open,
+  await page.click('[data-action="camera-capture"]');
+  await page.waitForFunction(() => document.getElementById('camera-modal').classList.contains('hidden'),
                              { timeout: 20000 });
+  // The dialog closes as soon as the shutter is pressed and the JPEG is
+  // encoded after it -- canvas.toBlob is asynchronous -- so the frame arrives
+  // a moment later than the dialog goes. Waiting on the dialog alone reads the
+  // input before the photograph is in it.
+  await page.waitForFunction(
+    () => document.getElementById('convert-camera-upload').files.length === 1,
+    { timeout: 20000 });
   const shot = await chosen(page);
   check('a capture becomes the chosen page',
         shot && shot.name === 'captured_photo.jpg' && shot.type === 'image/jpeg',
@@ -310,7 +317,7 @@ await withCamera(async (page) => {
 
 await withCamera(async (page) => {
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => !document.getElementById('camera-modal').open);
+  await page.waitForFunction(() => document.getElementById('camera-modal').classList.contains('hidden'));
   const after = await released(page);
   check('dismissing with Escape releases the camera',
         after.ended && after.detached, JSON.stringify(after));
@@ -318,8 +325,8 @@ await withCamera(async (page) => {
 });
 
 await withCamera(async (page) => {
-  await page.click('#camera-cancel');
-  await page.waitForFunction(() => !document.getElementById('camera-modal').open);
+  await page.click('[data-action="camera-close"]');
+  await page.waitForFunction(() => document.getElementById('camera-modal').classList.contains('hidden'));
   const after = await released(page);
   check('Cancel releases the camera', after.ended && after.detached,
         JSON.stringify(after));
@@ -339,17 +346,17 @@ heading('the four methods are one choice');
   const { context, page } = await openApp({ authenticated: true });
 
   async function draw() {
-    await page.click('#use-draw');
+    await page.click('[data-action="draw-open"]');
     const box = await page.locator('#draw-canvas').boundingBox();
     await page.mouse.move(box.x + 50, box.y + 50);
     await page.mouse.down();
     await page.mouse.move(box.x + 150, box.y + 120, { steps: 6 });
     await page.mouse.up();
-    await page.click('#draw-done');
-    await page.waitForFunction(() => !document.getElementById('draw-modal').open);
+    await page.click('[data-action="draw-save"]');
+    await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
   }
 
-  await page.setInputFiles('#file', {
+  await page.setInputFiles('#convert-file-upload', {
     name: 'picked.png', mimeType: 'image/png',
     buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   });
@@ -358,10 +365,17 @@ heading('the four methods are one choice');
   await draw();
   check('a drawing replaces a picked file rather than competing with it',
         (await chosen(page))?.name === 'drawing.png');
-  check('and the file input is cleared, so only one page can ever be sent',
-        await page.evaluate(() => document.getElementById('file').files.length) === 0);
+  // The invariant, rather than one implementation of it. chooseInput() moves
+  // name="file" to the live input and takes it off the other two, which is
+  // what decides the page -- so what has to be true is that exactly one input
+  // carries it, never that the others were emptied.
+  check('and exactly one input is the live one, so only one page can be sent',
+        await page.evaluate(() => ['convert-file-upload', 'convert-camera-upload',
+                                   'convert-draw-upload']
+          .filter((id) => document.getElementById(id).getAttribute('name') === 'file')
+          .join()) === 'convert-draw-upload');
 
-  await page.setInputFiles('#file', {
+  await page.setInputFiles('#convert-file-upload', {
     name: 'second.png', mimeType: 'image/png',
     buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   });
@@ -377,8 +391,8 @@ heading('the four methods are one choice');
     body: JSON.stringify({ isAuthenticated: false, hasAcceptedTerms: false,
                            maxUploadMb: 32 }),
   }));
-  await page.click('#logout');
-  await page.waitForFunction(() => document.getElementById('chosen').hidden);
+  await page.click('[data-action="logout"]');
+  await page.waitForFunction(() => document.getElementById('convert-file-display').classList.contains('hidden'));
   check('signing out clears a held capture, not only the file input',
         await chosen(page) === null);
 

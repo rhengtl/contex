@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% set page = 'history' %}
+{# ---------------------------------------------------------------------------
+   History. templates/history.html, carried across.
+
+   Its own route now. It used to be the fourth full-viewport section of the
+   home page, below the converter - so reaching a past conversion meant
+   scrolling past the whole converter, and after a conversion the page scrolled
+   itself to the result and left history off-screen entirely.
+
+   Signed in : from Firestore through /api/history, persists forever.
+   Guest     : from sessionStorage, cleared on refresh and when the tab closes.
+
+   Both kinds of entry offer the same actions as a fresh conversion: download,
+   copy and PDF preview.
+
+   Flask rendered the signed-in list server-side and left only the guest list
+   to JavaScript. Here both are built by history.js, so the two intros and the
+   two empty states are in the document and it unhides the pair that applies.
+   --------------------------------------------------------------------------- #}
+
+{% block title %}History &middot; {% endblock %}
+{% block description %}Your past ConTeX conversions - download the .tex, copy the LaTeX, or read the rendered PDF again.{% endblock %}
+
+{% block main %}
+<div class="wrap py-10 sm:py-14">
+
+    <div class="mb-6 max-w-measure">
+        <p class="eyebrow">Past conversions</p>
+        <h1 class="mt-1 text-[1.875rem] sm:text-[2.25rem]">History</h1>
+
+        <p id="history-intro-auth" class="mt-3 hidden text-[0.9375rem] leading-relaxed text-ink-500">
+            Saved to your account &mdash; available whenever you log back in.
+            The most recent <span id="history-limit">20</span> are shown.
+        </p>
+        <p id="history-intro-guest" class="mt-3 hidden text-[0.9375rem] leading-relaxed text-ink-500">
+            You are browsing as a guest. Results stay in this tab only and are
+            cleared when you refresh or close it.
+            <a href="/login" class="link">Sign in</a>
+            to save them to your account.
+        </p>
+    </div>
+
+    <ul id="history-list"
+        class="hidden divide-y divide-paper-300 overflow-hidden rounded-lg border border-paper-300 bg-paper-50"></ul>
+
+    <div class="card hidden" id="history-empty-auth">
+        <div class="empty">
+            <img src="/img/contex-mark.png"
+                 alt="" width="56" height="56" class="h-14 w-14 opacity-30"
+                 loading="lazy" decoding="async">
+            <p class="empty-title">No saved conversions yet</p>
+            <p class="empty-body">
+                Everything you convert while signed in is kept here, so you can
+                come back to the LaTeX later.
+            </p>
+            <a href="/" class="btn-primary mt-1">Convert a document</a>
+        </div>
+    </div>
+
+    <div class="card hidden" id="history-empty-guest">
+        <div class="empty">
+            <img src="/img/contex-mark.png"
+                 alt="" width="56" height="56" class="h-14 w-14 opacity-30"
+                 loading="lazy" decoding="async">
+            <p class="empty-title">Nothing yet in this session</p>
+            <p class="empty-body">
+                Convert a document and it will appear here until you refresh or
+                close this tab.
+            </p>
+            <a href="/" class="btn-primary mt-1">Convert a document</a>
+        </div>
+    </div>
+
+    <div class="mt-4 flex justify-end">
+        <button type="button" id="guest-history-clear" class="btn-quiet btn-sm hidden">
+            Clear session history
+        </button>
+    </div>
+</div>
+{% endblock %}

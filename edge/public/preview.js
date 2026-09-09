@@ -100,7 +100,7 @@ export async function renderPdf(bytes, container, { scale = 1.4, maxPages = 20 }
     canvas.height = Math.floor(viewport.height * dpr);
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
-    canvas.className = 'preview-page';
+    canvas.className = 'pagesheet';
     canvas.setAttribute('aria-label', `Page ${n} of ${doc.numPages}`);
     container.appendChild(canvas);
 
@@ -112,7 +112,7 @@ export async function renderPdf(bytes, container, { scale = 1.4, maxPages = 20 }
 
   if (doc.numPages > count) {
     const note = document.createElement('p');
-    note.className = 'preview-note';
+    note.className = 'mx-auto max-w-3xl py-2 text-center text-xs text-ink-500';
     note.textContent =
       `Showing the first ${count} of ${doc.numPages} pages. ` +
       'The downloaded PDF contains all of them.';

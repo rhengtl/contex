@@ -123,6 +123,13 @@ createServer(async (req, res) => {
   }
 
   try {
+    // html_handling = "drop-trailing-slash", the way wrangler.toml sets it:
+    // /login is served from login/index.html. Without this the emulator
+    // answers 404 for every page address in the shell's own navigation, and
+    // the suites see an app with no history and no sign-in.
+    if (!extname(file)) {
+      try { await read(file); } catch { file = join(file, 'index.html'); }
+    }
     const buf = await read(file);
     requestLog.push({ path, status: 200, bytes: buf.length });
     res.writeHead(200, {

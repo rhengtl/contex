@@ -17,17 +17,19 @@
  * which is an external script load and not inline script.
  */
 
+import { el, setText, toggle } from '/ui.js';
+
 const SDK = 'https://www.gstatic.com/firebasejs/10.7.1/';
 
 let sdkPromise = null;
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
-    const el = document.createElement('script');
-    el.src = src;
-    el.onload = resolve;
-    el.onerror = () => reject(new Error(`Could not load ${src}`));
-    document.head.appendChild(el);
+    const tag = document.createElement('script');
+    tag.src = src;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(tag);
   });
 }
 
@@ -112,4 +114,109 @@ export async function session() {
 /** pages.py accept_terms(): the version is what was agreed to. */
 export function acceptTerms(version) {
   return postJson('/api/session/terms', { version });
+}
+
+// ---------------------------------------------------------------------------
+// The three account pages
+// ---------------------------------------------------------------------------
+//
+// Flask posted these as real forms and re-rendered the page with an error or a
+// success note in it. There is no server to render them here, so the same two
+// note boxes are in the markup and this fills one -- which is why the wording
+// below is auth.py's own: a message the user reads must not change because the
+// code that displays it moved.
+//
+// The Google button was bound by an inline <script nonce> on each of those
+// two templates. It is bound here instead, for the reason the CSP comment in
+// _headers gives: this frontend has no inline script at all, so 'self' alone
+// is strictly stronger than a nonce.
+
+function showError(message) {
+  setText('auth-error-text', message);
+  toggle('auth-error', !!message);
+  if (message) toggle('auth-success', false);
+}
+
+function showSuccess(message) {
+  setText('auth-success-text', message);
+  toggle('auth-success', !!message);
+  if (message) toggle('auth-error', false);
+}
+
+/** Disable while a request is in flight, so a double submit cannot happen. */
+function submitting(form, working) {
+  const button = form.querySelector('button[type="submit"]');
+  if (button) button.disabled = working;
+}
+
+function onSubmit(id, handler) {
+  const form = el(id);
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showError('');
+    submitting(form, true);
+    try {
+      await handler(form);
+    } finally {
+      submitting(form, false);
+    }
+  });
+}
+
+export function setupForms(shell) {
+  onSubmit('login-form', async () => {
+    const result = await login(el('email').value, el('password').value,
+                               el('remember')?.checked);
+    if (!result.ok) { showError(result.error || 'Authentication failed'); return; }
+    // A fresh document, not a patched one. session.py start_session() clears
+    // the whole session on sign-in and says why: "On a shared computer the
+    // person signing in is not necessarily the person who was just using it."
+    // Navigating away is how that rule reaches the page.
+    window.location.href = '/';
+  });
+
+  onSubmit('signup-form', async () => {
+    const result = await signup({
+      fullname: el('fullname').value,
+      email: el('email').value,
+      password: el('password').value,
+      confirm_password: el('confirm-password').value,
+      terms: el('terms').checked,
+    });
+    if (result.ok) showSuccess(result.success || 'Your account is ready.');
+    else showError(result.error || 'Failed to create account');
+  });
+
+  onSubmit('forgot-form', async () => {
+    const result = await forgotPassword(el('email').value);
+    if (result.ok) showSuccess(result.success || 'If that address has an account, a reset link is on its way.');
+    else showError(result.error || 'An error occurred');
+  });
+
+  const google = el('google-signin');
+  if (!google) return;
+  // No config means no federated sign-in, and a button that cannot work is
+  // worse than one that is absent -- which is what the {% if firebase_config %}
+  // around this block meant in the Flask template.
+  if (!shell.firebaseConfig) return;
+  toggle('google-block', true);
+
+  google.addEventListener('click', async () => {
+    google.disabled = true;
+    toggle('google-error', false);
+    try {
+      const result = await loginWithGoogle(shell.firebaseConfig);
+      if (!result.ok) throw new Error(result.error || 'Authentication failed');
+      window.location.href = '/';
+    } catch (error) {
+      const box = el('google-error');
+      if (box) {
+        box.textContent = 'Google sign-in did not complete: '
+          + (error && error.message ? error.message : 'unknown error');
+        box.classList.remove('hidden');
+      }
+      google.disabled = false;
+    }
+  });
 }

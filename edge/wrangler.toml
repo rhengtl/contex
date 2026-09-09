@@ -10,6 +10,18 @@ directory = "./public"
 binding = "ASSETS"
 run_worker_first = false
 
+# The addresses Flask served. url_for('auth.login') was "/login", so /login is
+# what has to work -- the default (auto-trailing-slash) answers it with a 307
+# to "/login/", which is a redirect on every visit and a different URL in the
+# address bar. This serves login/index.html at /login and redirects the other
+# way instead.
+html_handling = "drop-trailing-slash"
+
+# public/404.html for anything the tree does not carry, which is what
+# web/errors.py's not_found() did. Without this a wrong address gets a bare
+# platform 404 with no way back to the workspace.
+not_found_handling = "404-page"
+
 # Global per-caller rate limiting, replacing the per-process deque in
 # contex/web/security.py. SQLite backend: the only kind available on the
 # Workers Free plan.

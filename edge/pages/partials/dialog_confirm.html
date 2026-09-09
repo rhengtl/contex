@@ -1,0 +1,24 @@
+<!-- Confirm ---------------------------------------------------------------- -->
+{# Clearing the canvas throws away everything written on it and cannot be
+   undone, so it asks first. It used to ask with window.confirm(), which is the
+   one dialog in the application that looked and behaved like none of the
+   others - a browser chrome box with the browser's own buttons, no relation to
+   anything else on screen. #}
+{# z-[85], not the .dialog default of z-60: this one is opened from the writing
+   canvas, which is z-70. See the layer scale in design/app.src.css. #}
+<div id="confirm-modal" class="dialog z-[85]" role="dialog" aria-modal="true"
+     aria-labelledby="confirm-title" data-dialog>
+    <div class="dialog-panel max-w-md">
+        <div class="dialog-head">
+            <h2 id="confirm-title" class="dialog-title">Are you sure?</h2>
+        </div>
+        <div class="dialog-body">
+            <p id="confirm-body" class="text-sm leading-relaxed text-ink-700"></p>
+        </div>
+        <div class="dialog-foot">
+            <button type="button" id="confirm-cancel" class="btn-secondary"
+                    data-dialog-initial>Cancel</button>
+            <button type="button" id="confirm-accept" class="btn-danger">Confirm</button>
+        </div>
+    </div>
+</div>

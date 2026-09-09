@@ -140,13 +140,17 @@ const geminiReply = (tex) => JSON.stringify({
 async function openApp(page, { shell = {}, onHistoryPost, texts = [pageTex] } = {}) {
   let sent = 0;
   const posted = [];
+  // Mutable, because signing in is now a page load: the app asks
+  // /api/session again on the workspace it lands on, and a stub frozen at
+  // "guest" would answer that nobody signed in.
+  const session = {
+    isAuthenticated: false, hasAcceptedTerms: true, maxUploadMb: 32,
+    termsVersion: '2.0-2026-09-08', displayName: null, email: null,
+    firebaseConfig: null, ...shell,
+  };
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify({
-      isAuthenticated: false, hasAcceptedTerms: true, maxUploadMb: 32,
-      termsVersion: '2.0-2026-09-08', displayName: null, email: null,
-      firebaseConfig: null, ...shell,
-    }),
+    body: JSON.stringify(session),
   }));
   await page.route('**/api/ai-status', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
@@ -176,14 +180,31 @@ async function openApp(page, { shell = {}, onHistoryPost, texts = [pageTex] } = 
     body: JSON.stringify({ ok: true, tex: pageTex, fileName: 'saved.pdf', truncated: false }),
   }));
   await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.getElementById('go') &&
-                                   !document.getElementById('go').disabled);
-  return { posted, sentCount: () => sent };
+  await page.waitForFunction(() => document.getElementById('convert-submit') &&
+                                   !document.getElementById('convert-submit').disabled);
+  return { posted, sentCount: () => sent, session };
 }
+
+/**
+ * A conversion has finished when the workspace has swapped to the document
+ * state and the preview has stopped compiling -- pages rendered, or the note
+ * saying why not. Flask signalled this by replacing the whole page; these two
+ * states are the same moment.
+ */
+const settled = (page, timeout = 120000) => page.waitForFunction(() => {
+  const result = document.getElementById('convert-result');
+  if (!result || result.classList.contains('hidden')) return false;
+  const pages = document.getElementById('preview-pages');
+  const error = document.getElementById('preview-error');
+  return !pages.classList.contains('hidden') || !error.classList.contains('hidden');
+}, { timeout });
+
+/** How many pages the preview drew. */
+const previewPages = (page) => page.locator('#preview-pages canvas').count();
 
 /** Put a file on the picker without touching the filesystem. */
 async function attach(page, name, bytes, mime) {
-  await page.setInputFiles('#file', { name, mimeType: mime, buffer: Buffer.from(bytes) });
+  await page.setInputFiles('#convert-file-upload', { name, mimeType: mime, buffer: Buffer.from(bytes) });
 }
 
 // -- a guest converts -------------------------------------------------------
@@ -194,16 +215,14 @@ async function attach(page, name, bytes, mime) {
   const { posted } = await openApp(page);
 
   await attach(page, 'photo.png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'image/png');
-  await page.click('#go');
-  await page.waitForFunction(
-    () => /Done|No preview/.test(document.getElementById('status').textContent),
-    { timeout: 120000 });
+  await page.click('#convert-submit');
+  await settled(page, 120000);
 
-  const status = await page.textContent('#status');
-  check('a single image converts and previews', /^Done\. \d+ page/.test(status), status);
-  check('the LaTeX is shown', (await page.textContent('#tex')).includes('\\documentclass'));
+  check('a single image converts and previews', await previewPages(page) > 0,
+        `${await previewPages(page)} pages drawn`);
+  check('the LaTeX is shown', (await page.textContent('#convert-tex')).includes('\\documentclass'));
   check('the preview rendered a page',
-        await page.locator('#preview canvas, #preview img').count() > 0);
+        await page.locator('#preview-pages canvas').count() > 0);
 
   check('a guest\'s conversion never reaches the history endpoint',
         posted.length === 0, JSON.stringify(posted));
@@ -214,13 +233,17 @@ async function attach(page, name, bytes, mime) {
         JSON.stringify(guest.map((g) => g.fileName)));
 
   // The history view renders the guest list, and the Clear button empties it.
-  await page.click('#nav-history');
+  await page.goto(`${BASE}/history`, { waitUntil: 'load' });
   await page.waitForSelector('#history-list li');
   check('the guest list renders in the history view',
         (await page.textContent('#history-list')).includes('photo.png'));
   check('and offers the Clear button that only a guest has',
-        await page.isVisible('#history-clear'));
-  await page.click('#history-clear');
+        await page.isVisible('#guest-history-clear'));
+  await page.click('#guest-history-clear');
+  await page.waitForSelector('#confirm-modal.is-open');
+  await page.click('#confirm-accept');
+  await page.waitForFunction(
+    () => sessionStorage.getItem('contex_guest_history') === null, { timeout: 10000 });
   check('clearing empties the list',
         await page.evaluate(() => sessionStorage.getItem('contex_guest_history')) === null);
   await context.close();
@@ -239,18 +262,18 @@ async function attach(page, name, bytes, mime) {
   await openApp(page, { shell: { hasAcceptedTerms: false } });
 
   check('the terms checkbox is shown to someone who has not accepted',
-        await page.isVisible('#terms'));
+        await page.isVisible('#terms-gate'));
   for (const [which, title] of [['terms', 'Terms of Service'],
                                 ['privacy', 'Privacy Policy']]) {
-    await page.click(`#terms [data-legal="${which}"]`);
-    await page.waitForSelector('#legal[open] .doc', { timeout: 10000 });
+    await page.click(`#terms-gate [data-action="legal"][data-arg="${which}"]`);
+    await page.waitForSelector('#legal-modal.is-open .doc', { timeout: 10000 });
     check(`${which}: opens from the acceptance control itself`,
           (await page.textContent('#legal-title')) === title,
           await page.textContent('#legal-title'));
     const shown = await page.textContent('#legal-body [data-terms-version]');
     check(`${which}: names the version being enforced`,
           shown === '2.0-2026-09-08', shown);
-    await page.click('#legal-close');
+    await page.click('[data-action="legal-close"]');
   }
 
   // The statements this build must not repeat from the Flask policy.
@@ -285,15 +308,13 @@ async function attach(page, name, bytes, mime) {
   });
 
   check('the shell shows who is signed in',
-        (await page.textContent('#who')) === 'Ada L');
+        (await page.textContent('#nav-account-name')) === 'Ada L');
   check('and offers signing out rather than signing in',
-        await page.isVisible('#logout') && !(await page.isVisible('#nav-signin')));
+        await page.isVisible('[data-action="logout"]') && !(await page.isVisible('#nav-account-out')));
 
   await attach(page, 'lecture.png', [0x89, 0x50, 0x4e, 0x47], 'image/png');
-  await page.click('#go');
-  await page.waitForFunction(
-    () => /Done|No preview/.test(document.getElementById('status').textContent),
-    { timeout: 120000 });
+  await page.click('#convert-submit');
+  await settled(page, 120000);
 
   check('a signed-in user\'s conversion is sent to be saved',
         posted.length === 1 && posted[0].fileName === 'lecture.png',
@@ -305,7 +326,7 @@ async function attach(page, name, bytes, mime) {
   check('nothing is written to the guest store for a signed-in user',
         guest === null, String(guest));
 
-  await page.click('#nav-history');
+  await page.goto(`${BASE}/history`, { waitUntil: 'load' });
   await page.waitForSelector('#history-list li');
   check('the saved list is rendered from the server\'s answer',
         (await page.textContent('#history-list')).includes('saved.pdf'));
@@ -323,12 +344,12 @@ async function attach(page, name, bytes, mime) {
           .formatWhen('2026-03-04T09:07:00Z'))),
         await page.textContent('#history-list time'));
   check('and no Clear button, because there is no self-service delete',
-        !(await page.isVisible('#history-clear')));
+        !(await page.isVisible('#guest-history-clear')));
 
   // output.py history_preview(): a saved document compiles to a preview of its
   // own, fetched only when asked for.
   await page.click('#history-list button:has-text("Preview PDF")');
-  await page.waitForSelector('#history-list .panel canvas, #history-list .panel img',
+  await page.waitForSelector('#history-list [data-preview] canvas',
                              { timeout: 120000 });
   check('a saved conversion previews from its stored LaTeX', true);
   await context.close();
@@ -344,38 +365,47 @@ async function attach(page, name, bytes, mime) {
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on('pageerror', (e) => console.log('PAGEERROR ' + e.message.slice(0, 200)));
-  await openApp(page);
-  await page.route('**/api/auth/login', (route) => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify({ ok: true, isAuthenticated: true, displayName: 'Ada L',
-                           email: 'ada@example.com', hasAcceptedTerms: true,
-                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
-                           firebaseConfig: null }),
-  }));
+  const app = await openApp(page);
+  await page.route('**/api/auth/login', (route) => {
+    Object.assign(app.session, { isAuthenticated: true, displayName: 'Ada L',
+                                 email: 'ada@example.com' });
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, isAuthenticated: true, displayName: 'Ada L',
+                             email: 'ada@example.com', hasAcceptedTerms: true,
+                             maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
+                             firebaseConfig: null }),
+    });
+  });
 
   await attach(page, 'private.png', [0x89, 0x50, 0x4e, 0x47], 'image/png');
-  await page.click('#go');
-  await page.waitForFunction(
-    () => /Done|No preview/.test(document.getElementById('status').textContent),
-    { timeout: 120000 });
+  await page.click('#convert-submit');
+  await settled(page, 120000);
   check('the guest has a converted document on screen',
-        !(await page.locator('#result').isHidden()) &&
-        (await page.textContent('#tex')).includes('documentclass'));
+        !(await page.locator('#convert-result').isHidden()) &&
+        (await page.textContent('#convert-tex')).includes('documentclass'));
   const guestBefore = await page.evaluate(() =>
     JSON.parse(sessionStorage.getItem('contex_guest_history') || '[]').length);
   check('and an entry in their guest history', guestBefore === 1);
 
-  await page.click('#nav-signin');
-  await page.fill('#login-email', 'ada@example.com');
-  await page.fill('#login-password', 'pw');
-  await page.click('#login');
-  await page.waitForSelector('#signed-in:not([hidden])');
+  // Sign-in is its own page, as it was in Flask, and a successful one lands
+  // back on the workspace. That navigation IS the clearing: session.py cleared
+  // the whole session for this reason, and here the document lives in the
+  // page, so a fresh page is what clears it.
+  await page.goto(`${BASE}/login`, { waitUntil: 'load' });
+  await page.fill('#email', 'ada@example.com');
+  await page.fill('#password', 'pw');
+  await page.click('#login-form button[type="submit"]');
+  await page.waitForFunction(
+    () => location.pathname === '/'
+          && !document.getElementById('nav-account-in').classList.contains('hidden'),
+    { timeout: 30000 });
 
   check('signing in hides the previous visitor\'s result',
-        await page.locator('#result').isHidden());
+        await page.locator('#convert-result').isHidden());
   check('and drops the document itself, not just the panel',
-        (await page.textContent('#tex')) === '',
-        await page.textContent('#tex'));
+        (await page.textContent('#convert-tex')) === '',
+        await page.textContent('#convert-tex'));
   check('and clears their guest history',
         (await page.evaluate(() =>
           sessionStorage.getItem('contex_guest_history'))) === null);
@@ -400,14 +430,12 @@ async function attach(page, name, bytes, mime) {
 
   const app = await openApp(page, { texts: [pageTex, otherTex, pageTex] });
   await attach(page, 'notes.pdf', pdfBytes, 'application/pdf');
-  await page.click('#go');
-  await page.waitForFunction(
-    () => /Done|No preview/.test(document.getElementById('status').textContent),
-    { timeout: 180000 });
+  await page.click('#convert-submit');
+  await settled(page, 180000);
 
   check('a three-page PDF is converted a page at a time',
         app.sentCount() === 3, `${app.sentCount()} model calls`);
-  const tex = await page.textContent('#tex');
+  const tex = await page.textContent('#convert-tex');
   check('the pages are merged into ONE document',
         (tex.match(/\\documentclass/g) || []).length === 1 &&
         (tex.match(/\\begin\{document\}/g) || []).length === 1,
@@ -418,9 +446,8 @@ async function attach(page, name, bytes, mime) {
   check('and no package loaded twice',
         (tex.match(/\\usepackage\{amsmath\}/g) || []).length <= 1,
         String((tex.match(/\\usepackage\{amsmath\}/g) || []).length));
-  const status = await page.textContent('#status');
   check('the merged document compiles to three pages',
-        status === 'Done. 3 pages.', status);
+        await previewPages(page) === 3, `${await previewPages(page)} pages drawn`);
   await context.close();
 }
 
@@ -439,21 +466,24 @@ async function attach(page, name, bytes, mime) {
 
   const app = await openApp(page, { texts: [pageTex] });
   await attach(page, 'long.pdf', longPdf, 'application/pdf');
-  await page.click('#go');
-  await page.waitForSelector('#notice:not([hidden])', { timeout: 30000 });
-  const warning = await page.textContent('#notice');
+  // BEFORE Convert is pressed, not after: once it is, the processing screen
+  // covers the page and a warning behind it is a warning nobody reads.
+  await page.waitForSelector('#convert-pagelimit:not(.hidden)', { timeout: 30000 });
+  const warning = await page.textContent('#convert-pagelimit');
   check('a 14-page PDF warns that only 10 pages will be converted',
-        /Only the first 10 pages of this 14-page PDF/.test(warning), warning.slice(0, 140));
+        /Only the first 10 pages/.test(warning) && /has 14 pages/.test(warning),
+        warning.slice(0, 160));
   check('and says which pages are missing',
-        /Pages 11 to 14 are not sent/.test(warning), warning.slice(0, 220));
+        /pages 11 to 14 will not be sent/.test(warning), warning.slice(0, 240));
+  await page.click('#convert-submit');
 
-  await page.waitForFunction(
-    () => /Done|No preview/.test(document.getElementById('status').textContent),
-    { timeout: 180000 });
+  await settled(page, 180000);
   check('exactly ten pages were sent to the model', app.sentCount() === 10,
         `${app.sentCount()} model calls`);
-  check('and the warning is still on screen afterwards',
-        !(await page.locator('#notice').isHidden()));
+  check('and the finished document carries the same note',
+        /Only the first 10 pages of this 14-page PDF were converted/
+          .test(await page.textContent('#convert-notes')),
+        (await page.textContent('#convert-notes')).slice(0, 200));
   await context.close();
 }
 
@@ -462,16 +492,16 @@ async function attach(page, name, bytes, mime) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await openApp(page);
-  const accept = await page.getAttribute('#file', 'accept');
+  const accept = await page.getAttribute('#convert-file-upload', 'accept');
   check('the picker does not offer .docx', !accept.includes('.docx'), accept);
 
   await attach(page, 'report.docx', [0x50, 0x4b, 0x03, 0x04],
                'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  await page.click('#go');
-  await page.waitForSelector('#error:not([hidden])', { timeout: 30000 });
+  await page.click('#convert-submit');
+  await page.waitForSelector('#convert-error:not(.hidden)', { timeout: 30000 });
   check('and one chosen anyway is refused with inputs.py\'s wording',
-        (await page.textContent('#error')) === "Unsupported file type: '.docx'",
-        await page.textContent('#error'));
+        (await page.textContent('#convert-error-text')) === "Unsupported file type: '.docx'",
+        await page.textContent('#convert-error-text'));
   await context.close();
 }
 
@@ -500,16 +530,17 @@ async function attach(page, name, bytes, mime) {
                              truncated: false }) });
   });
 
-  await page.click('#nav-history');
+  await page.goto(`${BASE}/history`, { waitUntil: 'load' });
   await page.waitForSelector('#history-list li');
   const del = page.locator('#history-list button:has-text("Delete")').first();
   await del.click();
-  check('one click asks rather than deletes',
+  await page.waitForSelector('#confirm-modal.is-open');
+  check('it asks before deleting rather than deleting',
         deleted.length === 0 &&
-        /Delete for good\?/.test(await del.textContent()),
-        await del.textContent());
-  await del.click();
-  await page.waitForSelector('#history-empty:not([hidden])', { timeout: 15000 });
+        /removed for good/.test(await page.textContent('#confirm-body')),
+        await page.textContent('#confirm-body'));
+  await page.click('#confirm-accept');
+  await page.waitForSelector('#history-empty-auth:not(.hidden)', { timeout: 15000 });
   check('the second click deletes it', deleted.length === 1, JSON.stringify(deleted));
   check('and the list is empty afterwards',
         await page.locator('#history-list').isHidden());

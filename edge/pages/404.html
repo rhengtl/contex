@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% set page = 'error' %}
+{# ---------------------------------------------------------------------------
+   Every unhandled error the visitor is allowed to see.
+   templates/error.html, carried across.
+
+   Deliberately says almost nothing about what went wrong. The detail belongs
+   in the log, where it is useful and where it cannot leak a filesystem path, a
+   stack frame or a configuration value to whoever tripped it.
+
+   What it does give is a way out: the workspace is one click away, and a
+   conversion that failed can simply be run again.
+
+   ONE PAGE, NOT A TEMPLATE. Flask rendered this for 404, 413, 500 and the
+   rest, with the code and heading filled in. Pages serves a static 404.html
+   for any path the asset tree does not carry and never invokes the Worker to
+   do it, so this is the 404. The Worker answers its own errors as JSON on
+   /api/*, and the page shows those in place rather than navigating away -
+   which is why there is no 429 page beside this one.
+
+   It extends the shell like the original did, so the header, the footer and
+   the legal dialog are all still here. Nothing on it depends on app.js having
+   loaded: the way out is a plain link.
+   --------------------------------------------------------------------------- #}
+
+{% block title %}There is nothing here &middot; {% endblock %}
+{% block description %}That address does not match any page in ConTeX.{% endblock %}
+
+{% block main %}
+<div class="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 py-16 text-center">
+    <p class="font-display text-6xl text-paper-400" aria-hidden="true">404</p>
+
+    <h1 class="mt-4 font-display text-2xl text-ink-900">There is nothing here</h1>
+
+    <p class="mt-3 text-ink-700">
+        That address does not match any page in ConTeX. It may have been a link
+        to a result that has since expired &mdash; conversions are not kept at
+        an address, so a document you have already converted is in your history
+        rather than at a URL.
+    </p>
+
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="/" class="btn-primary">Back to the workspace</a>
+        <a href="/history" class="btn-quiet">Past conversions</a>
+    </div>
+</div>
+{% endblock %}

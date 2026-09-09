@@ -5,6 +5,9 @@
   "description": "Cloudflare Pages + Workers rebuild of ConTeX. The Python app in the repository root remains the source of truth until every stage is validated against it.",
   "scripts": {
     "dev": "wrangler dev --port 8788",
+    "build:ui": "npm run build:pages && npm run build:css",
+    "build:pages": "node tools/build-pages.mjs",
+    "build:css": "node tools/build-css.mjs",
     "build:engine": "node tools/patch-engine.mjs $SWIFTLATEX_SRC public/vendor",
     "build:texmf": "node tools/build-texmf.mjs public/texmf",
     "build:pdflib": "node -e \"require('fs').copyFileSync('node_modules/pdf-lib/dist/pdf-lib.esm.min.js','public/vendor/pdf-lib/pdf-lib.esm.min.js')\"",
