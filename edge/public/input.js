@@ -162,11 +162,70 @@ export function chosenFileName() { return selectedFile()?.name || ''; }
 let cameraStream = null;
 let cameraFacing = 'environment';
 
+/**
+ * WHICH CAMERA, which the Flask version never asked.
+ *
+ * It had one control, Flip, which toggles facingMode between "environment"
+ * and "user". That is a phone's two cameras and it is the whole vocabulary
+ * getUserMedia offers without naming devices. On a desktop the operating
+ * system decides what "environment" means, and Windows hands over a phone
+ * paired through Phone Link ahead of the built-in webcam -- so a laptop with
+ * a phone nearby quietly photographs through the phone, with nothing on
+ * screen saying so and no way to ask for the other one.
+ *
+ * `cameraDeviceId` is the explicit answer, and it is remembered for the rest
+ * of the session: someone who has said "the webcam, not my phone" once should
+ * not have to say it again on the next page they convert.
+ */
+let cameraDevices = [];
+let cameraDeviceId = null;
+
 function openCameraModal(target) {
   activeTarget = target || 'convert';
   if (!el('camera-modal')) return;
   openDialog('camera-modal');
   startCamera();
+}
+
+/**
+ * List the cameras, and mark the live one.
+ *
+ * AFTER getUserMedia, never before. enumerateDevices() fills in labels only
+ * once permission has been granted; before that every entry is an unnamed
+ * "videoinput", and a chooser offering three of those is not a chooser.
+ */
+async function refreshCameraList() {
+  const select = el('camera-device');
+  if (!select || !navigator.mediaDevices?.enumerateDevices) return;
+
+  try {
+    cameraDevices = (await navigator.mediaDevices.enumerateDevices())
+      .filter((device) => device.kind === 'videoinput');
+  } catch {
+    return;   // a browser that will not enumerate simply gets Flip
+  }
+
+  // What is actually streaming, which is not necessarily what was asked for:
+  // a constraint is a preference and the browser may answer with another
+  // camera entirely.
+  const live = cameraStream?.getVideoTracks()[0]?.getSettings().deviceId
+    || cameraDeviceId;
+
+  select.replaceChildren();
+  cameraDevices.forEach((device, index) => {
+    const option = document.createElement('option');
+    option.value = device.deviceId;
+    // Firefox names only the default device. Numbering the rest beats
+    // offering a list of blank rows.
+    option.textContent = device.label || `Camera ${index + 1}`;
+    select.appendChild(option);
+  });
+  if (live && cameraDevices.some((device) => device.deviceId === live)) {
+    select.value = live;
+  }
+  cameraDeviceId = select.value || null;
+  select.title = select.selectedOptions[0]?.textContent || '';
+  select.classList.toggle('hidden', cameraDevices.length < 2);
 }
 
 function startCamera() {
@@ -180,24 +239,34 @@ function startCamera() {
   // again -- which is what made reopening the camera hang.
   if (video) { video.srcObject = null; video.load(); }
 
-  const constraints = {
-    video: {
-      facingMode: cameraFacing,
-      // Ask for the most detail the device will give us. A document photo is
-      // read by an OCR engine, and resolution is the one thing it cannot
-      // recover later.
-      width: { ideal: 3840 },
-      height: { ideal: 2160 },
-    },
-    audio: false,
+  const wanted = {
+    // Ask for the most detail the device will give us. A document photo is
+    // read by an OCR engine, and resolution is the one thing it cannot
+    // recover later.
+    width: { ideal: 3840 },
+    height: { ideal: 2160 },
   };
+  // `exact`, so a chosen camera is honoured rather than treated as a hint --
+  // the whole point of choosing is that the browser stops deciding. The
+  // failure that buys is handled below.
+  if (cameraDeviceId) wanted.deviceId = { exact: cameraDeviceId };
+  else wanted.facingMode = cameraFacing;
 
-  navigator.mediaDevices.getUserMedia(constraints)
-    .then((stream) => {
+  navigator.mediaDevices.getUserMedia({ video: wanted, audio: false })
+    .then(async (stream) => {
       cameraStream = stream;
       if (video) video.srcObject = stream;
+      await refreshCameraList();
     })
     .catch((err) => {
+      // The remembered camera is gone -- the phone was unpaired, the webcam
+      // unplugged. Forget it and take whatever there is rather than showing
+      // an error about a device the user is no longer holding.
+      if (cameraDeviceId) {
+        cameraDeviceId = null;
+        startCamera();
+        return;
+      }
       if (!error) return;
       error.textContent = `Could not use the camera: ${err.message}`
         + '. Check that this page has camera permission, then try again - or '
@@ -206,8 +275,22 @@ function startCamera() {
     });
 }
 
+/** The next camera along, or the other way round when there is no list. */
 function switchCamera() {
-  cameraFacing = (cameraFacing === 'environment') ? 'user' : 'environment';
+  if (cameraDevices.length > 1) {
+    const at = cameraDevices.findIndex((device) => device.deviceId === cameraDeviceId);
+    cameraDeviceId = cameraDevices[(at + 1) % cameraDevices.length].deviceId;
+  } else {
+    cameraDeviceId = null;
+    cameraFacing = (cameraFacing === 'environment') ? 'user' : 'environment';
+  }
+  startCamera();
+}
+
+/** The picker's own answer, which is the one that overrides everything. */
+function chooseCamera(deviceId) {
+  if (!deviceId || deviceId === cameraDeviceId) return;
+  cameraDeviceId = deviceId;
   startCamera();
 }
 
@@ -786,5 +869,15 @@ export function init({ accepted = [], onChange: changed = () => {} } = {}) {
     'draw-save': () => saveDrawing(),
     'file-clear': () => clearInput(),
   });
-  on('choose-file', (element) => chooseInput(element.dataset.arg, 'file'), 'change');
+  on({
+    'choose-file': (element) => chooseInput(element.dataset.arg, 'file'),
+    'camera-device': (element) => chooseCamera(element.value),
+  }, null, 'change');
+
+  // A phone paired or unpaired while the camera is open changes the list
+  // under the user. Only while it is open: enumerating otherwise is a
+  // question about their hardware that nothing on the page is asking.
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+    if (cameraStream) refreshCameraList();
+  });
 }

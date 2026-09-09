@@ -2113,6 +2113,10 @@ fieldset:disabled .dropzone:hover {
   max-height: 75vh;
 }
 
+.min-h-\[2\.5rem\] {
+  min-height: 2.5rem;
+}
+
 .min-h-\[60vh\] {
   min-height: 60vh;
 }
@@ -2216,6 +2220,10 @@ fieldset:disabled .dropzone:hover {
 
 .max-w-\[48ch\] {
   max-width: 48ch;
+}
+
+.max-w-\[8\.5rem\] {
+  max-width: 8.5rem;
 }
 
 .max-w-\[85vw\] {
@@ -2508,6 +2516,10 @@ fieldset:disabled .dropzone:hover {
 .border-paper-300 {
   --tw-border-opacity: 1;
   border-color: rgb(216 209 197 / var(--tw-border-opacity, 1));
+}
+
+.border-paper-50\/25 {
+  border-color: rgb(251 250 248 / 0.25);
 }
 
 .border-white\/10 {
@@ -2957,6 +2969,10 @@ fieldset:disabled .dropzone:hover {
   transition-duration: 200ms;
 }
 
+.\[color-scheme\:dark\] {
+  color-scheme: dark;
+}
+
 @font-face {
   font-family: 'Poppins Fallback';
 
@@ -3090,6 +3106,10 @@ fieldset:disabled .dropzone:hover {
 
   .sm\:w-40 {
     width: 10rem;
+  }
+
+  .sm\:max-w-\[16rem\] {
+    max-width: 16rem;
   }
 
   .sm\:max-w-sm {

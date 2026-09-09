@@ -315,6 +315,86 @@ await withCamera(async (page) => {
         JSON.stringify(after));
 });
 
+// ---------------------------------------------------------------------------
+// Choosing which camera
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS. Flip toggles facingMode, which on a phone is its two
+// cameras and on a desktop is whatever the operating system decides that
+// means -- Windows offers a phone paired through Phone Link ahead of the
+// built-in webcam. The picker is the explicit answer, and what has to be true
+// of it is that it names real devices, that it reports the one actually
+// streaming rather than the one that was asked for, and that it disappears
+// when there is nothing to choose between.
+await withCamera(async (page) => {
+  // The list is built after enumerateDevices() answers, which is a moment
+  // later than the preview appears -- withCamera waits for the picture.
+  await page.waitForFunction(
+    () => document.getElementById('camera-device').options.length > 0,
+    { timeout: 20000 });
+  const options = await page.$$eval('#camera-device option',
+    (list) => list.map((o) => ({ value: o.value, label: o.textContent })));
+  check('the camera list is populated once permission has been granted',
+        options.length >= 1, JSON.stringify(options));
+  check('and every camera in it is named',
+        options.every((o) => o.label.trim().length > 0), JSON.stringify(options));
+  check('and identified, so one can actually be asked for',
+        options.every((o) => o.value.length > 0), JSON.stringify(options));
+
+  // The list is only a choice when there is more than one thing in it.
+  const shown = await page.evaluate(
+    () => !document.getElementById('camera-device').classList.contains('hidden'));
+  check('the picker is shown exactly when there is a choice to make',
+        shown === (options.length > 1), `${options.length} cameras, shown=${shown}`);
+
+  // A constraint is a preference: the browser may answer with a different
+  // camera than the one requested, and the picker has to show what is really
+  // streaming rather than what was asked for.
+  const agree = await page.evaluate(() => {
+    const select = document.getElementById('camera-device');
+    const live = document.getElementById('camera-stream')
+      .srcObject.getVideoTracks()[0].getSettings().deviceId;
+    return { selected: select.value, live };
+  });
+  check('the picker names the camera that is actually streaming',
+        agree.selected === agree.live, JSON.stringify(agree));
+
+  // Operating the picker only means anything with something to pick. This
+  // environment offers one fake camera, so what is asserted here is the shape
+  // of the control; the selection path is exercised when there are two.
+  if (options.length > 1) {
+    const other = options.find((o) => o.value !== agree.live).value;
+    await page.selectOption('#camera-device', other);
+    await page.waitForFunction(
+      () => document.getElementById('camera-stream').videoWidth > 0, { timeout: 20000 });
+    const moved = await page.evaluate(() => document.getElementById('camera-stream')
+      .srcObject.getVideoTracks()[0].getSettings().deviceId);
+    check('choosing a camera streams from that camera', moved === other,
+          `asked ${other}, got ${moved}`);
+  } else {
+    check('with one camera the picker stays out of the way', !shown);
+  }
+
+  // FLIP CANNOT BE FOLLOWED THROUGH HERE, and that is the environment rather
+  // than the app: Chromium's fake device is unacquirable once its tracks have
+  // been stopped, so any restart in this browser fails whatever it asks for.
+  // That makes this the test for the recovery path instead -- a remembered
+  // camera that has gone away must not leave the dialog showing a frozen
+  // frame and no explanation.
+  await page.click('#camera-switch');
+  await page.waitForFunction(() => {
+    const error = document.getElementById('camera-error');
+    return document.getElementById('camera-stream').videoWidth > 0
+           || !error.classList.contains('hidden');
+  }, { timeout: 20000 });
+  const recovered = await page.evaluate(() => ({
+    live: document.getElementById('camera-stream').videoWidth > 0,
+    said: !document.getElementById('camera-error').classList.contains('hidden'),
+  }));
+  check('a camera that has gone away is reported, not left hanging',
+        recovered.live || recovered.said, JSON.stringify(recovered));
+});
+
 await withCamera(async (page) => {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.getElementById('camera-modal').classList.contains('hidden'));
@@ -354,6 +434,12 @@ heading('the four methods are one choice');
     await page.mouse.up();
     await page.click('[data-action="draw-save"]');
     await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
+    // saveDrawing() encodes the PNG with canvas.toBlob, which is asynchronous
+    // and finishes after the dialog has already gone -- so the dialog closing
+    // is not the drawing having arrived.
+    await page.waitForFunction(
+      () => document.getElementById('convert-draw-upload').files.length === 1,
+      { timeout: 20000 });
   }
 
   await page.setInputFiles('#convert-file-upload', {

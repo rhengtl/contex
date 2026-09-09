@@ -91,14 +91,38 @@
         <div class="h-[72%] w-[88%] rounded-lg border-2 border-white/40"></div>
     </div>
 
-    <div class="absolute inset-x-0 top-0 flex items-center justify-between gap-3 p-4">
+    {# THE CAMERA PICKER IS NOT IN THE FLASK ORIGINAL. That version had only
+       Flip, which toggles facingMode between "environment" and "user" -- a
+       phone's two cameras. On a desktop the operating system decides what
+       "environment" means, and Windows will hand over a phone paired through
+       Phone Link in preference to the webcam, with nothing on screen saying
+       so or offering the other one. This lists the cameras by name and lets
+       one be chosen outright.
+
+       Flip stays, because on a phone it is one tap and the list is three.
+       It moves to the next camera in this list when there is a list, and
+       falls back to toggling facingMode when there is not.
+
+       The hint goes at sm and below: three controls and a sentence do not fit
+       360px, and the framing rectangle behind it says the same thing. #}
+    <div class="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-4">
         <button type="button" data-action="camera-close"
                 class="btn-on-dark btn-sm bg-black/55" data-dialog-initial>Cancel</button>
-        <p class="rounded-md bg-black/50 px-3 py-1.5 text-center text-xs text-white/90">
+        <p class="hidden rounded-md bg-black/50 px-3 py-1.5 text-center text-xs text-white/90 sm:block">
             Fill the frame with your page
         </p>
-        <button type="button" id="camera-switch" data-action="camera-switch"
-                class="btn-on-dark btn-sm bg-black/55">Flip</button>
+        <div class="flex items-center gap-2">
+            <label for="camera-device" class="sr-only">Camera</label>
+            {# Populated once permission is granted -- before that every camera
+               is an unnamed "videoinput". Hidden until there is a choice to
+               make, because one camera in a list of cameras is not one. #}
+            <select id="camera-device" data-action="camera-device"
+                    class="hidden max-w-[8.5rem] truncate rounded-md border border-paper-50/25
+                           bg-black/55 px-3 py-2 text-[0.8125rem] font-medium text-paper-50
+                           [color-scheme:dark] min-h-[2.5rem] sm:max-w-[16rem]"></select>
+            <button type="button" id="camera-switch" data-action="camera-switch"
+                    class="btn-on-dark btn-sm bg-black/55">Flip</button>
+        </div>
     </div>
 
     <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 p-6">

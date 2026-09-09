@@ -1248,3 +1248,50 @@ the shell now, as `templates/error.html` did, so it has the header, the footer
 and the legal dialog. What is asserted instead is the property that mattered:
 the way out is a plain `<a href="/">`, so it works whether or not `app.js` ever
 loads.
+
+## Choosing a camera
+
+Not in the Flask original, and added because of what the original does on a
+desktop.
+
+Its only camera control is Flip, which toggles `facingMode` between
+`environment` and `user`. On a phone those are its two cameras and the
+vocabulary fits. On a desktop the operating system decides what "environment"
+means — and Windows answers with a phone paired through Phone Link in
+preference to the built-in webcam. So a laptop with a phone nearby quietly
+photographs through the phone, with nothing on screen saying which camera is
+live and no way to ask for the other one.
+
+`#camera-device` is the explicit answer: every video input, by name, in the
+capture dialog's own top bar.
+
+- **After `getUserMedia`, never before.** `enumerateDevices()` fills in labels
+  only once permission has been granted; before that every entry is an unnamed
+  `videoinput`, and a chooser offering three of those is not a chooser.
+- **It reports what is streaming, not what was asked for.** A constraint is a
+  preference and the browser may answer with a different camera entirely, so
+  the selection is set from the live track's `deviceId`.
+- **`deviceId: { exact: … }`**, because the point of choosing is that the
+  browser stops deciding. The cost is that a camera which has gone away —
+  the phone unpaired, the webcam unplugged — fails outright, so that failure
+  forgets the remembered device and retries with whatever is there.
+- **Hidden below two cameras.** One camera in a list of cameras is not a
+  choice.
+- **The choice is remembered for the session.** Someone who has said "the
+  webcam, not my phone" once should not have to say it again on the next page
+  they convert.
+
+Flip stays, and now moves to the next camera in that list — on a phone that is
+still front-to-back, and on a desktop it cycles webcam to phone. It falls back
+to toggling `facingMode` when there is no list to walk.
+
+The hint text goes at `sm` and below: three controls and a sentence do not fit
+360px, and the framing rectangle behind it says the same thing.
+
+`tests/input.mjs` covers the shape of it — every camera named and identified,
+the selection agreeing with the live track, the control hidden when there is
+one camera. **The selection path itself is not exercised here**, and that is
+the environment: Chromium's fake device flag offers exactly one camera, and it
+becomes unacquirable as soon as its tracks are stopped. What is asserted in its
+place is the recovery — a camera that has gone away is reported rather than
+leaving the dialog on a frozen frame with no explanation.
