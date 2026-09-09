@@ -8,12 +8,14 @@
     "build:engine": "node tools/patch-engine.mjs $SWIFTLATEX_SRC public/vendor",
     "build:texmf": "node tools/build-texmf.mjs public/texmf",
     "build:pdflib": "node -e \"require('fs').copyFileSync('node_modules/pdf-lib/dist/pdf-lib.esm.min.js','public/vendor/pdf-lib/pdf-lib.esm.min.js')\"",
+    "build:mfr": "python tools/build-mfr.py",
     "build:models": "node tools/build-models.mjs",
     "build:headers": "node tools/build-headers.mjs",
+    "check:assets": "node tools/check-assets.mjs",
     "reference": "python tools/python-reference.py ../.contex-python-ref.json tests/fixtures",
     "reference:merge": "python tools/merge-reference.py ../.contex-merge-ref.json tests/fixtures",
     "reference:fallback": "python tools/fallback-reference.py",
-    "test": "npm run test:security && npm run test:stage2 && npm run test:merge && npm run test:stage3 && npm run test:stage3:browser && npm run test:input && npm run test:fallback",
+    "test": "npm run check:assets && npm run test:security && npm run test:stage2 && npm run test:merge && npm run test:stage3 && npm run test:stage3:browser && npm run test:input && npm run test:fallback && npm run test:integration",
     "test:security": "node tests/security.mjs",
     "test:stage2": "node tests/stage2.mjs",
     "test:merge": "node tests/merge.mjs",
@@ -21,13 +23,17 @@
     "test:stage3:browser": "node tests/stage3-browser.mjs",
     "test:input": "node tests/input.mjs",
     "test:fallback": "node tests/fallback.mjs",
+    "test:integration": "node tests/integration.mjs",
     "test:formulas": "node tests/formulas.mjs all",
     "test:perf": "node tests/perf.mjs",
     "test:one": "node tests/one.mjs"
   },
   "devDependencies": {
+    "onnxruntime-web": "^1.22.0",
     "pdf-lib": "^1.17.1",
     "playwright-core": "^1.56.0",
+    "tesseract.js": "^5.1.1",
+    "tesseract.js-core": "^5.1.1",
     "wrangler": "^4.129.0"
   }
 }

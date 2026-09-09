@@ -981,9 +981,10 @@ falls back:
 The script refuses any asset over Pages' 25 MiB per-file limit rather than
 letting a deploy find it.
 
-### Verified — 950 checks across seven suites
+### Verified — 999 checks across nine suites
 
 ```
+npm run check:assets                   every runtime asset resolves
 npm run test:security        165/165   the Gemini endpoint cannot be steered
 npm run test:stage2          226/226   validation + compile parity
 npm run test:merge           211/211   multi-page merge, byte-exact vs Python
@@ -991,21 +992,145 @@ npm run test:stage3          134/134   sessions, auth, history, deletion
 npm run test:stage3:browser   63/63    guest-history contract, end to end
 npm run test:input            36/36    picker, drop, camera, canvas
 npm run test:fallback        115/115   the whole offline pipeline
+npm run test:integration      49/49    the app through its own front door
 ```
 
 plus `python tests/test_contex.py` — **182 passed, 0 failed**, and
 `npm run test:formulas` — **16/16**, which is kept out of `npm test` because it
 reads all 75 benchmark images and takes two minutes.
 
-### Still to come in Stage 4
+### Two things that will not be built
 
-- **Error pages** (`web/errors.py`) in the app's own shell.
-- **The AI-side QA repair** (`ai.finalise_document`) for a merged multi-page
-  document on the *AI* path. The local path's QA is done and does not want it:
-  `run.py` reaches its fallback with the AI either off or just failed, so
-  asking a dead service for a repair would spend the full retry backoff to
-  arrive at the same answer, on exactly the path where the user is already
-  waiting longer than usual. Doing it on the AI path needs a Worker endpoint
-  that accepts **text**, which is a real widening of the surface
-  `tests/security.mjs` exists to keep narrow — so it is a decision to take
-  deliberately rather than a gap to fill quietly.
+**The AI-side QA repair** (`ai.finalise_document`), for a merged multi-page
+document on the *AI* path. It needs a Worker endpoint that accepts **text**,
+which is a real widening of the surface `tests/security.mjs` exists to keep
+narrow. Declined deliberately: the local QA pass covers the failure, and the
+security model is worth more than reproducing the feature. The local path never
+wanted it anyway — `run.py` reaches its fallback with the AI either off or just
+failed, so asking a dead service for a repair would spend the full retry
+backoff to arrive at the same answer, on exactly the path where the user is
+already waiting longer than usual.
+
+**`.docx`**, until `_convert_docx()` is ported. Accepting it now would send the
+whole file to Google and make the Privacy Policy untrue.
+
+---
+
+# Pre-launch audit
+
+Stage 4 was signed off on its own suite. This is the pass that asks a different
+question: not "does each stage work" but **"does the thing they add up to
+work, from a clean machine, through the front door"**. Three kinds of defect
+only appear at that altitude, and all three turned up.
+
+## `npm run test:integration` — 44 checks
+
+The suites that came before are each honest about the layer they test.
+`security.mjs` calls the Worker handler, `fallback.mjs` calls the pipeline
+modules, `input.mjs` drives the controls. None of them puts a person in front
+of `index.html` and follows them to a downloaded PDF, and the bugs that live
+between two layers are the ones no unit test owns.
+
+Two of these cannot be found any other way at all:
+
+**The content-security policy is a header.** It is enforced by the browser and
+by nothing else, so a policy that forbids something the app really does fails
+for the first time in production. `tests/serve.mjs` now parses and serves the
+real `public/_headers`, so **every** browser suite runs under the deployed
+policy — and this one runs a complete offline conversion (tesseract.js in a
+Worker, ONNX Runtime instantiating WebAssembly, SwiftLaTeX in a second Worker,
+pdf.js in a third) while listening for `securitypolicyviolation`. Zero.
+
+**Layout is a viewport.** At 360×740: the converter, the finished document with
+a PDF preview on it, and the LaTeX source opened — none scroll sideways — plus
+every writing-canvas control on screen and a canvas still big enough to draw
+on.
+
+The rest are scenarios that cross a boundary: a camera capture converted
+through the AI path (the only route where `run()` reads from `input.js` rather
+than the file input, and the only one producing `image/jpeg` for the Worker's
+allowlist to accept); a drawing converted **offline** (the transparent-PNG path
+that turns a page black without `flatten_alpha`); a 12-page PDF warned about
+before conversion with exactly ten pages sent; the terms gate refusing and then
+allowing; the offline gate offered, cancelled, and accepted.
+
+## Three findings
+
+**1. The offline recognisers could not have been installed from a clean
+clone.** `onnxruntime-web`, `tesseract.js` and `tesseract.js-core` were
+installed with `--no-save` and were missing from `package.json`. A fresh
+`git clone && npm install` would not fetch them, `npm run build:models` would
+die on ENOENT, and no test would have said so — because every test runs on a
+machine where those files already exist. Declared, with the versions actually
+in use.
+
+**2. The INT8 model was unreproducible.** `public/models/` is gitignored, for
+the same reason `public/texmf/` is. Everything else under `public/` that is not
+in git is produced by a documented command — except the model, which had been
+quantised once, by hand, from a directory that no longer exists. An artefact
+that cannot be regenerated is one disk failure from being unrecoverable.
+
+`tools/build-mfr.py` regenerates it, and the recipe was recovered by
+experiment rather than guessed. The first attempt — the obvious
+`quantize_dynamic(weight_type=QInt8)` — produced a model that is 0.9 MB
+*smaller*, loads perfectly in Python, and fails in the browser:
+
+```
+Could not find an implementation for ConvInteger(10) node with name
+'/embeddings/patch_embeddings/projection/Conv_quant'
+```
+
+ONNX Runtime **Web** has no wasm kernel for `ConvInteger`. The patch-embedding
+convolution has to stay float32, which means `op_types_to_quantize=['MatMul']`.
+With that restriction the rebuild is **byte-identical to the shipped weights**,
+verified by SHA-256 on both graphs — so the recipe is not merely plausible, it
+is the one that produced them.
+
+**3. There was no 404 page.** `web/errors.py` served every error in the
+application's own shell; Pages serves `public/404.html` for any path the asset
+tree does not carry, and there was not one. `public/404.html` is that page,
+and it loads **no script at all** — it has to work when the application does
+not, which is also why it carries no legal-dialog buttons, since those need
+`app.js` and a control that does nothing is worse than one that is absent.
+
+## `npm run check:assets` — the pre-deploy gate
+
+Three of the four large payloads are not in git. That is the right trade, and
+it has one failure mode: a deploy that forgot a build step is a deploy where
+the preview never compiles or the offline conversion 404s halfway through a
+50 MB download — and nothing in the test suite would say so.
+
+`tools/check-assets.mjs` reads every absolute path the source fetches, imports
+or links, resolves each one the way Pages would (**including `_redirects`**,
+so `/pdftex/32/cmr10.pfb` is checked against `/texmf/cmr10.pfb`), and names the
+build command for anything missing. It runs first in `npm test`.
+
+It found two of its own blind spots on the first run, both fatal in production
+and neither visible in any source file we wrote: the format file is
+`swiftlatexpdftex.fmt`, and `PdfTeXEngine.js` starts `/vendor/swiftlatexpdftex.js`
+as a Worker, whose emscripten glue then fetches the `.wasm` beside itself.
+
+Against a clean `git archive` of HEAD it reports **19 missing assets**, each
+with the command that produces it. Against a built tree, none.
+
+## Measured — `node tests/resources.mjs`
+
+| | |
+|---|---|
+| Offline recognisers, cold | **50.39 MiB** over 10 requests |
+| SwiftLaTeX, cold | **11.97 MiB** over 17 requests, **395 ms** |
+| SwiftLaTeX, warm compile | **46 ms** |
+| Offline conversion, one printed page | **1.4 s** |
+| Offline conversion, one dense page (3 equations) | **6.4 s** |
+| Offline conversion, three-page PDF | **11.4 s** (≈3.8 s/page) |
+| JS heap during offline conversion | 8–51 MiB, sampled |
+
+The heap figures are `usedJSHeapSize` snapshots and move with garbage
+collection, so they are a range rather than a peak. What matters is the shape:
+nothing accumulates across pages — `localDocument()` holds one conditioned
+canvas at a time and releases it — so a ten-page document costs what a
+three-page one does, and neither approaches a mobile limit.
+
+The 50 MiB is the number to weigh. It is paid **once**, only by someone who has
+been shown the size and agreed to it, and `/models/*` is served
+`immutable` for a year so a second offline conversion pays nothing.

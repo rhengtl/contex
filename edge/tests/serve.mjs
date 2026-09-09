@@ -11,7 +11,8 @@
  * static host gives neither.
  */
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readFileSync } from 'node:fs';
+import { readFile as read } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 
 const PUBLIC = resolve(process.env.CONTEX_PUBLIC || 'public');
@@ -33,6 +34,57 @@ const MIME = {
   '.onnx': 'application/octet-stream',
   '.traineddata': 'application/octet-stream',
 };
+
+/**
+ * public/_headers, applied the way Pages applies it.
+ *
+ * WHY THE EMULATOR SENDS THE REAL POLICY. The CSP is the one piece of this
+ * application that cannot be unit-tested: it is a header, it is enforced by
+ * the browser, and a policy that forbids something the app actually does fails
+ * only in production. Serving the real file here means every browser suite
+ * runs under the deployed policy, and a violation is a test failure instead of
+ * a blank page after a deploy.
+ *
+ * Only the two forms the file uses: an exact path and a `/prefix/*` glob.
+ */
+function parseHeaders() {
+  let text = '';
+  try { text = readFileSync(join(PUBLIC, '_headers'), 'utf8'); } catch { return []; }
+  const rules = [];
+  let current = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if (!/^\s/.test(line)) {
+      current = { match: line.trim(), headers: {} };
+      rules.push(current);
+      continue;
+    }
+    const at = line.indexOf(':');
+    if (at < 0 || !current) continue;
+    current.headers[line.slice(0, at).trim().toLowerCase()] = line.slice(at + 1).trim();
+  }
+  return rules;
+}
+
+const HEADER_RULES = parseHeaders();
+
+function headersFor(path) {
+  // The policy covers public/, because that is what Pages serves. The test
+  // harnesses live in tests/ and the corpora in bench/; neither is ever
+  // deployed, and both use inline module scripts, which 'self' correctly
+  // forbids. Applying the app's policy to them would only prove that the
+  // harnesses are not the app.
+  if (path.startsWith('/tests/') || path.startsWith('/bench/')) return {};
+  const out = {};
+  for (const rule of HEADER_RULES) {
+    const m = rule.match;
+    const hit = m === '/*' ? true
+      : m.endsWith('/*') ? path.startsWith(m.slice(0, -1))
+      : m === path;
+    if (hit) Object.assign(out, rule.headers);
+  }
+  return out;
+}
 
 export const requestLog = [];
 
@@ -71,11 +123,13 @@ createServer(async (req, res) => {
   }
 
   try {
-    const buf = await readFile(file);
+    const buf = await read(file);
     requestLog.push({ path, status: 200, bytes: buf.length });
     res.writeHead(200, {
+      ...headersFor(path),
       'content-type': MIME[extname(file)] || 'application/octet-stream',
       'cache-control': path.startsWith('/texmf/') || path.startsWith('/vendor/')
+        || path.startsWith('/models/')
         ? 'public, max-age=31536000, immutable' : 'no-cache',
     });
     res.end(buf);

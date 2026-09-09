@@ -76,3 +76,12 @@ dialog#camera-modal .actions,dialog#draw-modal .actions{display:flex;gap:.5rem;f
 #draw-canvas{width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
 dialog#draw-modal .hint{color:#c9d4d1;padding:0 .9rem;margin:0}
 dialog#draw-modal button[aria-pressed=true]{background:#0E7C86;color:#fff;border-color:#0E7C86}
+
+/* -- The 404 page. No script runs here, so this is all it gets. ------------ */
+.error-page{max-width:34rem;margin:3rem auto;text-align:center}
+.error-code{font-size:3.5rem;line-height:1;margin:0;color:#c9d4d1;font-variant-numeric:tabular-nums}
+.error-page h1{font-size:1.4rem;margin:.6rem 0 0}
+.error-page p{color:#3d4a47}
+.error-page .actions{margin-top:1.6rem}
+.btn-link{display:inline-block;padding:.5rem .9rem;border:1px solid #0E7C86;border-radius:4px;color:#0E7C86;text-decoration:none}
+.btn-link:hover{background:#EAF6F7}

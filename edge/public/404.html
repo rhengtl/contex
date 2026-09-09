@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>There is nothing here — ConTeX</title>
+<meta name="description" content="That address does not match any page in ConTeX.">
+<link rel="stylesheet" href="/app.css">
+</head>
+<!--
+  The one page a wrong address reaches -- web/errors.py's not_found(), as a
+  static file, because Cloudflare Pages serves public/404.html for any path the
+  asset tree does not carry and never invokes the Worker to do it.
+
+  Deliberately says almost nothing about what went wrong. errors.py's rule is
+  that the detail belongs in the log, where it is useful and where it cannot
+  hand a filesystem path, a stack frame or a configuration value to whoever
+  tripped it. What it does give is a way out.
+
+  No script at all. This page has to work when the application does not, so it
+  loads nothing but its own stylesheet -- which means it also cannot show the
+  signed-in navigation the Flask template had. A link back to the workspace is
+  what a visitor needs here, and the workspace knows who they are.
+
+  The Worker answers its own errors as JSON on /api/*; those never reach here.
+  A 429 from the rate limiter is one of them, and the page shows it in place
+  rather than navigating away, which is why there is no 429 page beside this
+  one.
+-->
+<body>
+<header>
+  <a href="/">ConTeX</a>
+</header>
+
+<main id="main" tabindex="-1">
+  <section class="error-page">
+    <p class="error-code" aria-hidden="true">404</p>
+    <h1>There is nothing here</h1>
+    <p>
+      That address does not match any page in ConTeX. It may have been a link
+      to a result that has since expired &mdash; conversions are not kept at
+      an address, so a document you have already converted is in your history
+      rather than at a URL.
+    </p>
+    <p class="actions">
+      <a href="/" class="btn-link">Back to the workspace</a>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <!-- No legal buttons here. On the workspace they open a dialog, which needs
+       app.js; this page deliberately loads no script, and a control that does
+       nothing is worse than one that is absent. -->
+  <p>ConTeX</p>
+</footer>
+</body>
+</html>
