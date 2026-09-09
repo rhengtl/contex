@@ -37,7 +37,7 @@ new_sqlite_classes = ["RateLimiter"]
 # 1,000/day free write cap is not a constraint here.
 [[kv_namespaces]]
 binding = "OUTAGES"
-id = "0123456789abcdef0123456789abcdef"
+id = "74ad8470027e4a96a2fcd2acaf115327"
 
 # The three settings config.py browser_firebase() hands to the page. Public by
 # design: they identify the project, they are not credentials, and the security
