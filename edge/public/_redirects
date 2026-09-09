@@ -2,4 +2,12 @@
 # One dynamic rewrite (limit is 100) turns the former into the latter, so the
 # whole TeX Live tree stays a static asset and never invokes the Worker.
 /pdftex/:format/:name  /texmf/:name  200
-/pdftex/pk/*           /404-not-a-file  404
+
+# NO PK RULE, and none is needed. There was a `/pdftex/pk/* -> 404` line here;
+# Cloudflare rejects it ("valid status codes are 200, 301, 302, 303, 307, 308")
+# and drops it, warning on every deploy. It was never load-bearing:
+# kpse_find_pk_impl asks for `pdftex/pk/<dpi>/<name>` and refuses any name
+# containing a slash, so the request is always four segments deep. The rule
+# above has two placeholders and does not match it, so a PK request falls
+# through to an asset miss -- the 404 the engine's patched `301||404` check
+# wants. Verified against `wrangler dev`: /pdftex/pk/600/cmr10 -> 404.

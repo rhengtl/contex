@@ -23,12 +23,13 @@
 # reasons: gstatic serves the browser SDK, apis.google.com serves the sign-in
 # iframe, and the project's own authDomain is where the popup completes.
 # Flask read the authDomain from config and put it in the policy per request;
-# a static file cannot, so it names the pattern instead. NARROW IT to the exact
-# authDomain (contex-xxxxx.firebaseapp.com) once the project is fixed -- a host
-# pattern is a wider surface than a host, and there is no reason to keep it
-# wider than one domain.
+# a static file cannot, so the checked-in default names the pattern instead --
+# a host pattern is a wider surface than a host, and there is no reason to keep
+# it wider than one domain once the project is fixed. It has been narrowed:
+# `npm run build:headers contex-28bfd.firebaseapp.com` wrote the exact domain
+# below, and running it with no argument restores the pattern.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com; worker-src 'self' blob:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; media-src 'self' blob:; frame-src 'self' blob: https://www.gstatic.com https://apis.google.com https://*.firebaseapp.com; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com; worker-src 'self' blob:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; media-src 'self' blob:; frame-src 'self' blob: https://www.gstatic.com https://apis.google.com https://contex-28bfd.firebaseapp.com; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://contex-28bfd.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin

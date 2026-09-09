@@ -33,9 +33,9 @@ id = "0123456789abcdef0123456789abcdef"
 # uses to call the Identity Toolkit, which is the same key Flask used for the
 # same calls -- a Web API key is not a secret and Google documents it as such.
 [vars]
-FIREBASE_AUTH_DOMAIN = ""
-FIREBASE_PROJECT_ID = ""
-FIREBASE_API_KEY = ""
+FIREBASE_AUTH_DOMAIN = "contex-28bfd.firebaseapp.com"
+FIREBASE_PROJECT_ID = "contex-28bfd"
+FIREBASE_API_KEY = "AIzaSyDwR_fRTrqvSOt_CrJoVHOIpc2lLCF8dtc"
 
 # session.py reads this from configuration, so this does too. Bump it to make
 # every user accept the terms again.

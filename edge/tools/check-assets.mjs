@@ -114,7 +114,6 @@ const IN_HTML = /(?:src|href)\s*=\s*["'](\/[^"']+)["']/g;
 const NOT_ASSETS = [
   /^\/api\//,            // the Worker
   /^\/legal\/\$/,        // built from a template literal; both are checked below
-  /^\/404-not-a-file$/,  // the deliberate miss in _redirects
 ];
 
 /** Template-literal paths the regex above cannot resolve, listed explicitly. */
