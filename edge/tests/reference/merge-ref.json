@@ -1,0 +1,272 @@
+{
+  "empty-list": {
+    "inputs": [],
+    "merged": "",
+    "issues": []
+  },
+  "blank-only": {
+    "inputs": [
+      "",
+      "   \n"
+    ],
+    "merged": "",
+    "issues": []
+  },
+  "single-page": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\nONLYPAGE\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\\begin{document}\nONLYPAGE\n\\end{document}\n",
+    "issues": []
+  },
+  "single-untouched": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\nHi.\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\begin{document}\nHi.\n\\end{document}",
+    "issues": []
+  },
+  "title-deduplicated": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Notes}\n\\begin{document}\n\\maketitle\nPage one.\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\begin{document}\nPage two.\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Notes}\n\\usepackage{amssymb}\n\n\\begin{document}\n\n\\begingroup\n\\maketitle\nPage one.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nPage two.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "three-pages": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\nALPHAPAGE\n\\end{document}\n",
+      "\\documentclass{article}\n\\begin{document}\nBRAVOPAGE\n\\end{document}\n",
+      "\\documentclass{article}\n\\begin{document}\nCHARLIEPAGE\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\n\\begin{document}\n\n\\begingroup\nALPHAPAGE\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nBRAVOPAGE\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nCHARLIEPAGE\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "background-in-preamble": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\pagecolor{blue}\n\\color{white}\n\\begin{document}\n\\Huge PAGEONE\n\\end{document}\n",
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\n\\Huge PAGETWO\n\\end{document}\n",
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\n\\Huge PAGETHREE\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{xcolor}\n\n\\begin{document}\n\n\\begingroup\n\\pagecolor{blue}\n\\color{white}\n\\Huge PAGEONE\n\\endgroup\n\n\\clearpage\n\\nopagecolor\\normalcolor\n\n\\begingroup\n\\Huge PAGETWO\n\\endgroup\n\n\\clearpage\n\\nopagecolor\\normalcolor\n\n\\begingroup\n\\Huge PAGETHREE\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "background-in-body": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\n\\pagecolor{blue}\n\\color{white}\n\\Huge PAGEONE\n\\end{document}\n",
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\n\\Huge PAGETWO\n\\end{document}\n",
+      "\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\n\\Huge PAGETHREE\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{xcolor}\n\n\\begin{document}\n\n\\begingroup\n\\pagecolor{blue}\n\\color{white}\n\\Huge PAGEONE\n\\endgroup\n\n\\clearpage\n\\nopagecolor\\normalcolor\n\n\\begingroup\n\\Huge PAGETWO\n\\endgroup\n\n\\clearpage\n\\nopagecolor\\normalcolor\n\n\\begingroup\n\\Huge PAGETHREE\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "macro-definition-survives": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\n\\newcommand{\\mymark}{DEFINEDMARK}\n\\mymark\n\\end{document}\n",
+      "\\documentclass{article}\n\\begin{document}\nLater page says \\mymark\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\n\\begin{document}\n\n\\newcommand{\\mymark}{DEFINEDMARK}\n\\mymark\n\n\\clearpage\n\n\\begingroup\nLater page says \\mymark\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "bare-body-no-document-env": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\nReal page.\n\\end{document}\n",
+      "$E = mc^{2}$"
+    ],
+    "merged": "\\documentclass{article}\n\n\\begin{document}\n\n\\begingroup\nReal page.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n$E = mc^{2}$\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "title-in-body-only": {
+    "inputs": [
+      "\\documentclass{article}\n\\begin{document}\n\\title{T}\n\\maketitle\nOne.\n\\end{document}\n",
+      "\\documentclass{article}\n\\begin{document}\n\\title{T}\n\\maketitle\nTwo.\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\n\\begin{document}\n\n\\begingroup\n\\title{T}\n\\maketitle\nOne.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nTwo.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "whitespace-varied-duplicate-packages": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nOne.\n\\end{document}\n",
+      "\\documentclass{article}\n\\usepackage{amsmath}   \n\\begin{document}\nTwo.\n\\end{document}\n"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nOne.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nTwo.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-mixed__all_mixed+mixed__hand_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nWe begin with the printed definition of velocity.\n\\[\nv = u + at\n\\]\nThen the displacement follows by integration.\n\\[\ns = ut + \\frac{1}{2}at^2\n\\]\nFinally the kinetic energy is written as\n\\[\nE_k = \\frac{1}{2}mv^2\n\\]\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nWe begin with the printed definition of velocity.\n\\[\nv = u + at\n\\]\nThen the displacement follows by integration.\n\\[\ns = ut + \\frac{1}{2}at^2\n\\]\nFinally the kinetic energy is written as\n\\[\nE_k = \\frac{1}{2}mv^2\n\\]\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-mixed__hand_prose+mixed__hand_prose_hand_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle depends on its mass.\nThis idea changed how physics was understood.\nWe explore the consequences below.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere $c$ is the speed of light in vacuum.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle depends on its mass.\nThis idea changed how physics was understood.\nWe explore the consequences below.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere $c$ is the speed of light in vacuum.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-mixed__hand_prose_print_math+mixed__print_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[\nE = mc^2\n\\]\nwhere $c$ is the speed of light in vacuum.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle is given by\n\\[\nE = mc^2\n\\]\nwhere $c$ is the speed of light in vacuum.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-mixed__print_prose+mixed__print_prose_hand_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle depends on its mass.\n\nThis idea changed how physics was understood.\n\nWe explore the consequences below.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle depends on its mass.\n\nThis idea changed how physics was understood.\n\nWe explore the consequences below.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-mixed__print_prose_print_math+mixed__related_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe kinematic equations describe uniform acceleration.\n\\[ v = u + at \\]\nThe second follows from integrating the first.\n\\[ s = ut + \\frac{1}{2}at^2 \\]\nBoth assume the acceleration a is constant.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe kinematic equations describe uniform acceleration.\n\\[ v = u + at \\]\nThe second follows from integrating the first.\n\\[ s = ut + \\frac{1}{2}at^2 \\]\nBoth assume the acceleration a is constant.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__cases_align_hi+pages__cases_align_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\ge 0. \\end{cases}\n\\]\n\n\\begin{align}\n(a + b)^2 &= a^2 + 2ab + b^2 \\\\\n(a - b)^2 &= a^2 - 2ab + b^2\n\\end{align}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\geq 0. \\end{cases}\n\\]\n\n\\begin{equation}\n(a + b)^2 = a^2 + 2ab + b^2\n\\end{equation}\n\\begin{equation}\n(a - b)^2 = a^2 - 2ab + b^2\n\\end{equation}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\ge 0. \\end{cases}\n\\]\n\n\\begin{align}\n(a + b)^2 &= a^2 + 2ab + b^2 \\\\\n(a - b)^2 &= a^2 - 2ab + b^2\n\\end{align}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\geq 0. \\end{cases}\n\\]\n\n\\begin{equation}\n(a + b)^2 = a^2 + 2ab + b^2\n\\end{equation}\n\\begin{equation}\n(a - b)^2 = a^2 - 2ab + b^2\n\\end{equation}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__display_math_hi+pages__display_math_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i\\omega t} \\, dt.\n\\end{equation}\n\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 \\quad Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t)e^{-i\\omega t} \\, dt.\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega)e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i\\omega t} \\, dt.\n\\end{equation}\n\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 \\quad Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t)e^{-i\\omega t} \\, dt.\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega)e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__fractions_indices_hi+pages__fractions_indices_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__headings_hi+pages__headings_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\n\\end{document}",
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\n\\begin{document}\n\n\\begingroup\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__lists_hi+pages__lists_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section*{1 Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\section*{1 \\quad Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the \\LaTeX\\ source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 \\quad Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the \\LaTeX\\ source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__matrix_hi+pages__matrix_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__mixed_hi+pages__mixed_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\quad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section{Energy}\nEinstein's mass-energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\qquad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\quad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Energy}\nEinstein's mass-energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\qquad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-2-pages__table_hi+pages__table_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{booktabs}\n\n\\begin{document}\n\n\\section*{1 Results}\n\n\\begin{tabular}{lrr}\n\\toprule\nCondition & Accuracy & Samples \\\\\n\\midrule\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\n\\vspace{1em}\nAccuracy is reported as a percentage of characters.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{booktabs}\n\n\\begin{document}\n\n\\section*{1 Results}\n\n\\begin{tabular}{lrr}\n\\toprule\nCondition & Accuracy & Samples \\\\\n\\midrule\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\n\\vspace{1em}\nAccuracy is reported as a percentage of characters.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{booktabs}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Results}\n\n\\begin{tabular}{lrr}\n\\toprule\nCondition & Accuracy & Samples \\\\\n\\midrule\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\n\\vspace{1em}\nAccuracy is reported as a percentage of characters.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Results}\n\n\\begin{tabular}{lrr}\n\\toprule\nCondition & Accuracy & Samples \\\\\n\\midrule\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\n\\vspace{1em}\nAccuracy is reported as a percentage of characters.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-mixed__all_mixed+mixed__hand_math+mixed__hand_prose": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nWe begin with the printed definition of velocity.\n\\[\nv = u + at\n\\]\nThen the displacement follows by integration.\n\\[\ns = ut + \\frac{1}{2}at^2\n\\]\nFinally the kinetic energy is written as\n\\[\nE_k = \\frac{1}{2}mv^2\n\\]\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle depends on its mass.\nThis idea changed how physics was understood.\nWe explore the consequences below.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nWe begin with the printed definition of velocity.\n\\[\nv = u + at\n\\]\nThen the displacement follows by integration.\n\\[\ns = ut + \\frac{1}{2}at^2\n\\]\nFinally the kinetic energy is written as\n\\[\nE_k = \\frac{1}{2}mv^2\n\\]\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle depends on its mass.\nThis idea changed how physics was understood.\nWe explore the consequences below.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-mixed__hand_prose_hand_math+mixed__hand_prose_print_math+mixed__print_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere $c$ is the speed of light in vacuum.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[\nE = mc^2\n\\]\nwhere $c$ is the speed of light in vacuum.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere $c$ is the speed of light in vacuum.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle is given by\n\\[\nE = mc^2\n\\]\nwhere $c$ is the speed of light in vacuum.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\[\nE = mc^2\n\\]\n\\[\na^2 + b^2 = c^2\n\\]\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-mixed__print_prose+mixed__print_prose_hand_math+mixed__print_prose_print_math": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle depends on its mass.\n\nThis idea changed how physics was understood.\n\nWe explore the consequences below.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\begingroup\nThe energy of a particle depends on its mass.\n\nThis idea changed how physics was understood.\n\nWe explore the consequences below.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\nThe energy of a particle is given by\n\\[ E = mc^2 \\]\nwhere c is the speed of light in vacuum.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-mixed__related_math+pages__cases_align_hi+pages__cases_align_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\nThe kinematic equations describe uniform acceleration.\n\\[ v = u + at \\]\nThe second follows from integrating the first.\n\\[ s = ut + \\frac{1}{2}at^2 \\]\nBoth assume the acceleration a is constant.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\ge 0. \\end{cases}\n\\]\n\n\\begin{align}\n(a + b)^2 &= a^2 + 2ab + b^2 \\\\\n(a - b)^2 &= a^2 - 2ab + b^2\n\\end{align}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\geq 0. \\end{cases}\n\\]\n\n\\begin{equation}\n(a + b)^2 = a^2 + 2ab + b^2\n\\end{equation}\n\\begin{equation}\n(a - b)^2 = a^2 - 2ab + b^2\n\\end{equation}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\nThe kinematic equations describe uniform acceleration.\n\\[ v = u + at \\]\nThe second follows from integrating the first.\n\\[ s = ut + \\frac{1}{2}at^2 \\]\nBoth assume the acceleration a is constant.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\ge 0. \\end{cases}\n\\]\n\n\\begin{align}\n(a + b)^2 &= a^2 + 2ab + b^2 \\\\\n(a - b)^2 &= a^2 - 2ab + b^2\n\\end{align}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Piecewise definitions}\n\n\\[\nH(x) = \\begin{cases} 0 & \\text{if } x < 0, \\\\ 1 & \\text{if } x \\geq 0. \\end{cases}\n\\]\n\n\\begin{equation}\n(a + b)^2 = a^2 + 2ab + b^2\n\\end{equation}\n\\begin{equation}\n(a - b)^2 = a^2 - 2ab + b^2\n\\end{equation}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-pages__display_math_hi+pages__display_math_lo+pages__fractions_indices_hi": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i\\omega t} \\, dt.\n\\end{equation}\n\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 \\quad Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t)e^{-i\\omega t} \\, dt.\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega)e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i\\omega t} \\, dt.\n\\end{equation}\n\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 \\quad Transforms}\n\nThe Fourier transform of $f$ is\n\\begin{equation}\n    F(\\omega) = \\int_{-\\infty}^{\\infty} f(t)e^{-i\\omega t} \\, dt.\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\n    f(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega)e^{i\\omega t} \\, d\\omega.\n\\end{equation}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-pages__fractions_indices_lo+pages__headings_hi+pages__headings_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\n\\end{document}",
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\n\\end{document}",
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Estimators}\n\nThe sample variance is\n\\[\ns^2 = \\frac{1}{n-1} \\sum_{i=1}^{n} (x_i - \\bar{x})^2,\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s/\\sqrt{n}$, and the coefficient of variation is $s/\\bar{x}$.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-pages__lists_hi+pages__lists_lo+pages__matrix_hi": {
+    "inputs": [
+      "\\documentclass{article}\n\n\\begin{document}\n\n\\section*{1 Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\section*{1 \\quad Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the \\LaTeX\\ source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 \\quad Procedure}\n\n\\begin{enumerate}\n    \\item Normalise the input image.\n    \\item Extract the document structure.\n    \\item Assemble the \\LaTeX\\ source.\n\\end{enumerate}\n\nKnown limitations:\n\n\\begin{itemize}\n    \\item No handwriting in the corpus.\n    \\item English only.\n\\end{itemize}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  },
+  "corpus-3-pages__matrix_lo+pages__mixed_hi+pages__mixed_lo": {
+    "inputs": [
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\quad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\n\\end{document}",
+      "\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\section{Energy}\nEinstein's mass-energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\qquad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\n\\end{document}"
+    ],
+    "merged": "\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\begingroup\n\\section*{1 Linear systems}\n\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix}, \\quad \\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\quad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\\endgroup\n\n\\clearpage\n\n\\begingroup\n\\section{Energy}\nEinstein's mass-energy relation is $E = mc^2$, and the Lorentz factor is $\\gamma = 1/\\sqrt{1 - v^2/c^2}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1, \\qquad \\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u.\n\\]\n\n\\begin{enumerate}\n    \\item State the assumption.\n    \\item Take the limit.\n\\end{enumerate}\n\\endgroup\n\n\\end{document}\n",
+    "issues": []
+  }
+}

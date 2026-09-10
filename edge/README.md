@@ -1,23 +1,37 @@
-# ConTeX on Cloudflare — migration in progress
+# ConTeX on Cloudflare
 
-This directory is the Cloudflare rebuild of ConTeX. **The Python application in
-the repository root remains the source of truth** and stays working until every
-stage here has been validated against it.
+> **This is a historical record, not a set of instructions.**
+>
+> It documents the migration stage by stage, and it is kept because the
+> reasoning — what was measured, what was rejected, and why — is worth more
+> than a summary. But the migration is finished: this directory *is* the
+> application now, and it is the only one deployed.
+>
+> Three things below no longer exist and should not be looked for:
+>
+> - **The Python implementation** in `contex/`, `templates/` and `static/`.
+>   It was the source of truth throughout the port and has since been removed;
+>   it is in the Git history if it is ever wanted.
+> - **The reference scripts** `tools/python-reference.py`,
+>   `merge-reference.py` and `fallback-reference.py`, which ran the Python
+>   implementation to produce parity data. Their output is now committed as
+>   frozen golden files in `tests/reference/`, and the corpus they ran over is
+>   in `tests/corpus/`. The parity suites still check against them; they just
+>   cannot be regenerated.
+> - **`tests/test_contex.py`**, the Python suite. Counts quoted below that add
+>   it in were true when written.
+>
+> For how the application is shaped and how to deploy it, see
+> [ARCHITECTURE.md](../ARCHITECTURE.md) and [DEPLOYMENT.md](../DEPLOYMENT.md).
 
-**Flask is being retired once this migration completes**, so the legal
-documents under `edge/public/legal/` describe this system and `contex/` becomes
-reference-only rather than a second deployment.
-
-Nothing in `contex/` has been deleted. Three things in it have been **fixed**,
-each because porting it or auditing the port found a real defect, and each is a
-correction to the source of truth rather than a divergence from it:
+This directory is the Cloudflare rebuild of ConTeX. Three defects were found in
+the Python original by porting it and auditing the port, and each was fixed
+there at the time rather than worked around here:
 
 - `pipeline/latex/validate.py` — the control-word boundary (Stage 3) and the
   missing pdfTeX file primitives (pre-launch audit),
 - `data/users.py` — `createdAt` was being overwritten on every login,
 - `tests/test_contex.py` — a regression test for each of the above.
-
-Architecture and the evidence behind it: the specification, revision 1.3.
 
 ---
 

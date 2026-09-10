@@ -10,13 +10,13 @@
 
 <!-- Be specific. "Ran the tests" is fine if that is genuinely all that was needed. -->
 
-- [ ] `python tests/test_contex.py` passes
+- [ ] `npm test` passes in `edge/`
 - [ ] `npm run test:rules` passes *(only if `firestore.rules` changed)*
 - [ ] Checked by hand in a browser *(say what you did)*
 
 <!--
 If this changes conversion behaviour, say what you measured it against.
-The benchmarks in bench/ are what the numbers in ARCHITECTURE.md came from.
+The fixtures in bench/ are what the offline path is measured against.
 -->
 
 ## Anything a reviewer should know

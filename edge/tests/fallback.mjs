@@ -34,7 +34,7 @@ import './serve.mjs';
 const PORT = Number(process.env.PORT || 8810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const BENCH = resolve(process.env.CONTEX_BENCH || '../bench');
-const REF = resolve('../.contex-fallback-ref.json');
+const REF = resolve('tests/reference/fallback-ref.json');
 const ONLY = process.argv[2] || '';
 
 const results = [];

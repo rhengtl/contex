@@ -1,0 +1,377 @@
+[
+ {
+  "file": "clean_00.png",
+  "cond": "clean",
+  "gt": "E = mc^2"
+ },
+ {
+  "file": "lowres_00.png",
+  "cond": "lowres",
+  "gt": "E = mc^2"
+ },
+ {
+  "file": "noisy_00.png",
+  "cond": "noisy",
+  "gt": "E = mc^2"
+ },
+ {
+  "file": "blur_00.png",
+  "cond": "blur",
+  "gt": "E = mc^2"
+ },
+ {
+  "file": "photo_00.jpg",
+  "cond": "photo",
+  "gt": "E = mc^2"
+ },
+ {
+  "file": "clean_01.png",
+  "cond": "clean",
+  "gt": "a^2 + b^2 = c^2"
+ },
+ {
+  "file": "lowres_01.png",
+  "cond": "lowres",
+  "gt": "a^2 + b^2 = c^2"
+ },
+ {
+  "file": "noisy_01.png",
+  "cond": "noisy",
+  "gt": "a^2 + b^2 = c^2"
+ },
+ {
+  "file": "blur_01.png",
+  "cond": "blur",
+  "gt": "a^2 + b^2 = c^2"
+ },
+ {
+  "file": "photo_01.jpg",
+  "cond": "photo",
+  "gt": "a^2 + b^2 = c^2"
+ },
+ {
+  "file": "clean_02.png",
+  "cond": "clean",
+  "gt": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+ },
+ {
+  "file": "lowres_02.png",
+  "cond": "lowres",
+  "gt": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+ },
+ {
+  "file": "noisy_02.png",
+  "cond": "noisy",
+  "gt": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+ },
+ {
+  "file": "blur_02.png",
+  "cond": "blur",
+  "gt": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+ },
+ {
+  "file": "photo_02.jpg",
+  "cond": "photo",
+  "gt": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+ },
+ {
+  "file": "clean_03.png",
+  "cond": "clean",
+  "gt": "\\int_0^1 x^2 dx"
+ },
+ {
+  "file": "lowres_03.png",
+  "cond": "lowres",
+  "gt": "\\int_0^1 x^2 dx"
+ },
+ {
+  "file": "noisy_03.png",
+  "cond": "noisy",
+  "gt": "\\int_0^1 x^2 dx"
+ },
+ {
+  "file": "blur_03.png",
+  "cond": "blur",
+  "gt": "\\int_0^1 x^2 dx"
+ },
+ {
+  "file": "photo_03.jpg",
+  "cond": "photo",
+  "gt": "\\int_0^1 x^2 dx"
+ },
+ {
+  "file": "clean_04.png",
+  "cond": "clean",
+  "gt": "\\sum_{i=1}^{n} i^2"
+ },
+ {
+  "file": "lowres_04.png",
+  "cond": "lowres",
+  "gt": "\\sum_{i=1}^{n} i^2"
+ },
+ {
+  "file": "noisy_04.png",
+  "cond": "noisy",
+  "gt": "\\sum_{i=1}^{n} i^2"
+ },
+ {
+  "file": "blur_04.png",
+  "cond": "blur",
+  "gt": "\\sum_{i=1}^{n} i^2"
+ },
+ {
+  "file": "photo_04.jpg",
+  "cond": "photo",
+  "gt": "\\sum_{i=1}^{n} i^2"
+ },
+ {
+  "file": "clean_05.png",
+  "cond": "clean",
+  "gt": "\\alpha + \\beta = \\gamma"
+ },
+ {
+  "file": "lowres_05.png",
+  "cond": "lowres",
+  "gt": "\\alpha + \\beta = \\gamma"
+ },
+ {
+  "file": "noisy_05.png",
+  "cond": "noisy",
+  "gt": "\\alpha + \\beta = \\gamma"
+ },
+ {
+  "file": "blur_05.png",
+  "cond": "blur",
+  "gt": "\\alpha + \\beta = \\gamma"
+ },
+ {
+  "file": "photo_05.jpg",
+  "cond": "photo",
+  "gt": "\\alpha + \\beta = \\gamma"
+ },
+ {
+  "file": "clean_06.png",
+  "cond": "clean",
+  "gt": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"
+ },
+ {
+  "file": "lowres_06.png",
+  "cond": "lowres",
+  "gt": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"
+ },
+ {
+  "file": "noisy_06.png",
+  "cond": "noisy",
+  "gt": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"
+ },
+ {
+  "file": "blur_06.png",
+  "cond": "blur",
+  "gt": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"
+ },
+ {
+  "file": "photo_06.jpg",
+  "cond": "photo",
+  "gt": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"
+ },
+ {
+  "file": "clean_07.png",
+  "cond": "clean",
+  "gt": "f(x) = e^{-x^2}"
+ },
+ {
+  "file": "lowres_07.png",
+  "cond": "lowres",
+  "gt": "f(x) = e^{-x^2}"
+ },
+ {
+  "file": "noisy_07.png",
+  "cond": "noisy",
+  "gt": "f(x) = e^{-x^2}"
+ },
+ {
+  "file": "blur_07.png",
+  "cond": "blur",
+  "gt": "f(x) = e^{-x^2}"
+ },
+ {
+  "file": "photo_07.jpg",
+  "cond": "photo",
+  "gt": "f(x) = e^{-x^2}"
+ },
+ {
+  "file": "clean_08.png",
+  "cond": "clean",
+  "gt": "\\frac{\\partial f}{\\partial x}"
+ },
+ {
+  "file": "lowres_08.png",
+  "cond": "lowres",
+  "gt": "\\frac{\\partial f}{\\partial x}"
+ },
+ {
+  "file": "noisy_08.png",
+  "cond": "noisy",
+  "gt": "\\frac{\\partial f}{\\partial x}"
+ },
+ {
+  "file": "blur_08.png",
+  "cond": "blur",
+  "gt": "\\frac{\\partial f}{\\partial x}"
+ },
+ {
+  "file": "photo_08.jpg",
+  "cond": "photo",
+  "gt": "\\frac{\\partial f}{\\partial x}"
+ },
+ {
+  "file": "clean_09.png",
+  "cond": "clean",
+  "gt": "\\log_2(n)"
+ },
+ {
+  "file": "lowres_09.png",
+  "cond": "lowres",
+  "gt": "\\log_2(n)"
+ },
+ {
+  "file": "noisy_09.png",
+  "cond": "noisy",
+  "gt": "\\log_2(n)"
+ },
+ {
+  "file": "blur_09.png",
+  "cond": "blur",
+  "gt": "\\log_2(n)"
+ },
+ {
+  "file": "photo_09.jpg",
+  "cond": "photo",
+  "gt": "\\log_2(n)"
+ },
+ {
+  "file": "clean_10.png",
+  "cond": "clean",
+  "gt": "P(A|B) = \\frac{P(B|A) P(A)}{P(B)}"
+ },
+ {
+  "file": "lowres_10.png",
+  "cond": "lowres",
+  "gt": "P(A|B) = \\frac{P(B|A) P(A)}{P(B)}"
+ },
+ {
+  "file": "noisy_10.png",
+  "cond": "noisy",
+  "gt": "P(A|B) = \\frac{P(B|A) P(A)}{P(B)}"
+ },
+ {
+  "file": "blur_10.png",
+  "cond": "blur",
+  "gt": "P(A|B) = \\frac{P(B|A) P(A)}{P(B)}"
+ },
+ {
+  "file": "photo_10.jpg",
+  "cond": "photo",
+  "gt": "P(A|B) = \\frac{P(B|A) P(A)}{P(B)}"
+ },
+ {
+  "file": "clean_11.png",
+  "cond": "clean",
+  "gt": "\\sigma = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} (x_i - \\mu)^2}"
+ },
+ {
+  "file": "lowres_11.png",
+  "cond": "lowres",
+  "gt": "\\sigma = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} (x_i - \\mu)^2}"
+ },
+ {
+  "file": "noisy_11.png",
+  "cond": "noisy",
+  "gt": "\\sigma = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} (x_i - \\mu)^2}"
+ },
+ {
+  "file": "blur_11.png",
+  "cond": "blur",
+  "gt": "\\sigma = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} (x_i - \\mu)^2}"
+ },
+ {
+  "file": "photo_11.jpg",
+  "cond": "photo",
+  "gt": "\\sigma = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} (x_i - \\mu)^2}"
+ },
+ {
+  "file": "clean_12.png",
+  "cond": "clean",
+  "gt": "A \\cup B \\subseteq C"
+ },
+ {
+  "file": "lowres_12.png",
+  "cond": "lowres",
+  "gt": "A \\cup B \\subseteq C"
+ },
+ {
+  "file": "noisy_12.png",
+  "cond": "noisy",
+  "gt": "A \\cup B \\subseteq C"
+ },
+ {
+  "file": "blur_12.png",
+  "cond": "blur",
+  "gt": "A \\cup B \\subseteq C"
+ },
+ {
+  "file": "photo_12.jpg",
+  "cond": "photo",
+  "gt": "A \\cup B \\subseteq C"
+ },
+ {
+  "file": "clean_13.png",
+  "cond": "clean",
+  "gt": "\\frac{dy}{dx} = 3x^2 + 2x"
+ },
+ {
+  "file": "lowres_13.png",
+  "cond": "lowres",
+  "gt": "\\frac{dy}{dx} = 3x^2 + 2x"
+ },
+ {
+  "file": "noisy_13.png",
+  "cond": "noisy",
+  "gt": "\\frac{dy}{dx} = 3x^2 + 2x"
+ },
+ {
+  "file": "blur_13.png",
+  "cond": "blur",
+  "gt": "\\frac{dy}{dx} = 3x^2 + 2x"
+ },
+ {
+  "file": "photo_13.jpg",
+  "cond": "photo",
+  "gt": "\\frac{dy}{dx} = 3x^2 + 2x"
+ },
+ {
+  "file": "clean_14.png",
+  "cond": "clean",
+  "gt": "\\theta = \\tan^{-1}\\left(\\frac{y}{x}\\right)"
+ },
+ {
+  "file": "lowres_14.png",
+  "cond": "lowres",
+  "gt": "\\theta = \\tan^{-1}\\left(\\frac{y}{x}\\right)"
+ },
+ {
+  "file": "noisy_14.png",
+  "cond": "noisy",
+  "gt": "\\theta = \\tan^{-1}\\left(\\frac{y}{x}\\right)"
+ },
+ {
+  "file": "blur_14.png",
+  "cond": "blur",
+  "gt": "\\theta = \\tan^{-1}\\left(\\frac{y}{x}\\right)"
+ },
+ {
+  "file": "photo_14.jpg",
+  "cond": "photo",
+  "gt": "\\theta = \\tan^{-1}\\left(\\frac{y}{x}\\right)"
+ }
+]

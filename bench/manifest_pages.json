@@ -1,0 +1,98 @@
+[
+ {
+  "file": "headings_hi.png",
+  "cond": "hi",
+  "feature": "headings",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\end{document}\n"
+ },
+ {
+  "file": "headings_lo.png",
+  "cond": "lo",
+  "feature": "headings",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Introduction}\nSignal processing turns measurements into meaning.\n\n\\subsection{Motivation}\nSampling a continuous signal produces a discrete sequence.\n\n\\subsection{Scope}\nThis note covers the transform and its inverse.\n\n\\section{Method}\nThe derivation proceeds in three steps.\n\\end{document}\n"
+ },
+ {
+  "file": "display_math_hi.png",
+  "cond": "hi",
+  "feature": "display_math",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Transforms}\nThe Fourier transform of $f$ is\n\\begin{equation}\nF(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i \\omega t} \\, dt .\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\nf(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i \\omega t} \\, d\\omega .\n\\end{equation}\n\\end{document}\n"
+ },
+ {
+  "file": "display_math_lo.png",
+  "cond": "lo",
+  "feature": "display_math",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Transforms}\nThe Fourier transform of $f$ is\n\\begin{equation}\nF(\\omega) = \\int_{-\\infty}^{\\infty} f(t) e^{-i \\omega t} \\, dt .\n\\end{equation}\nIts inverse recovers the original signal:\n\\begin{equation}\nf(t) = \\frac{1}{2\\pi} \\int_{-\\infty}^{\\infty} F(\\omega) e^{i \\omega t} \\, d\\omega .\n\\end{equation}\n\\end{document}\n"
+ },
+ {
+  "file": "fractions_indices_hi.png",
+  "cond": "hi",
+  "feature": "fractions_indices",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Estimators}\nThe sample variance is\n\\[\ns^{2} = \\frac{1}{n-1} \\sum_{i=1}^{n} \\left( x_{i} - \\bar{x} \\right)^{2},\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s / \\sqrt{n}$,\nand the coefficient of variation is $s / \\bar{x}$.\n\\end{document}\n"
+ },
+ {
+  "file": "fractions_indices_lo.png",
+  "cond": "lo",
+  "feature": "fractions_indices",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Estimators}\nThe sample variance is\n\\[\ns^{2} = \\frac{1}{n-1} \\sum_{i=1}^{n} \\left( x_{i} - \\bar{x} \\right)^{2},\n\\]\nwhere $\\bar{x}$ is the sample mean. The standard error is $s / \\sqrt{n}$,\nand the coefficient of variation is $s / \\bar{x}$.\n\\end{document}\n"
+ },
+ {
+  "file": "matrix_hi.png",
+  "cond": "hi",
+  "feature": "matrix",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Linear systems}\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix},\n\\qquad\n\\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\end{document}\n"
+ },
+ {
+  "file": "matrix_lo.png",
+  "cond": "lo",
+  "feature": "matrix",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Linear systems}\nConsider the system $A\\mathbf{x} = \\mathbf{b}$ with\n\\[\nA = \\begin{pmatrix} 2 & -1 & 0 \\\\ -1 & 2 & -1 \\\\ 0 & -1 & 2 \\end{pmatrix},\n\\qquad\n\\mathbf{b} = \\begin{pmatrix} 1 \\\\ 0 \\\\ 1 \\end{pmatrix}.\n\\]\nThe matrix $A$ is symmetric and positive definite.\n\\end{document}\n"
+ },
+ {
+  "file": "table_hi.png",
+  "cond": "hi",
+  "feature": "table",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Results}\n\\begin{center}\n\\begin{tabular}{lrr}\n\\hline\nCondition & Accuracy & Samples \\\\\n\\hline\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\hline\n\\end{tabular}\n\\end{center}\nAccuracy is reported as a percentage of characters.\n\\end{document}\n"
+ },
+ {
+  "file": "table_lo.png",
+  "cond": "lo",
+  "feature": "table",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Results}\n\\begin{center}\n\\begin{tabular}{lrr}\n\\hline\nCondition & Accuracy & Samples \\\\\n\\hline\nClean print & 99.9 & 61 \\\\\nBlurred & 99.8 & 10 \\\\\nLow DPI & 87.5 & 10 \\\\\n\\hline\n\\end{tabular}\n\\end{center}\nAccuracy is reported as a percentage of characters.\n\\end{document}\n"
+ },
+ {
+  "file": "lists_hi.png",
+  "cond": "hi",
+  "feature": "lists",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Procedure}\n\\begin{enumerate}\n\\item Normalise the input image.\n\\item Extract the document structure.\n\\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\\begin{itemize}\n\\item No handwriting in the corpus.\n\\item English only.\n\\end{itemize}\n\\end{document}\n"
+ },
+ {
+  "file": "lists_lo.png",
+  "cond": "lo",
+  "feature": "lists",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Procedure}\n\\begin{enumerate}\n\\item Normalise the input image.\n\\item Extract the document structure.\n\\item Assemble the LaTeX source.\n\\end{enumerate}\n\nKnown limitations:\n\\begin{itemize}\n\\item No handwriting in the corpus.\n\\item English only.\n\\end{itemize}\n\\end{document}\n"
+ },
+ {
+  "file": "mixed_hi.png",
+  "cond": "hi",
+  "feature": "mixed",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^{2}$, and the Lorentz factor is\n$\\gamma = 1 / \\sqrt{1 - v^{2}/c^{2}}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1,\n\\qquad\n\\frac{\\partial u}{\\partial t} = \\alpha \\nabla^{2} u .\n\\]\n\n\\begin{enumerate}\n\\item State the assumption.\n\\item Take the limit.\n\\end{enumerate}\n\\end{document}\n"
+ },
+ {
+  "file": "mixed_lo.png",
+  "cond": "lo",
+  "feature": "mixed",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Energy}\nEinstein's mass--energy relation is $E = mc^{2}$, and the Lorentz factor is\n$\\gamma = 1 / \\sqrt{1 - v^{2}/c^{2}}$.\n\n\\subsection{Limits}\n\\[\n\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1,\n\\qquad\n\\frac{\\partial u}{\\partial t} = \\alpha \\nabla^{2} u .\n\\]\n\n\\begin{enumerate}\n\\item State the assumption.\n\\item Take the limit.\n\\end{enumerate}\n\\end{document}\n"
+ },
+ {
+  "file": "cases_align_hi.png",
+  "cond": "hi",
+  "feature": "cases_align",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Piecewise definitions}\n\\[\nH(x) = \\begin{cases}\n0 & \\text{if } x < 0, \\\\\n1 & \\text{if } x \\geq 0 .\n\\end{cases}\n\\]\n\\begin{align}\n(a+b)^{2} &= a^{2} + 2ab + b^{2} \\\\\n(a-b)^{2} &= a^{2} - 2ab + b^{2}\n\\end{align}\n\\end{document}\n"
+ },
+ {
+  "file": "cases_align_lo.png",
+  "cond": "lo",
+  "feature": "cases_align",
+  "gt_tex": "\\documentclass[11pt]{article}\n\\usepackage[margin=2.2cm]{geometry}\n\\usepackage{amsmath}\n\\pagestyle{empty}\n\\begin{document}\n\\section{Piecewise definitions}\n\\[\nH(x) = \\begin{cases}\n0 & \\text{if } x < 0, \\\\\n1 & \\text{if } x \\geq 0 .\n\\end{cases}\n\\]\n\\begin{align}\n(a+b)^{2} &= a^{2} + 2ab + b^{2} \\\\\n(a-b)^{2} &= a^{2} - 2ab + b^{2}\n\\end{align}\n\\end{document}\n"
+ }
+]

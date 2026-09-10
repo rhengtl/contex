@@ -1,306 +1,97 @@
 # ConTeX
 
-[![deploy](https://github.com/rhengtl/contex/actions/workflows/deploy.yml/badge.svg)](https://github.com/rhengtl/contex/actions/workflows/deploy.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+Photograph a page of handwriting, or drop in a PDF, and get LaTeX back — with a
+PDF preview compiled in the browser so you can see what you are about to
+download.
 
-Turn any page — handwritten, printed, photographed or typed — into LaTeX.
-
-ConTeX reads the prose and the mathematics on a page **together**, and returns a
-complete `.tex` file plus a rendered PDF preview. There is one conversion
-feature and no converter to choose: which engine reads a page is an
-implementation detail the user never sees.
+Live at **https://contex.rhengtl.workers.dev**
 
 ---
 
-## What problem it solves
+## Where the application is
 
-Transcribing a page of mathematics into LaTeX by hand is slow and error-prone,
-and general-purpose OCR gets the prose right while destroying the equations.
-ConTeX handles a mixed page — a paragraph, a displayed formula, a table — as one
-document, and gives back something that compiles.
+Everything that runs in production is in [`edge/`](edge/). It is a Cloudflare
+Worker plus a tree of static assets:
 
-## Features
+| | |
+|---|---|
+| `edge/worker/` | the API: sessions, auth, conversion, history, rate limiting |
+| `edge/public/` | the site itself — pages, client modules, and the runtime assets |
+| `edge/pages/` | page sources; `npm run build:ui` expands them into `edge/public/` |
+| `edge/design/` | the one stylesheet source, built to `edge/public/app.css` |
+| `edge/tests/` | the verification suite |
+| `edge/tools/` | build steps for the asset trees |
 
-- **One upload, one workflow.** Image, PDF, Word document, camera capture or
-  handwriting drawn on a canvas all enter the same pipeline.
-- **Mixed prose and mathematics** recognised together rather than in separate
-  passes.
-- **A graceful local fallback.** If the AI provider is unavailable or
-  unconfigured, the app says so and offers a Tesseract + pix2text path that runs
-  entirely on the server. Falling back is never silent.
-- **PDF preview** compiled by a real TeX engine, rendered page by page in the
-  browser.
-- **History.** Guests get a session-local list; signed-in users get history
-  persisted in Firestore.
-- **Multi-page PDFs**, capped at a configurable page limit (10 by default).
+The repository root holds only what sits *outside* the Worker: the Firestore
+security rules and their test, the frozen benchmark fixtures the suite reads,
+and this documentation.
 
-## How it works
+There was previously a Flask implementation of the same product in `contex/`,
+deployed by Docker to a VM. It has been removed — the edge application replaced
+it and is the only thing deployed. It remains in the Git history if it is ever
+wanted again.
 
-```
-accept terms ─▶ upload ─▶ check AI availability ─▶ convert ─▶ .tex
-                                 │                             │
-                        available│  unavailable                ├─▶ download
-                                 │      │                      ├─▶ copy
-                                 │      └─▶ warn the user,     └─▶ PDF preview
-                                 │          they choose
-                                 ▼
-                     ┌───────────┴────────────┐
-                     │                        │
-             AI reads the page        Tesseract + pix2text
-             and writes LaTeX         merged by position
-                 (normal)                 (fallback)
-```
+## How a conversion works
 
-Word documents take neither path: a `.docx` already knows its own headings,
-cells and words, so it is read structurally and only its LaTeX form is decided.
+1. The page is sent to the Worker, which calls Gemini with a prompt the Worker
+   owns. The client never supplies prompt text.
+2. If every model in the chain refuses, the browser is offered a local
+   fallback: Tesseract for text and an ONNX formula recogniser for mathematics,
+   both running on the viewer's machine, with nothing sent anywhere.
+3. The resulting LaTeX is compiled to a PDF **in the browser** by SwiftLaTeX's
+   pdfTeX built to WebAssembly, against a TeX Live subset served as static
+   files.
 
-The generated LaTeX is validated and, where possible, compiled and repaired
-before it reaches you. [ARCHITECTURE.md](ARCHITECTURE.md) covers the pipeline,
-the model choice and the measurements behind both.
+Signed-in conversions are saved to Firestore through the Worker and scoped by
+uid. Guests get a history held in their own browser and nothing on the server.
 
-## Supported inputs
-
-| Input | Extensions | Notes |
-|---|---|---|
-| Images | `.png` `.jpg` `.jpeg` `.bmp` `.tiff` `.tif` `.webp` `.gif` | Deskewed and upscaled before OCR |
-| PDF | `.pdf` | Multi-page, capped by `UNIFIED_MAX_PDF_PAGES` (10) |
-| Word | `.docx` | Read structurally, never OCR'd |
-| Camera | — | Captured in-browser, posted as an image |
-| Canvas | — | Handwriting drawn in-browser, posted as an image |
-
-Uploads are capped at `MAX_UPLOAD_MB` (32 MB by default). Anything else is
-refused with a clear message.
-
-## Output
-
-- **`.tex` download** — a complete document, not a fragment.
-- **Copy to clipboard.**
-- **PDF preview** — compiled server-side, viewable page by page, downloadable.
-
-## Authentication and history
-
-| | Guest | Signed in |
-|---|---|---|
-| Convert, download, preview | Yes | Yes |
-| History | In the browser, cleared when the tab closes | Persisted in Firestore |
-| Requires Firebase | No | Yes |
-
-Every conversion feature works with no account and no Firebase configured at
-all. Signing in adds history that survives closing the tab, nothing else.
-Accounts use Firebase Authentication (email/password and Google sign-in); the
-server holds a signed session cookie and never a password.
-
-## Technology stack
-
-**Backend** — Python 3.12, Flask, gunicorn, organised as a layered package
-(`web/` → `pipeline/` → `services/` + `data/`).
-
-**Recognition** — Google Gemini (default) or Anthropic Claude for the AI path;
-Tesseract and `breezedeus/pix2text-mfr` (TrOCR via ONNX Runtime) for the local
-fallback.
-
-**Documents** — pikepdf, pdf2image/Poppler, python-docx, and a LaTeX engine
-(MiKTeX or TeX Live) for compilation.
-
-**Frontend** — server-rendered Jinja templates and one hand-written
-`static/scripts.js`. No frontend framework, no build step at runtime; Tailwind
-compiles `static/css/app.css` ahead of time and the result is committed.
-
-**Firebase** — Authentication and Firestore, both on the free Spark plan.
-
-## Project structure
-
-```
-contex/                  the application package
-├── app.py               Flask app assembly, config, blueprint registration
-├── config.py            every environment variable read, in one place
-├── web/                 routes: pages, auth, convert, output, security, session
-├── pipeline/            conversion: inputs, preprocess, recognise/, latex/
-├── services/            outbound: firebase, accounts, llm/ (gemini, anthropic)
-└── data/                persistence: users, history, results
-templates/               Jinja templates
-static/                  committed CSS, JS and images
-public/                  Firebase Hosting root — robots.txt only, unused today
-tests/                   the Python suite and the Firestore rules suite
-tools/                   build_css.py, make_assets.py
-bench/                   conversion-quality benchmarks (development only)
-wsgi.py                  the entry point for gunicorn and for `python wsgi.py`
-```
-
-## Local development
-
-Every command runs from the project root — the directory holding `wsgi.py`.
-
-**1. Clone and create an environment**
+## Running it
 
 ```bash
-git clone https://github.com/rhengtl/contex.git
-cd contex
-python -m venv .venv
+cd edge
+npm ci
+npm run dev          # wrangler dev on :8788
+npm test             # the full suite
 ```
 
-**2. Install dependencies**
+`npm test` needs the runtime asset trees described below.
 
-```powershell
-.venv\Scripts\python.exe -m pip install -r requirements.txt   # Windows
-```
-```bash
-.venv/bin/python -m pip install -r requirements.txt           # macOS / Linux
-```
+## A caveat you should know before cloning
 
-Three system binaries are optional. The app degrades honestly without each:
+**A fresh clone cannot serve this application yet.** 137 MB of what Cloudflare
+serves is gitignored build output. Most of it can be rebuilt from what is here;
+one tree cannot.
 
-| Binary | Needed for | Without it |
-|---|---|---|
-| LaTeX engine (MiKTeX / TeX Live) | PDF preview, compile check | `.tex` still downloads; the preview explains itself |
-| Poppler (`pdftoppm` on PATH) | rasterising PDFs for the fallback | PDFs still convert on the AI path |
-| Tesseract | the fallback's text half | the AI path is unaffected |
+| Tree | Size | Rebuilt by | From the repo? |
+|---|---|---|---|
+| `edge/public/vendor/ort/`, `vendor/tesseract/` | ~17 MB | `npm ci && npm run build:models` | **yes** — npm packages |
+| `edge/public/models/mfr/` | ~32 MB | `npm run build:models -- build/mfr-int8` | **yes** — `edge/build/mfr-int8/` is committed |
+| `edge/public/models/tessdata/` | ~4 MB | same step | no — needs a local Tesseract install |
+| `edge/public/texmf/` | 84 MB, 2,384 files | `npm run build:texmf` | **no** |
 
-**3. Configure the environment**
+`build:texmf` is the gap. It works *in place*: it adds the extensionless `.tfm`
+copies kpathsea needs to a `public/texmf/` that must already have been
+populated by harvesting a TeX Live installation. Nothing in this repository
+produces it, and the SwiftLaTeX format file inside it (10.36 MB) has no source
+here either.
 
-```bash
-cp .env.example .env
-```
+Until that is resolved, `npm run check:assets` fails on a clean clone, and —
+more dangerously — `wrangler deploy` would publish only the committed files and
+strip the live site of its fonts and engine data.
+`.github/workflows/edge.yml` refuses to run at all rather than let that happen.
 
-Then fill in `.env` — see [Environment variables](#environment-variables). The
-file is gitignored and must stay that way.
-
-**4. Run**
-
-```powershell
-.venv\Scripts\python.exe wsgi.py
-```
-
-Open <http://127.0.0.1:5000/>.
-
-**5. Run the checks**
-
-```powershell
-.venv\Scripts\python.exe tests/test_contex.py   # 179 offline checks, no API key needed
-npm install && npm run test:rules               # Firestore rules, against the emulator
-```
-
-## Firebase setup
-
-Firebase is optional for conversion and required for accounts and persistent
-history. [FIREBASE_README.md](FIREBASE_README.md) is the full guide; in short:
-
-1. Create a project in the [Firebase Console](https://console.firebase.google.com/).
-2. **Authentication** → enable Email/Password and Google sign-in.
-3. **Firestore** → create the database.
-4. **Service account** → Project Settings → Service Accounts → *Generate new
-   private key*. Save it outside version control and point
-   `FIREBASE_SERVICE_ACCOUNT_PATH` at it. **Local development only** — on Cloud
-   Run the platform supplies the credential and no key enters the image.
-5. Deploy the rules and the composite index (`uid` ASC + `timestamp` DESC),
-   which the history query requires:
-
-```bash
-firebase deploy --only firestore:rules,firestore:indexes
-```
-
-Hosting configuration is already in `firebase.json`: `public/` is the Hosting
-root and holds only `robots.txt`, and every request is rewritten to the Cloud
-Run service.
-
-## Deployment
-
-**No static host can run this.** ConTeX is a Flask server that shells out to a
-TeX engine, Tesseract and Poppler and holds an ONNX model in memory, so it runs
-as a container on a small always-on VM with Caddy in front of it for TLS:
-
-```
-browser ─▶ Caddy  :443, Let's Encrypt, renews itself
-              │  reverse_proxy
-              ▼
-         contex container  ── the Dockerfile builds this
-              ├─▶ Firebase Auth (Identity Toolkit REST)
-              ├─▶ Firestore (Admin SDK)
-              └─▶ Gemini API (server-side key)
-```
-
-Firebase is still here for **Auth and Firestore**, both on the free Spark plan.
-Firebase Hosting is not used — it cannot execute Python, and the `hosting` block
-in `firebase.json` is inert configuration kept for the Cloud Run path, which the
-same `Dockerfile` still builds for.
-
-Releases are automatic and pull-based. A push to `master` that touches anything
-shipping runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
-the offline suite and the Firestore rules suite both have to pass, then the
-`linux/arm64` image is built on a native ARM runner and published to GHCR. The
-server checks for a new image every two minutes and restarts if the digest
-moved; a final job polls `/healthz` until the live site reports the commit that
-was just built, so a green pipeline means the site really changed rather than
-that a build succeeded.
-
-Nothing in GitHub holds an SSH key to the server and no inbound port is open to
-CI — the machine pulls, CI never pushes.
-
-[DEPLOYMENT.md](DEPLOYMENT.md) has the full standing-up procedure, the running
-costs (zero), and — importantly — what **cannot** be completed until the site has
-a public hostname.
-
-
-## Environment variables
-
-Copy `.env.example` and fill it in. No value below belongs in version control.
-
-| Variable | Required | What it is |
-|---|---|---|
-| `FLASK_SECRET_KEY` | Yes | Signs the session cookie. Generate a long random value; changing it logs everyone out. |
-| `GEMINI_API_KEY` | For the AI path | From <https://aistudio.google.com/apikey>. Without it the app warns and offers the local fallback. |
-| `FIREBASE_API_KEY` | For accounts | Firebase Console → Project Settings → Web app. Public by design, but still not committed. |
-| `FIREBASE_AUTH_DOMAIN` | For accounts | Usually `<project-id>.firebaseapp.com`. |
-| `FIREBASE_PROJECT_ID` | For accounts | Your Firebase project ID. |
-| `FIREBASE_SERVICE_ACCOUNT_PATH` | For accounts | Path to the Admin SDK JSON. **Required on the server**, which has no ambient Google identity to fall back on. Leave unset only on Google Cloud. |
-| `PORT` | No | Defaults to 5000 locally; the container listens on 8080. |
-| `UPLOAD_FOLDER` | No | Defaults to `uploads`. |
-
-`.env.example` documents these and the optional tuning variables — model
-selection, page limits, timeouts and feature switches — with comments.
-
-## Security
-
-- **Never commit `.env`.** It carries the Gemini key, the Flask session secret
-  and the Firebase web keys. It is gitignored; keep it that way.
-- **Never commit a service-account JSON.** It grants full administrative access
-  to the Firebase project. `.gitignore` and `.dockerignore` both exclude it, and
-  a test asserts that nothing secret can reach the deployed image.
-- **Firestore security rules are part of the security model**, not decoration.
-  `firestore.rules` denies client access to history and profile documents
-  outright — only the server, holding a service account, writes them. Deploy
-  rules whenever they change and run `npm run test:rules` first.
-- **Production auth configuration depends on the deployed domain.** Authorised
-  domains and OAuth redirects cannot be finalised until Hosting gives you a
-  URL. See [DEPLOYMENT.md](DEPLOYMENT.md#after-the-first-deploy).
-- Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
-
-## Known requirements and limitations
-
-- **The fallback needs system binaries.** Tesseract, Poppler and a TeX engine
-  are not Python packages. The container installs them; a local machine may not
-  have them, and the app will tell you which is missing.
-- **Results are held in memory for one hour** and are per-process. On the
-  single-container deployment this is invisible; it would bite behind a load
-  balancer, where a preview request can land on a process that never saw the
-  conversion. See DEPLOYMENT.md, *The multi-instance caveat*.
-- **Rate limiting is per process**, which is close to global on one container
-  and weakens as soon as there is more than one.
-- **Email verification is not required** at sign-up.
-- **The local-OCR dependency stack is pinned old** (torch, transformers,
-  optimum, datasets). DEPLOYMENT.md, *Dependencies*, has the exposure analysis;
-  moving it is a migration, not a version bump.
+Deciding how to close it (commit the tree, Git LFS, or a release artifact
+restored at build time) is the outstanding piece of work on this repository.
 
 ## Documentation
 
-| File | What it covers |
-|---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | The conversion pipeline, model choice, measurements, privacy |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Standing the server up, automatic releases, running costs, limitations |
-| [FIREBASE_README.md](FIREBASE_README.md) | Firebase auth, Firestore, rules, indexes, troubleshooting |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup and expectations for pull requests |
-| [SECURITY.md](SECURITY.md) | How to report a vulnerability |
+- [DEPLOYMENT.md](DEPLOYMENT.md) — deploying, secrets, Firebase, and the
+  failure modes that have actually happened
+- [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit and why
+- [edge/README.md](edge/README.md) — the engineering record of the port, stage
+  by stage, including what each suite verifies
+- [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md)
 
-## License
+## Licence
 
-[MIT](LICENSE) © RhenGTL
+[MIT](LICENSE).

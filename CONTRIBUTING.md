@@ -18,11 +18,14 @@ Follow [Local development](README.md#local-development) in the README. In short:
 
 ```bash
 git clone https://github.com/rhengtl/contex.git
-cd contex
-python -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt   # .venv\Scripts\ on Windows
-cp .env.example .env                                  # then fill it in
+cd contex/edge
+npm ci
+npm run dev            # wrangler dev on :8788
 ```
+
+Local secrets go in `edge/.dev.vars`, which is gitignored. See
+[DEPLOYMENT.md](DEPLOYMENT.md#secrets--set-them-after-the-first-deploy) for the
+three the Worker reads.
 
 You do **not** need an API key to develop or to run the test suite. Without
 `GEMINI_API_KEY` the app exercises the local fallback, which is a legitimate
@@ -34,15 +37,15 @@ or history.
 ## Running the checks
 
 ```bash
-python tests/test_contex.py     # 179 offline checks; no network, no API key
-npm install && npm run test:rules   # Firestore rules, needs the emulator + Java
+cd edge && npm test        # the full suite; no network, no API key
+npm ci && npm run test:rules   # Firestore rules, from the root; needs Java
 ```
 
-The Python suite runs in CI on every pull request, and again on `master` as the
-first gate of a release. The rules suite runs only on `master`, immediately
-before the rules are published — so run it yourself if you touch
-`firestore.rules`, and say in the PR that you did, rather than finding out at
-release time.
+`npm test` needs the runtime asset trees, which are not in the repository —
+see the caveat in [README.md](README.md#a-caveat-you-should-know-before-cloning).
+The rules suite is separate because it needs the Java-backed emulator and only
+has something to say when `firestore.rules` changes; run it yourself if you
+touch that file and say in the PR that you did.
 
 Checks that need Tesseract, Poppler or a LaTeX engine announce themselves as
 `(skipped: ...)` when the binary is missing, so the suite is still green on a
@@ -75,9 +78,11 @@ Match the surrounding code. Concretely, for this repository that means:
 
 ## Tests
 
-New behaviour needs a check in `tests/test_contex.py`. The suite is a single
-file of plain assertions with descriptive names — no pytest, no fixtures. Read a
-few nearby tests and follow the shape.
+New behaviour needs a check in `edge/tests/`. The suites are plain assertions
+with descriptive names — no framework, no fixtures beyond the committed ones.
+Read a few nearby checks and follow the shape; pick the suite that matches the
+layer you changed (`security` for the Worker, `fallback` for the offline
+pipeline, `input` for the input controls, `integration` for the whole page).
 
 Tests must not require network access, an API key, or a Firebase project. The
 outbound services are stubbed; extend the stubs rather than reaching past them.
@@ -91,19 +96,19 @@ outbound services are stubbed; extend the stubs rather than reaching past them.
   same PR are hard to review and harder to revert.
 - In the PR description, say what changed, why, and how you verified it. If you
   changed conversion behaviour, say what you measured it against.
-- Make sure `python tests/test_contex.py` passes before you push.
+- Make sure `npm test` passes in `edge/` before you push.
 
 ## Things that will be declined
 
-- Adding a frontend framework. The UI is server-rendered Jinja and one
-  hand-written script, deliberately.
+- Adding a frontend framework. The pages are built from plain HTML sources and
+  a handful of hand-written ES modules, deliberately.
 - Adding a dependency for something the standard library or an existing
   dependency already does.
 - Reintroducing a separate converter as a user-visible choice. There is one
   conversion feature; which engine reads a page is an implementation detail.
-- Bumping the pinned local-OCR stack (torch, transformers, optimum, datasets)
-  as a routine version bump. That is a migration — see *Dependencies* in
-  [DEPLOYMENT.md](DEPLOYMENT.md).
+- Rebuilding the offline recogniser weights as a routine version bump. The
+  model in `edge/public/models/` is pinned and reproducible through
+  `edge/tools/build-mfr.py`; changing it is a migration, not an upgrade.
 
 ## Security
 

@@ -24,8 +24,9 @@ import './serve.mjs';
 
 const PORT = Number(process.env.PORT || 8810);
 const BASE = `http://127.0.0.1:${PORT}`;
-const REF = resolve(process.env.MERGE_REF ||
-  String.raw`C:\Users\rheni\AppData\Local\Temp\claude\d--Projects-contex\a4067a2f-7c7e-4cfe-90f8-dc4b9ae5afd5\scratchpad\merge-ref.json`);
+// Committed. The Python that produced it is no longer in this repository, so
+// this is a frozen golden file rather than something regenerated on demand.
+const REF = resolve(process.env.MERGE_REF || 'tests/reference/merge-ref.json');
 
 const ref = JSON.parse(await readFile(REF, 'utf8'));
 const results = [];

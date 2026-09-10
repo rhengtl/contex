@@ -2,7 +2,7 @@
   "name": "contex-edge",
   "private": true,
   "type": "module",
-  "description": "Cloudflare Pages + Workers rebuild of ConTeX. The Python app in the repository root remains the source of truth until every stage is validated against it.",
+  "description": "ConTeX: handwriting and printed pages to LaTeX, on Cloudflare Workers.",
   "scripts": {
     "dev": "wrangler dev --port 8788",
     "build:ui": "npm run build:pages && npm run build:css",
@@ -15,9 +15,6 @@
     "build:models": "node tools/build-models.mjs",
     "build:headers": "node tools/build-headers.mjs",
     "check:assets": "node tools/check-assets.mjs",
-    "reference": "python tools/python-reference.py ../.contex-python-ref.json tests/fixtures",
-    "reference:merge": "python tools/merge-reference.py ../.contex-merge-ref.json tests/fixtures",
-    "reference:fallback": "python tools/fallback-reference.py",
     "test": "npm run check:assets && npm run test:security && npm run test:stage2 && npm run test:merge && npm run test:stage3 && npm run test:stage3:browser && npm run test:input && npm run test:fallback && npm run test:integration",
     "test:security": "node tests/security.mjs",
     "test:stage2": "node tests/stage2.mjs",

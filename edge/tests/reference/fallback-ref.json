@@ -1,0 +1,112 @@
+[
+ {
+  "file": "hand_prose.png",
+  "feature": "hand_prose",
+  "text": 0.9206349206349207,
+  "structure": null,
+  "math": null,
+  "equations": [],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\begin{document}\n\nThe energy of a particle depends on Ub mass,\n\nThis idea changed iuow phigsics was understaod .\n\nWe explore the consequences below.\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose.png",
+  "feature": "print_prose",
+  "text": 1.0,
+  "structure": null,
+  "math": null,
+  "equations": [],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\begin{document}\n\nThe energy of a particle depends on its mass. This idea changed how physics was understood.\n\nWe explore the consequences below.\n\n\\end{document}\n"
+ },
+ {
+  "file": "hand_math.png",
+  "feature": "hand_math",
+  "text": null,
+  "structure": null,
+  "math": 0.0,
+  "equations": [
+   "E = m c ^ { 2 } \\, a ^ { 2 } + b ^ { 2 } = c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\[\nE = m c ^ { 2 } \\, a ^ { 2 } + b ^ { 2 } = c ^ { 2 }\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_math.png",
+  "feature": "print_math",
+  "text": null,
+  "structure": null,
+  "math": 1.0,
+  "equations": [
+   "E = m c ^ { 2 }",
+   "a ^ { 2 } + b ^ { 2 } = c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\[\nE = m c ^ { 2 }\n\\]\n\n\\[\na ^ { 2 } + b ^ { 2 } = c ^ { 2 }\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "hand_prose_hand_math.png",
+  "feature": "hand_prose_hand_math",
+  "text": 0.922077922077922,
+  "structure": null,
+  "math": 1.0,
+  "equations": [
+   "E = m c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nThe energy of a particle iy gwen by\n\n\\[\nE = m c ^ { 2 }\n\\]\n\nwhere c is the sypeeat of light in vacuum.\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose_print_math.png",
+  "feature": "print_prose_print_math",
+  "text": 1.0,
+  "structure": null,
+  "math": 1.0,
+  "equations": [
+   "E = m c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nThe energy of a particle is given by\n\n\\[\nE = m c ^ { 2 }\n\\]\n\nwhere c is the speed of light in vacuum.\n\n\\end{document}\n"
+ },
+ {
+  "file": "hand_prose_print_math.png",
+  "feature": "hand_prose_print_math",
+  "text": 0.9090909090909091,
+  "structure": null,
+  "math": 1.0,
+  "equations": [
+   "E = m c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nThe energy of a particle 4 guren by\n\n\\[\nE = m c ^ { 2 }\n\\]\n\nwhere c is the sypeeat of light in vacuum.\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose_hand_math.png",
+  "feature": "print_prose_hand_math",
+  "text": 1.0,
+  "structure": null,
+  "math": 1.0,
+  "equations": [
+   "E = m c ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nThe energy of a particle is given by\n\n\\[\nE = m c ^ { 2 }\n\\]\n\nwhere c is the speed of light in vacuum.\n\n\\end{document}\n"
+ },
+ {
+  "file": "all_mixed.png",
+  "feature": "all_mixed",
+  "text": 0.9705882352941176,
+  "structure": 1.0,
+  "math": 0.7297297297297297,
+  "equations": [
+   "v = u + a t",
+   "s = u + \\frac { 1 } { 2 } a + ^ { 2 }",
+   "E _ { \\bf k } = { \\frac { 1 } { 2 } } m V ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nWe begin with the printed definition of velocity.\n\n\\[\nv = u + a t\n\\]\n\nThen the diynacement follows by imtegration.\n\n\\[\ns = u + \\frac { 1 } { 2 } a + ^ { 2 }\n\\]\n\nFinally the kinetic energy is written as\n\n\\[\nE _ { \\bf k } = { \\frac { 1 } { 2 } } m V ^ { 2 }\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "related_math.png",
+  "feature": "related_math",
+  "text": 1.0,
+  "structure": 1.0,
+  "math": 0.5,
+  "equations": [
+   "\\mathrm { V } = u + a +",
+   "s = u + \\frac { 1 } { 2 } a + ^ { 2 }"
+  ],
+  "tex": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath}\n\\begin{document}\n\nThe kinematic equations describe uniform acceleration.\n\n\\[\n\\mathrm { V } = u + a +\n\\]\n\nThe second follows from integrating the first.\n\n\\[\ns = u + \\frac { 1 } { 2 } a + ^ { 2 }\n\\]\n\nBoth assume the acceleration a is constant.\n\n\\end{document}\n"
+ }
+]

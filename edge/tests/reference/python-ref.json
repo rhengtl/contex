@@ -1,0 +1,558 @@
+{
+  "comment-shows-input": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 12602,
+      "errors_head": ""
+    }
+  },
+  "empty": {
+    "issues": [
+      "The generated LaTeX is empty."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "! Emergency stop."
+    }
+  },
+  "mismatched-environment": {
+    "issues": [
+      "\\begin{itemize} (line 4) is closed by \\end{enumerate} (line 4)."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "document.tex:4: LaTeX Error: \\begin{itemize} on input line 4 ended by \\end{enum"
+    }
+  },
+  "missing-end-document": {
+    "issues": [
+      "Missing \\end{document}.",
+      "\\begin{document} on line 3 is never closed."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "! Emergency stop."
+    }
+  },
+  "missing-package": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 9547,
+      "errors_head": ""
+    }
+  },
+  "odd-dollar": {
+    "issues": [
+      "Odd number of '$' math delimiters - math opened near line 4 is never closed."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "document.tex:5: Missing $ inserted."
+    }
+  },
+  "unbalanced-braces": {
+    "issues": [
+      "Unclosed opening brace '{' from line 4."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "Runaway argument?"
+    }
+  },
+  "unbalanced-left-right": {
+    "issues": [
+      "Unbalanced \\left / \\right: 1 \\left vs 0 \\right."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "document.tex:4: Missing \\right. inserted."
+    }
+  },
+  "unclosed-environment": {
+    "issues": [
+      "\\begin{itemize} (line 4) is closed by \\end{document} (line 5).",
+      "\\begin{document} on line 3 is never closed."
+    ],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "document.tex:5: LaTeX Error: \\begin{itemize} on input line 4 ended by \\end{docu"
+    }
+  },
+  "undefined-command": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": false,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 0,
+      "errors_head": "document.tex:4: Undefined control sequence."
+    }
+  },
+  "unsafe-input-digit": {
+    "issues": [],
+    "unsafe": [
+      "\\input (reads another file)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\input (reads another file)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "unsafe-input": {
+    "issues": [],
+    "unsafe": [
+      "\\input (reads another file)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\input (reads another file)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "unsafe-openin": {
+    "issues": [],
+    "unsafe": [
+      "\\openin (reads files)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\openin (reads files)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "unsafe-openout-digit": {
+    "issues": [],
+    "unsafe": [
+      "\\openout (writes files)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\openout (writes files)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "unsafe-pdffiledump": {
+    "issues": [],
+    "unsafe": [
+      "\\pdffiledump (reads files)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\pdffiledump (reads files)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "unsafe-write18": {
+    "issues": [],
+    "unsafe": [
+      "\\write18 (runs shell commands)"
+    ],
+    "compile": {
+      "attempted": false,
+      "ok": false,
+      "missing_packages": [],
+      "reason": "This document asks LaTeX to reach outside itself (\\write18 (runs shell commands)), so it was not compiled. The .tex file is unchanged and can still be downloaded and compiled wherever you trust it.",
+      "pdf_bytes": 0,
+      "errors_head": ""
+    }
+  },
+  "valid-plain": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 31975,
+      "errors_head": ""
+    }
+  },
+  "verbatim-shows-input": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 21627,
+      "errors_head": ""
+    }
+  },
+  "mixed__all_mixed": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 45248,
+      "errors_head": ""
+    }
+  },
+  "mixed__hand_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 27662,
+      "errors_head": ""
+    }
+  },
+  "mixed__hand_prose": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 17258,
+      "errors_head": ""
+    }
+  },
+  "mixed__hand_prose_hand_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 34197,
+      "errors_head": ""
+    }
+  },
+  "mixed__hand_prose_print_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 34197,
+      "errors_head": ""
+    }
+  },
+  "mixed__print_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 27662,
+      "errors_head": ""
+    }
+  },
+  "mixed__print_prose": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 17250,
+      "errors_head": ""
+    }
+  },
+  "mixed__print_prose_hand_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 34192,
+      "errors_head": ""
+    }
+  },
+  "mixed__print_prose_print_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 34192,
+      "errors_head": ""
+    }
+  },
+  "mixed__related_math": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 35287,
+      "errors_head": ""
+    }
+  },
+  "pages__cases_align_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 59311,
+      "errors_head": ""
+    }
+  },
+  "pages__cases_align_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 59313,
+      "errors_head": ""
+    }
+  },
+  "pages__display_math_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 63603,
+      "errors_head": ""
+    }
+  },
+  "pages__display_math_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 63603,
+      "errors_head": ""
+    }
+  },
+  "pages__fractions_indices_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 71514,
+      "errors_head": ""
+    }
+  },
+  "pages__fractions_indices_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 71514,
+      "errors_head": ""
+    }
+  },
+  "pages__headings_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 28333,
+      "errors_head": ""
+    }
+  },
+  "pages__headings_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 28333,
+      "errors_head": ""
+    }
+  },
+  "pages__lists_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 29044,
+      "errors_head": ""
+    }
+  },
+  "pages__lists_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 37503,
+      "errors_head": ""
+    }
+  },
+  "pages__matrix_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 63506,
+      "errors_head": ""
+    }
+  },
+  "pages__matrix_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 63506,
+      "errors_head": ""
+    }
+  },
+  "pages__mixed_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 83015,
+      "errors_head": ""
+    }
+  },
+  "pages__mixed_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 83010,
+      "errors_head": ""
+    }
+  },
+  "pages__table_hi": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 28667,
+      "errors_head": ""
+    }
+  },
+  "pages__table_lo": {
+    "issues": [],
+    "unsafe": [],
+    "compile": {
+      "attempted": true,
+      "ok": true,
+      "missing_packages": [],
+      "reason": null,
+      "pdf_bytes": 28667,
+      "errors_head": ""
+    }
+  }
+}

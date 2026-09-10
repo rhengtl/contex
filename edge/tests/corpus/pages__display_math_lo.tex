@@ -1,0 +1,17 @@
+\documentclass{article}
+\usepackage{amsmath}
+
+\begin{document}
+
+\section*{1 \quad Transforms}
+
+The Fourier transform of $f$ is
+\begin{equation}
+    F(\omega) = \int_{-\infty}^{\infty} f(t)e^{-i\omega t} \, dt.
+\end{equation}
+Its inverse recovers the original signal:
+\begin{equation}
+    f(t) = \frac{1}{2\pi} \int_{-\infty}^{\infty} F(\omega)e^{i\omega t} \, d\omega.
+\end{equation}
+
+\end{document}

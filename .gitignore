@@ -1,11 +1,11 @@
 # Environment variables.
 #
-# .env carries the Gemini key, the Flask session secret and the Firebase web
-# keys. The wildcard covers .env.local, .env.production and every other variant
-# someone might create later; the template is the one exception.
+# .env carried the Gemini key for the Python application that used to live
+# here. The edge Worker takes its secrets from `wrangler secret put` and, for
+# local development, from edge/.dev.vars -- both ignored below. The wildcard
+# covers every other variant someone might create later.
 .env
 .env.*
-!.env.example
 
 # Credentials and keys.
 #
@@ -22,6 +22,17 @@
 # tree that the Firestore rules suite was verified against.
 !package.json
 !package-lock.json
+# Frozen test data. The parity references were produced by the Python
+# implementation that is no longer in this repository, and the bench manifests
+# describe fixture images that are no longer generated -- so both are source
+# now, not output. Neither holds a secret.
+!edge/tests/reference/*.json
+!bench/manifest_*.json
+# The formula recogniser's vocabulary. It sits beside the two .onnx files in
+# edge/build/mfr-int8/ and is as much a part of that model as they are --
+# without it `npm run build:models` cannot rebuild public/models/mfr. The
+# deny-by-default rule above was hiding it.
+!edge/build/mfr-int8/tokenizer.json
 
 # Certificates and private keys in any other form.
 *.pem
@@ -30,42 +41,14 @@
 *.pfx
 *.crt
 
-# Python
+# Python. Only edge/tools/build-mfr.py remains, and it is run by hand to
+# rebuild the formula recogniser's weights.
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
+.venv/
 venv/
 env/
 ENV/
-.venv/
-env.bak/
-venv.bak/
-
-# Test and lint caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
 
 # IDEs
 .vscode/
@@ -78,16 +61,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Flask
-instance/
-.webassets-cache
-
-# Uploads and generated conversion artifacts. Runtime output, never source.
-uploads/*
-!uploads/.gitkeep
-
-# Node - only used to build static/css/app.css, never at runtime.
-# See tailwind.config.js. The generated stylesheet IS committed.
+# Node
 node_modules/
 
 # Cloudflare/Wrangler local files. Keep edge source visible to Git.
@@ -95,16 +69,9 @@ edge/.dev.vars
 edge/.wrangler/
 edge/node_modules/
 
+# Test output: screenshots, probe scripts, built PDFs.
+edge/tests/out/
+
 # Firebase CLI local state: emulator data, deploy caches and debug logs.
 .firebase/
 *.log
-
-# Firebase Hosting's public root. It deliberately holds almost nothing - the
-# container serves every dynamic route and every static asset - so there is no
-# build output here and no chance of publishing the source tree.
-public/*
-!public/robots.txt
-
-# The application environment on the server. It is created there, never
-# here, but a stray copy in the project root must not be committable.
-app.env

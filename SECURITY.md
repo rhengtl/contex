@@ -36,10 +36,12 @@ The more of this you can give, the faster it can be confirmed:
 
 In scope:
 
-- The Flask application in `contex/` — authentication, session handling, the
-  upload and conversion routes, the preview and download routes.
+- The Worker in `edge/worker/` — authentication, session handling, the
+  conversion, history and account routes.
+- The client modules in `edge/public/` that decide what is sent and shown.
 - The Firestore security rules in `firestore.rules`.
-- The container definition in `Dockerfile` and what it exposes.
+- The headers in `edge/public/_headers` and `edge/worker/security.js`, and the
+  deployment configuration in `edge/wrangler.toml`.
 - Anything that lets one user reach another user's documents or history.
 
 Known and already documented, so not a new finding — see the *Known
@@ -69,6 +71,7 @@ release branches.
 If you believe a credential has been exposed — in this repository, in a
 container image, or in a deployed response — say so in the report and treat it
 as urgent. The keys that matter here are the Firebase Admin SDK service
-account, the Flask session secret and the Gemini API key. None of them is
-committed, and both `.gitignore` and `.dockerignore` are written to keep it
-that way.
+account, the session HMAC key and the Gemini API key. None of them is
+committed: they are held as Worker secrets, and `.gitignore` denies every
+`.json` by default so that the service-account key cannot be added by
+accident.

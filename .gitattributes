@@ -1,16 +1,12 @@
 # Line endings.
 #
-# The application is developed on Windows and runs on Linux in a container, so
+# The application is developed on Windows and served from Cloudflare's edge, so
 # what is stored in the repository has to be LF regardless of who committed it.
 # Every text blob in this repository is already LF; this keeps it that way when
 # someone clones on Windows with core.autocrlf set.
 * text=auto eol=lf
 
-# Files where CRLF would actually break something rather than merely annoy:
-# the container build reads these directly.
-Dockerfile      text eol=lf
 *.sh            text eol=lf
-requirements.txt text eol=lf
 
 # Binary assets. Marking them explicitly stops Git attempting line-ending
 # conversion or a textual diff on them.
@@ -23,11 +19,15 @@ requirements.txt text eol=lf
 *.woff2         binary
 
 # Generated, and reviewed by regenerating rather than by reading the diff.
-# See tools/build_css.py.
-static/css/app.css      linguist-generated=true
+# app.css comes from edge/design/app.src.css via `npm run build:css`; the page
+# files come from edge/pages/ via `npm run build:pages`.
+edge/public/app.css     linguist-generated=true
 package-lock.json       linguist-generated=true
+edge/package-lock.json  linguist-generated=true
 
 # GitHub's language statistics should describe the application, not the
-# benchmark corpus or the committed Tailwind output.
-bench/**        linguist-vendored=true
-static/css/app.css      linguist-detectable=false
+# benchmark corpus, the frozen parity data, or the committed build output.
+bench/**                linguist-vendored=true
+edge/tests/corpus/**    linguist-vendored=true
+edge/tests/reference/** linguist-vendored=true
+edge/public/app.css     linguist-detectable=false

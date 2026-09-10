@@ -1,26 +1,4 @@
 {
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "firebase.json",
-      "firebase-debug.log",
-      "**/.*",
-      ".env",
-      ".env.*",
-      "*.json",
-      "**/node_modules/**",
-      "**/__pycache__/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "run": {
-          "serviceId": "contex",
-          "region": "asia-southeast1"
-        }
-      }
-    ]
-  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

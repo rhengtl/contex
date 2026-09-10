@@ -14,10 +14,13 @@ import './serve.mjs';
 const PORT = Number(process.env.PORT || 8810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const FIXTURES = resolve('tests/fixtures');
-const CORPUS = resolve(process.env.CORPUS ||
-  String.raw`C:\Users\rheni\AppData\Local\Temp\claude\d--Projects-contex\a4067a2f-7c7e-4cfe-90f8-dc4b9ae5afd5\scratchpad\s3\out`);
-const REF = resolve(process.env.REF ||
-  String.raw`C:\Users\rheni\AppData\Local\Temp\claude\d--Projects-contex\a4067a2f-7c7e-4cfe-90f8-dc4b9ae5afd5\scratchpad\python-ref.json`);
+// Both committed, and both used to default into one developer's temp
+// directory -- which meant this suite could only ever run on the machine that
+// still happened to have it. The Python that produced the reference is no
+// longer in this repository, so it is a frozen golden file now rather than
+// something regenerated on demand.
+const CORPUS = resolve(process.env.CORPUS || 'tests/corpus');
+const REF = resolve(process.env.REF || 'tests/reference/python-ref.json');
 
 // MiKTeX auto-installs missing packages, so the Python reference compiled tikz
 // on this machine. The container it actually ships in would not. Compile-parity

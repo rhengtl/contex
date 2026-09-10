@@ -1,140 +1,31 @@
 # Firebase in ConTeX
 
-Firebase does three things here and nothing else:
+Two Firebase services are used, and no others:
 
-- **Authentication** — accounts, passwords, Google sign-in.
-- **Firestore** — the persistent history of signed-in users, and their profile.
-Firebase *Hosting* is deliberately not one of them: it serves static files and
-cannot run a Flask server that shells out to a TeX engine. The app is a
-container on its own machine — see [DEPLOYMENT.md](DEPLOYMENT.md).
+- **Authentication** — accounts, sign-in, password reset, and Google sign-in.
+- **Firestore** — the saved history of signed-in users, and their profile.
 
-Everything the app *does* — converting a document, generating the `.tex`,
-compiling a preview — works with no Firebase at all. Signing in only adds
-history that survives closing the tab.
+Hosting, Realtime Database, Storage and Cloud Run are not used. `firebase.json`
+therefore configures only Firestore, the Realtime Database rules (locked shut,
+because the database exists on the project and must stay unreachable), and the
+local emulator.
 
----
-
-## Local setup
-
-### 1. Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. A service account key
-
-1. [Firebase Console](https://console.firebase.google.com/) → your project
-2. Project Settings → Service Accounts → **Generate new private key**
-3. Save the JSON somewhere outside version control (`*.json` is gitignored)
-
-**This key is the Firebase project's master key.** It bypasses every security
-rule. It is gitignored, excluded from the image by `.dockerignore`, and on the
-server it is mounted read-only and owned by the container's unprivileged uid —
-see DEPLOYMENT.md, step 5.
-
-The one place you do *not* need it is Google Cloud, where the platform hands the
-process an identity of its own; leave `FIREBASE_SERVICE_ACCOUNT_PATH` unset
-there. Anywhere else — a laptop, the VM — there is nothing to inherit and the
-key file is how the Admin SDK authenticates.
-
-### 3. `.env`
-
-Copy `.env.example` and fill in:
-
-```env
-FIREBASE_SERVICE_ACCOUNT_PATH=your-project-firebase-adminsdk-xxxxx.json
-
-# Public by design - these identify the project, they are not credentials.
-# The Web API key is also what the server uses to verify passwords and to ask
-# Firebase to send reset emails, so it is required, not optional.
-FIREBASE_API_KEY=...
-FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
-FIREBASE_PROJECT_ID=your-project-id
-```
-
-`FIREBASE_DATABASE_URL` is only for the Realtime Database, which this app does
-not use. Leave it out.
-
-### 4. In the Firebase Console
-
-- **Authentication** → enable **Email/Password**.
-- **Authentication** → enable **Google** if you want the federated button to
-  work (it is already implemented on both `/login` and `/signup`).
-- **Authentication → Settings** → turn on **email enumeration protection**.
-  The sign-in path depends on it to keep "no such user" and "wrong password"
-  indistinguishable.
-- **Firestore** → create the database in **production mode**, then deploy the
-  rules in this repository rather than relying on the console defaults.
+Setup and troubleshooting for a deployment live in
+[DEPLOYMENT.md](DEPLOYMENT.md#firebase). This document is the data model.
 
 ---
 
-## How authentication actually works
+## How authentication works
 
-This is worth stating precisely, because the obvious implementation is wrong.
+Email and password never reach the browser's Firebase SDK. The forms post to
+the Worker, which verifies the credentials against Identity Toolkit with the
+project's Web API key and then issues its own signed session cookie. Google
+sign-in is the one exception: it uses the browser SDK, completes at the
+project's `authDomain`, and hands the resulting ID token to the Worker, which
+verifies it and issues the same cookie.
 
-**The Firebase Admin SDK cannot check a password.** That is deliberate on
-Google's part. An implementation that looks a user up by email and treats
-finding them as success is not authentication at all — it lets anyone sign in
-as anyone by typing their address.
-
-`verify_user()` therefore posts to the Identity Toolkit
-`accounts:signInWithPassword` endpoint over HTTPS. Firebase compares the hash;
-the password is never stored, logged or compared locally. If `FIREBASE_API_KEY`
-is missing the function **refuses to sign anyone in** rather than falling back
-to an existence check.
-
-The same reasoning governs `send_password_reset()`: the Admin SDK can only
-*generate* a reset link, and this project has no way to deliver one. So it asks
-Firebase to send its own email (`accounts:sendOobCode`), and the link never
-touches the server or its logs.
-
-Both are covered by tests, and both were verified end to end against a live
-project.
-
----
-
-## Sessions
-
-The signed-in user's uid lives in the Flask session cookie, which is signed
-with `FLASK_SECRET_KEY`. Every ownership check reads the uid from there and
-never from a request field, so a client cannot ask for another user's history
-by supplying a different uid.
-
-That places the whole weight of authentication on `FLASK_SECRET_KEY`. It has no
-default: in production a missing key stops the process from starting.
-
-Signing in clears whatever the session held before, so a guest's generated
-documents do not follow the next person into their account on a shared
-computer.
-
----
-
-## Routes
-
-**Authentication**
-- `GET/POST /login` — email + password, or a Google ID token
-- `GET/POST /signup`
-- `GET/POST /forgot-password`
-- `GET/POST /logout`
-
-**Conversion**
-- `GET /` — the workspace
-- `GET /history` — past conversions
-- `POST /accept-terms`
-- `POST /convert` — an image, PDF or .docx in, a `.tex` out
-- `GET /api/ai-status`
-- `GET /legal/<document>`
-- `GET /healthz`
-
-**Output**
-- `GET /download-converted-tex`
-- `GET /preview/pages`, `/preview/page.png`, `/preview/document`, `/preview.pdf`
-
-**History** (signed in)
-- `GET /history/<doc_id>/download`, `/tex`, `/preview.pdf`
-
----
+That is why only Google sign-in cares about the Authorized domains list, and
+why everything else keeps working when a new hostname has not been added yet.
 
 ## Data
 
@@ -147,14 +38,13 @@ ocr_history/{docId}
   uid, fileName, ocrType, result, truncated, timestamp
 ```
 
-`result` is capped at 60,000 characters; a longer document is stored truncated
-and flagged, and the app refuses to compile a preview from it rather than
-showing a broken one.
+`result` is capped at 60,000 characters (`HISTORY_RESULT_LIMIT` in
+`edge/worker/history.js`); a longer document is stored truncated and flagged,
+and the app refuses to compile a preview from it rather than showing a broken
+one.
 
 Guests are never written to Firestore. Their history lives in `sessionStorage`
 and goes when the tab does.
-
----
 
 ## Security rules
 
@@ -163,21 +53,22 @@ profile and their own history rows and nothing else; ownership cannot be
 forged, reassigned, or backdated, and no client can write a field the app does
 not use.
 
-The server bypasses these rules entirely — it authenticates with a service
+The Worker bypasses these rules entirely — it authenticates with a service
 account — so today they are defence in depth against a leaked Web API key
-rather than the thing that protects the data. They are still written strictly,
-because the day a client write is added, the safe shape should already exist.
+rather than the thing that protects the data. Every read the Worker makes is
+scoped by uid in `edge/worker/history.js`; that is the real control. The rules
+are still written strictly, because the day a client write is added, the safe
+shape should already exist.
 
-Run them against the real rules engine:
+Run them against the real rules engine, from the repository root:
 
 ```bash
-npm install
+npm ci
 npm run test:rules
 ```
 
-28 checks, in the Firebase emulator. No real project is touched.
-
----
+The Firebase emulator is a Java program, so a JDK is needed. No real project is
+touched.
 
 ## Indexes
 
@@ -187,33 +78,13 @@ The history list needs one composite index:
 ocr_history:  uid ASC, timestamp DESC
 ```
 
-It is declared in `firestore.indexes.json`. Deploy with:
+It is declared in `firestore.indexes.json`. Deploy it with:
 
 ```bash
 firebase deploy --only firestore:indexes
 ```
 
-Without it, `data/history.py recent()` notices, says so on the console, and falls
-back to fetching that user's rows and sorting them in Python — still scoped by
-uid, so still private, just slower.
-
----
-
-## Troubleshooting
-
-**"Firebase Admin SDK initialized (application default credentials)"**
-`FIREBASE_SERVICE_ACCOUNT_PATH` is unset. Correct on Google Cloud, wrong
-anywhere else — on a laptop or the VM it means Firestore is about to be `None`
-and history will silently stop working.
-
-**"Authentication is not configured"**
-`FIREBASE_API_KEY` is missing. Password verification and reset emails both
-need it.
-
-**`CONFIGURATION_NOT_FOUND`**
-Email/Password sign-in is not enabled in the console.
-
-**`auth/unauthorized-domain` on the Google button**
-The domain is not in Authentication → Settings → Authorized domains.
-`localhost` and the two default Hosting domains are there by default; a custom
-domain is not.
+Without it the Worker notices, says so on the console, and falls back to
+fetching that user's rows and sorting them itself — still scoped by uid, so
+still private, just slower. See the comment above `recent()` in
+`edge/worker/history.js`.

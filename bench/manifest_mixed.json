@@ -1,0 +1,153 @@
+[
+ {
+  "file": "hand_prose.png",
+  "cond": "mixed",
+  "feature": "hand_prose",
+  "description": "Handwritten prose only",
+  "tags": [
+   "prose:hand"
+  ],
+  "gt_prose": "The energy of a particle depends on its mass. This idea changed how physics was understood. We explore the consequences below.",
+  "gt_math": [],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle depends on its mass. This idea changed how physics was understood. We explore the consequences below.\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose.png",
+  "cond": "mixed",
+  "feature": "print_prose",
+  "description": "Typewritten prose only",
+  "tags": [
+   "prose:print"
+  ],
+  "gt_prose": "The energy of a particle depends on its mass. This idea changed how physics was understood. We explore the consequences below.",
+  "gt_math": [],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle depends on its mass. This idea changed how physics was understood. We explore the consequences below.\n\\end{document}\n"
+ },
+ {
+  "file": "hand_math.png",
+  "cond": "mixed",
+  "feature": "hand_math",
+  "description": "Handwritten equations only",
+  "tags": [
+   "math:hand"
+  ],
+  "gt_prose": "",
+  "gt_math": [
+   "E = mc^{2}",
+   "a^{2} + b^{2} = c^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\[\nE = mc^{2}\n\\]\n\n\\[\na^{2} + b^{2} = c^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_math.png",
+  "cond": "mixed",
+  "feature": "print_math",
+  "description": "Typewritten equations only",
+  "tags": [
+   "math:print"
+  ],
+  "gt_prose": "",
+  "gt_math": [
+   "E = mc^{2}",
+   "a^{2} + b^{2} = c^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\[\nE = mc^{2}\n\\]\n\n\\[\na^{2} + b^{2} = c^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "hand_prose_hand_math.png",
+  "cond": "mixed",
+  "feature": "hand_prose_hand_math",
+  "description": "Handwritten prose with handwritten equations",
+  "tags": [
+   "prose:hand",
+   "math:hand"
+  ],
+  "gt_prose": "The energy of a particle is given by where c is the speed of light in vacuum.",
+  "gt_math": [
+   "E = mc^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle is given by where c is the speed of light in vacuum.\n\\[\nE = mc^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose_print_math.png",
+  "cond": "mixed",
+  "feature": "print_prose_print_math",
+  "description": "Typewritten prose with typewritten equations",
+  "tags": [
+   "prose:print",
+   "math:print"
+  ],
+  "gt_prose": "The energy of a particle is given by where c is the speed of light in vacuum.",
+  "gt_math": [
+   "E = mc^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle is given by where c is the speed of light in vacuum.\n\\[\nE = mc^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "hand_prose_print_math.png",
+  "cond": "mixed",
+  "feature": "hand_prose_print_math",
+  "description": "Handwritten prose with a typewritten equation",
+  "tags": [
+   "prose:hand",
+   "math:print"
+  ],
+  "gt_prose": "The energy of a particle is given by where c is the speed of light in vacuum.",
+  "gt_math": [
+   "E = mc^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle is given by where c is the speed of light in vacuum.\n\\[\nE = mc^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "print_prose_hand_math.png",
+  "cond": "mixed",
+  "feature": "print_prose_hand_math",
+  "description": "Typewritten prose with a handwritten equation",
+  "tags": [
+   "prose:print",
+   "math:hand"
+  ],
+  "gt_prose": "The energy of a particle is given by where c is the speed of light in vacuum.",
+  "gt_math": [
+   "E = mc^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe energy of a particle is given by where c is the speed of light in vacuum.\n\\[\nE = mc^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "all_mixed.png",
+  "cond": "mixed",
+  "feature": "all_mixed",
+  "description": "Handwritten and typewritten prose and equations together",
+  "tags": [
+   "prose:print",
+   "prose:hand",
+   "math:print",
+   "math:hand"
+  ],
+  "gt_prose": "We begin with the printed definition of velocity. Then the displacement follows by integration. Finally the kinetic energy is written as",
+  "gt_math": [
+   "v = u + at",
+   "s = ut + \\frac{1}{2}at^{2}",
+   "E_{k} = \\frac{1}{2}mv^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWe begin with the printed definition of velocity. Then the displacement follows by integration. Finally the kinetic energy is written as\n\\[\nv = u + at\n\\]\n\n\\[\ns = ut + \\frac{1}{2}at^{2}\n\\]\n\n\\[\nE_{k} = \\frac{1}{2}mv^{2}\n\\]\n\n\\end{document}\n"
+ },
+ {
+  "file": "related_math.png",
+  "cond": "mixed",
+  "feature": "related_math",
+  "description": "Related equations with surrounding prose",
+  "tags": [
+   "prose:print",
+   "prose:hand",
+   "math:hand",
+   "related"
+  ],
+  "gt_prose": "The kinematic equations describe uniform acceleration. The second follows from integrating the first. Both assume the acceleration a is constant.",
+  "gt_math": [
+   "v = u + at",
+   "s = ut + \\frac{1}{2}at^{2}"
+  ],
+  "gt_tex": "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nThe kinematic equations describe uniform acceleration. The second follows from integrating the first. Both assume the acceleration a is constant.\n\\[\nv = u + at\n\\]\n\n\\[\ns = ut + \\frac{1}{2}at^{2}\n\\]\n\n\\end{document}\n"
+ }
+]
