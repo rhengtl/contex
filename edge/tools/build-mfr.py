@@ -15,8 +15,8 @@ weights are: their graphs are full of `MatMulInteger`, which is what dynamic
 quantisation emits and nothing else does. The output layout is the one
 tools/build-models.mjs reads.
 
-    python tools/build-mfr.py [<output-dir>]        # default build/mfr-int8
-    npm run build:models -- build/mfr-int8
+    python tools/build-mfr.py [<output-dir>]    # default model-src/mfr-int8
+    npm run build:models -- model-src/mfr-int8
 
 VERIFYING IT. If `public/models/mfr/` already holds a build, this compares the
 new files against it and says whether they are byte-identical. They should be:
@@ -33,7 +33,7 @@ import shutil
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_OUT = os.path.join(REPO, 'build', 'mfr-int8')
+DEFAULT_OUT = os.path.join(REPO, 'model-src', 'mfr-int8')
 SHIPPED = os.path.join(REPO, 'public', 'models', 'mfr')
 
 MODEL_ID = 'breezedeus/pix2text-mfr'

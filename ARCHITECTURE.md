@@ -101,7 +101,7 @@ you download is what the model wrote.
 are build outputs produced by the scripts in `edge/tools/`, and none of them is
 committed. Most can be rebuilt from what is here — the ONNX Runtime and
 Tesseract from npm, the formula recogniser from the committed
-`edge/build/mfr-int8/`. `public/texmf/` cannot: it has to be harvested from a
+`edge/model-src/mfr-int8/`. `public/texmf/` cannot: it has to be harvested from a
 TeX Live installation, and `build:texmf` only post-processes a tree that
 already exists. See the caveat in
 [README.md](README.md#a-caveat-you-should-know-before-cloning).

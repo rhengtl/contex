@@ -13,10 +13,10 @@
  *
  * THIS IS THE FLASK APPLICATION'S CONFIG, carried across with only the
  * `content` globs changed. The palette, the type stack, the radii, the two
- * shadows and the four keyframes below are byte-for-byte what ../tailwind
- * .config.js holds, because the migration has to reproduce that interface
- * exactly rather than approximate it. If a value here ever needs to change,
- * it needs to change in both.
+ * shadows and the four keyframes below reproduce the Flask application's
+ * ../tailwind.config.js byte for byte, because the migration had to reproduce
+ * that interface rather than approximate it. That file is not in this
+ * repository, so this is the only copy and the sole source of these tokens.
  *
  * That runs tailwind and then strips comments from the output - see the
  * docstring in build_css.py for why both halves are there. Deliberately not

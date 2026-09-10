@@ -31,7 +31,7 @@ at the last step with `code: 10063`.
 ```bash
 cd edge
 npm ci
-npm run build:models -- build/mfr-int8   # ORT, Tesseract, the formula recogniser
+npm run build:models -- model-src/mfr-int8   # ORT, Tesseract, the recogniser
 npm run build:ui                          # pages and the stylesheet
 ```
 

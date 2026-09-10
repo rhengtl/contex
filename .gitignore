@@ -1,11 +1,29 @@
+# One ignore file, for the whole repository.
+#
+# Nothing in the toolchain reads .gitignore, so splitting it per directory buys
+# no isolation. Wrangler uploads whatever is in edge/public/ regardless of what
+# Git thinks -- the live site serves texmf/swiftlatexpdftex.fmt, which Git does
+# not track. There is no submodule and no nested repository here either. What a
+# split does cost is the same rule written in two places, free to disagree.
+#
+# It matters most for the *.json section below. That is a deny-by-default
+# security rule with named exceptions, and a second ignore file that cannot see
+# it is exactly how one of those exceptions gets silently killed.
+
+# ------------------------------------------------------------------ secrets
+
 # Environment variables.
 #
 # .env carried the Gemini key for the Python application that used to live
 # here. The edge Worker takes its secrets from `wrangler secret put` and, for
-# local development, from edge/.dev.vars -- both ignored below. The wildcard
-# covers every other variant someone might create later.
+# local development, from edge/.dev.vars. The wildcards cover the variants
+# someone might create later -- wrangler also reads .dev.vars.<environment>,
+# and a .dev.vars.production that was not ignored would be a committed
+# credential.
 .env
 .env.*
+*.env
+edge/.dev.vars*
 
 # Credentials and keys.
 #
@@ -18,8 +36,8 @@
 !firebase.json
 !firestore.indexes.json
 !database.rules.json
-# Node manifests. The lockfile is committed so `npm ci` reproduces the exact
-# tree that the Firestore rules suite was verified against.
+# Node manifests. The lockfiles are committed so `npm ci` reproduces the exact
+# trees the suites were verified against.
 !package.json
 !package-lock.json
 # Frozen test data. The parity references were produced by the Python
@@ -29,10 +47,10 @@
 !edge/tests/reference/*.json
 !bench/manifest_*.json
 # The formula recogniser's vocabulary. It sits beside the two .onnx files in
-# edge/build/mfr-int8/ and is as much a part of that model as they are --
+# edge/model-src/mfr-int8/ and is as much a part of that model as they are --
 # without it `npm run build:models` cannot rebuild public/models/mfr. The
 # deny-by-default rule above was hiding it.
-!edge/build/mfr-int8/tokenizer.json
+!edge/model-src/mfr-int8/tokenizer.json
 
 # Certificates and private keys in any other form.
 *.pem
@@ -40,6 +58,48 @@
 *.p12
 *.pfx
 *.crt
+*.cer
+*.der
+
+# ------------------------------------------------------------- build output
+
+# The runtime asset trees Cloudflare serves, ~137 MB of them. build-models.mjs
+# takes ORT and Tesseract from npm and copies the committed
+# edge/model-src/mfr-int8/ weights; public/texmf/ has to be harvested from a
+# TeX Live installation. `npm run check:assets` is what proves they are present
+# before a deploy -- see the caveat in README.md.
+#
+# The recogniser weights are the INPUT to that step, which is why they live in
+# edge/model-src/ and not in a directory called build/: they are tracked, and a
+# blanket `build/` rule here would silently untrack 31 MB of source.
+edge/public/texmf/
+edge/public/models/
+edge/public/vendor/ort/
+edge/public/vendor/tesseract/
+
+# Test output: screenshots, probe scripts, built PDFs.
+edge/tests/out/
+
+# Benchmark leftovers. img_mixed/, img_pages/, img_math/ and the manifests
+# beside them are frozen fixtures the edge suite reads, and they are committed
+# for that reason -- see bench/README.md. These four are what the generators
+# that no longer exist used to produce, and nothing reads them.
+bench/img/
+bench/img_hard/
+bench/img_deskewed/
+bench/results_*.json
+
+# -------------------------------------------------------------------- local
+
+# Node. Matches at any depth, so edge/node_modules/ is covered too.
+node_modules/
+
+# Cloudflare/Wrangler local state.
+edge/.wrangler/
+
+# Firebase CLI local state: emulator data, deploy caches and debug logs.
+.firebase/
+*.log
 
 # Python. Only edge/tools/build-mfr.py remains, and it is run by hand to
 # rebuild the formula recogniser's weights.
@@ -60,18 +120,3 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
-
-# Node
-node_modules/
-
-# Cloudflare/Wrangler local files. Keep edge source visible to Git.
-edge/.dev.vars
-edge/.wrangler/
-edge/node_modules/
-
-# Test output: screenshots, probe scripts, built PDFs.
-edge/tests/out/
-
-# Firebase CLI local state: emulator data, deploy caches and debug logs.
-.firebase/
-*.log

@@ -65,7 +65,7 @@ one tree cannot.
 | Tree | Size | Rebuilt by | From the repo? |
 |---|---|---|---|
 | `edge/public/vendor/ort/`, `vendor/tesseract/` | ~17 MB | `npm ci && npm run build:models` | **yes** — npm packages |
-| `edge/public/models/mfr/` | ~32 MB | `npm run build:models -- build/mfr-int8` | **yes** — `edge/build/mfr-int8/` is committed |
+| `edge/public/models/mfr/` | ~32 MB | `npm run build:models -- model-src/mfr-int8` | **yes** — `edge/model-src/mfr-int8/` is committed |
 | `edge/public/models/tessdata/` | ~4 MB | same step | no — needs a local Tesseract install |
 | `edge/public/texmf/` | 84 MB, 2,384 files | `npm run build:texmf` | **no** |
 
@@ -88,6 +88,8 @@ restored at build time) is the outstanding piece of work on this repository.
 - [DEPLOYMENT.md](DEPLOYMENT.md) — deploying, secrets, Firebase, and the
   failure modes that have actually happened
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit and why
+- [FIREBASE_README.md](FIREBASE_README.md) — which Firebase services are used,
+  the data model, and what the security rules do
 - [edge/README.md](edge/README.md) — the engineering record of the port, stage
   by stage, including what each suite verifies
 - [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md)

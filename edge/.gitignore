@@ -1,9 +1,0 @@
-node_modules/
-.dev.vars
-.wrangler/
-tests/out/
-tests/out/
-public/texmf/
-public/models/
-public/vendor/ort/
-public/vendor/tesseract/

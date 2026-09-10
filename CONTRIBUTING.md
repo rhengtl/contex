@@ -14,7 +14,7 @@ were tried and were measurably worse.
 
 ## Development setup
 
-Follow [Local development](README.md#local-development) in the README. In short:
+Follow [Running it](README.md#running-it) in the README. In short:
 
 ```bash
 git clone https://github.com/rhengtl/contex.git
@@ -48,11 +48,13 @@ has something to say when `firestore.rules` changes; run it yourself if you
 touch that file and say in the PR that you did.
 
 Checks that need Tesseract, Poppler or a LaTeX engine announce themselves as
-`(skipped: ...)` when the binary is missing, so the suite is still green on a
-machine without them — 23 of the 179 go quiet that way. CI installs all three,
-so a pull request is always measured against the full run. If you are changing
-the conversion pipeline or the LaTeX sandbox, install them locally too; a green
-local run with 23 skips is not the same evidence as a green CI run.
+`(skipped: ...)` when the binary is missing, so the suite stays green on a
+machine without them. Install them if you are changing the conversion pipeline
+or the LaTeX sandbox, and say in the pull request what you had: a run with
+skips in it is weaker evidence than a full one, and CI cannot make up the
+difference. `.github/workflows/edge.yml` installs Microsoft Edge for the
+browser suites and nothing else, and it declines to run at all until the
+runtime asset trees are in the repository.
 
 ## What the code should look like
 
@@ -65,12 +67,14 @@ Match the surrounding code. Concretely, for this repository that means:
 - **No changelog comments.** Nothing that says "previously", "used to",
   "removed X here", or "TODO: clean up". The repository is not a historical
   record; git is.
-- **Environment variables go through `contex/config.py`.** Use `config.text`,
-  `config.flag`, `config.enabled` or `config.integer` rather than reaching for
-  `os.getenv`, unless there is a specific reason not to.
-- **Keep the layering.** `web/` handles requests, `pipeline/` converts,
-  `services/` talks outward, `data/` persists. A route should not call an LLM
-  provider directly.
+- **Configuration reaches the code through the Worker's `env`.** Read it from
+  the binding a handler is given, not from module scope. `wrangler.toml`
+  declares the public `[vars]`; the three secrets are set with `wrangler secret
+  put` and are never committed. Nothing under `edge/public/` ever sees one.
+- **Keep the layering.** `edge/worker/` handles requests and owns everything
+  secret, the conversion prompt included; `edge/public/` is the browser half,
+  with `latex/` for compiling and `recognise/` for the offline path. A client
+  module reaches an outside service through the Worker, never directly.
 - **One definition per thing.** If two modules need the same helper, it lives in
   one of them and the other imports it.
 - **Failure is never silent.** If the AI path is unavailable, the user is told

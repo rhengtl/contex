@@ -3,7 +3,7 @@
 # WHY THE GUARD JOB EXISTS, AND WHY IT IS NOT PARANOIA. What Cloudflare serves
 # is edge/public, and 137 MB of that tree is gitignored build output. Most of it
 # a runner could rebuild -- vendor/ort and vendor/tesseract come from npm, and
-# models/mfr from the committed edge/build/mfr-int8 -- but public/texmf cannot
+# models/mfr from the committed edge/model-src/mfr-int8 -- but public/texmf cannot
 # be rebuilt from anything in this repository. build:texmf works IN PLACE,
 # adding the extensionless .tfm copies kpathsea needs to a directory that must
 # already have been harvested from a TeX Live installation, and the 10.36 MB

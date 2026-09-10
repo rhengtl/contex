@@ -16,11 +16,14 @@
  * Python pipeline's own numbers on the same images, rather than asserting that
  * functions were called.
  *
- * THE REFERENCE. ../.contex-fallback-ref.json is what contex/pipeline/run.py
- * produces for the same corpus on this machine -- same Tesseract, same
- * eng.traineddata (tools/build-models.mjs copies the installed one), same
- * pix2text-mfr weights. Regenerate it with the script in the README. Where the
- * two disagree by more than tokenizer spacing, one of them is wrong.
+ * THE REFERENCE. tests/reference/fallback-ref.json is what contex/pipeline/
+ * run.py produced for the same corpus -- same Tesseract, same eng.traineddata
+ * (tools/build-models.mjs copies the installed one), same pix2text-mfr
+ * weights. It is frozen: neither that implementation nor the script that
+ * produced this file is in the repository, so these numbers are source rather
+ * than output, and the generator is in the Git history if they ever need
+ * reproducing. Where the two disagree by more than tokenizer spacing, one of
+ * them is wrong.
  *
  *     node tests/fallback.mjs [group]
  */

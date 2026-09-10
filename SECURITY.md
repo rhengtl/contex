@@ -68,9 +68,9 @@ release branches.
 
 ## A note on credentials
 
-If you believe a credential has been exposed — in this repository, in a
-container image, or in a deployed response — say so in the report and treat it
-as urgent. The keys that matter here are the Firebase Admin SDK service
+If you believe a credential has been exposed — in this repository, in a build
+artifact, or in a deployed response — say so in the report and treat it as
+urgent. The keys that matter here are the Firebase Admin SDK service
 account, the session HMAC key and the Gemini API key. None of them is
 committed: they are held as Worker secrets, and `.gitignore` denies every
 `.json` by default so that the service-account key cannot be added by
