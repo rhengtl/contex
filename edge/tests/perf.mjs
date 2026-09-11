@@ -12,7 +12,7 @@ import { chromium, devices } from 'playwright-core';
 import './serve.mjs';
 
 const BASE = 'http://127.0.0.1:8810';
-const CORPUS = resolve(String.raw`C:\Users\rheni\AppData\Local\Temp\claude\d--Projects-contex\a4067a2f-7c7e-4cfe-90f8-dc4b9ae5afd5\scratchpad\s3\out`);
+const CORPUS = resolve(process.env.CORPUS || 'tests/corpus');
 
 const corpusFiles = (await readdir(CORPUS)).filter((f) => f.endsWith('.tex')).sort();
 const sample = await readFile(join(CORPUS, 'pages__matrix_hi.tex'), 'utf8');

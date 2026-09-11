@@ -20,8 +20,7 @@ import './serve.mjs';
 
 const PORT = Number(process.env.PORT || 8810);
 const BASE = `http://127.0.0.1:${PORT}`;
-const CORPUS = resolve(process.env.CORPUS ||
-  String.raw`C:\Users\rheni\AppData\Local\Temp\claude\d--Projects-contex\a4067a2f-7c7e-4cfe-90f8-dc4b9ae5afd5\scratchpad\s3\out`);
+const CORPUS = resolve(process.env.CORPUS || 'tests/corpus');
 
 const results = [];
 const check = (name, pass, detail = '') => {
