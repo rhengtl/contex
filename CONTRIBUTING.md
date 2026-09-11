@@ -41,8 +41,8 @@ cd edge && npm test        # the full suite; no network, no API key
 npm ci && npm run test:rules   # Firestore rules, from the root; needs Java
 ```
 
-`npm test` needs the runtime asset trees, which are not in the repository —
-see the caveat in [README.md](README.md#a-caveat-you-should-know-before-cloning).
+`npm test` needs the runtime asset trees; the ones that are not committed take
+one build step — see [The runtime asset trees](README.md#the-runtime-asset-trees).
 The rules suite is separate because it needs the Java-backed emulator and only
 has something to say when `firestore.rules` changes; run it yourself if you
 touch that file and say in the PR that you did.
@@ -52,9 +52,9 @@ Checks that need Tesseract, Poppler or a LaTeX engine announce themselves as
 machine without them. Install them if you are changing the conversion pipeline
 or the LaTeX sandbox, and say in the pull request what you had: a run with
 skips in it is weaker evidence than a full one, and CI cannot make up the
-difference. `.github/workflows/edge.yml` installs Microsoft Edge for the
-browser suites and nothing else, and it declines to run at all until the
-runtime asset trees are in the repository.
+difference. `.github/workflows/edge.yml` rebuilds the asset trees, installs
+Microsoft Edge for the browser suites, and runs `npm test` — nothing else is
+installed there.
 
 ## What the code should look like
 

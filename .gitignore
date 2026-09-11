@@ -63,17 +63,25 @@ edge/.dev.vars*
 
 # ------------------------------------------------------------- build output
 
-# The runtime asset trees Cloudflare serves, ~137 MB of them. build-models.mjs
-# takes ORT and Tesseract from npm and copies the committed
-# edge/model-src/mfr-int8/ weights; public/texmf/ has to be harvested from a
-# TeX Live installation. `npm run check:assets` is what proves they are present
-# before a deploy -- see the caveat in README.md.
+# The runtime asset trees Cloudflare serves. Three are build output and are
+# ignored: build-models.mjs takes ORT and Tesseract from the packages the
+# lockfile pins and copies the committed edge/model-src/mfr-int8/ weights, and
+# each result is byte-identical to what is deployed.
 #
-# The recogniser weights are the INPUT to that step, which is why they live in
-# edge/model-src/ and not in a directory called build/: they are tracked, and a
-# blanket `build/` rule here would silently untrack 31 MB of source.
-edge/public/texmf/
-edge/public/models/
+# Two are NOT ignored, on purpose. edge/public/texmf/ (the TeX Live subset and
+# the SwiftLaTeX format file) and edge/public/models/tessdata/ (the language
+# data) have no source in this repository -- one was harvested from a TeX Live
+# installation, the other copied from an installed Tesseract -- so they are
+# committed as the frozen artefacts they are. That is what lets a clean clone
+# rebuild the whole of public/ and deploy it. Not Git LFS: a checkout that
+# skips the LFS smudge (actions/checkout by default, or any machine without
+# git-lfs) leaves 133-byte pointer files that EXIST, so check:assets passes
+# and wrangler publishes the pointers over the live site.
+#
+# The recogniser weights are the INPUT to build-models, which is why they live
+# in edge/model-src/ and not in a directory called build/: they are tracked,
+# and a blanket `build/` rule here would silently untrack 31 MB of source.
+edge/public/models/mfr/
 edge/public/vendor/ort/
 edge/public/vendor/tesseract/
 

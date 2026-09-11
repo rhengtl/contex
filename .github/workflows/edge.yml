@@ -1,24 +1,20 @@
 # The edge application: verify on every pull request, publish from master.
 #
-# WHY THE GUARD JOB EXISTS, AND WHY IT IS NOT PARANOIA. What Cloudflare serves
-# is edge/public, and 137 MB of that tree is gitignored build output. Most of it
-# a runner could rebuild -- vendor/ort and vendor/tesseract come from npm, and
-# models/mfr from the committed edge/model-src/mfr-int8 -- but public/texmf cannot
-# be rebuilt from anything in this repository. build:texmf works IN PLACE,
-# adding the extensionless .tfm copies kpathsea needs to a directory that must
-# already have been harvested from a TeX Live installation, and the 10.36 MB
-# SwiftLaTeX format file inside it has no source here at all.
+# WHAT A RUNNER HAS TO BUILD, AND WHAT IT MUST NOT. Cloudflare serves
+# edge/public, and three trees in it are rebuilt here from what the repository
+# carries: vendor/ort and vendor/tesseract from the packages the lockfile pins,
+# models/mfr from the committed edge/model-src/mfr-int8. Each rebuild is
+# byte-identical to what is deployed, which was verified before this step was
+# written.
 #
-# So a clean checkout cannot run the suite -- check:assets fails at once -- and,
-# far worse, `wrangler deploy` from a clean checkout would happily publish the
-# files that ARE committed and take the live site's fonts and engine data away
-# with it.
+# Two trees are committed instead, because nothing can produce them:
+# public/texmf (the TeX Live subset and the SwiftLaTeX format file) and
+# public/models/tessdata (the Tesseract language data). The build step is
+# handed the committed language data explicitly so it never goes looking for a
+# system Tesseract, whose eng.traineddata could differ from production's.
 #
-# So both jobs refuse to run rather than run on half a tree. Until the asset
-# question is settled (commit them, Git LFS, or a release artifact restored
-# here) this workflow reports what is missing and stops. That is a louder and
-# more honest failure than a green tick over an unverified build, and much
-# safer than a deploy that silently breaks production.
+# check:assets then proves the result is complete before it is tested or
+# published. A deploy never runs on a tree that check has not passed.
 
 name: edge
 
@@ -37,36 +33,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  guard:
-    name: runtime assets present
-    runs-on: ubuntu-latest
-    outputs:
-      present: ${{ steps.check.outputs.present }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - id: check
-        run: |
-          missing=""
-          for tree in edge/public/texmf edge/public/models \
-                      edge/public/vendor/ort edge/public/vendor/tesseract; do
-            if [ ! -d "$tree" ] || [ -z "$(ls -A "$tree" 2>/dev/null)" ]; then
-              missing="$missing $tree"
-            fi
-          done
-
-          if [ -n "$missing" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::The runtime asset trees are not in this repository, so"
-            echo "::notice::the suite and the deploy are both skipped. Missing:$missing"
-            echo "See the comment at the top of .github/workflows/edge.yml."
-          else
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          fi
-
   test:
-    needs: guard
-    if: needs.guard.outputs.present == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -83,15 +50,21 @@ jobs:
 
       - run: npm ci
 
+      - name: Rebuild the asset trees that are not committed
+        run: |
+          cp public/models/tessdata/eng.traineddata "$RUNNER_TEMP/eng.traineddata"
+          npm run build:models -- model-src/mfr-int8 "$RUNNER_TEMP/eng.traineddata"
+
       # The browser suites drive Microsoft Edge specifically, because that is
       # the channel tests/*.mjs launch.
       - run: npx playwright-core install msedge --with-deps
 
+      # check:assets is the first step of `npm test`.
       - run: npm test
 
   deploy:
-    needs: [guard, test]
-    if: github.ref == 'refs/heads/master' && needs.guard.outputs.present == 'true'
+    needs: test
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -99,26 +72,60 @@ jobs:
       run:
         working-directory: edge
     steps:
+      # Checked out before the token test because the working directory is
+      # edge/, which does not exist until then.
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      # Publishing needs CLOUDFLARE_API_TOKEN. When it is not configured the
+      # job says so and stops green, so a repository that deploys by hand is
+      # not red on every push. The secrets context cannot be read in an `if`,
+      # hence the env-and-shell check.
+      - name: Is a deploy token configured?
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLOUDFLARE_API_TOKEN is not configured, so nothing is published. Deploy by hand with 'npx wrangler deploy' from edge/, or add the secret to enable this job."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: edge/package-lock.json
 
-      - run: npm ci
+      - if: steps.token.outputs.present == 'true'
+        run: npm ci
 
-      # Secrets are NOT set from here. GEMINI_API_KEY, SESSION_HMAC_KEY and
-      # FIREBASE_SERVICE_ACCOUNT live in the Worker and survive a deploy; a
-      # workflow that could rewrite them would put three production
-      # credentials inside GitHub's secret store for no benefit.
-      - name: Publish the Worker
+      - if: steps.token.outputs.present == 'true'
+        name: Rebuild the asset trees that are not committed
+        run: |
+          cp public/models/tessdata/eng.traineddata "$RUNNER_TEMP/eng.traineddata"
+          npm run build:models -- model-src/mfr-int8 "$RUNNER_TEMP/eng.traineddata"
+
+      - if: steps.token.outputs.present == 'true'
+        run: npm run check:assets
+
+      # The three Worker secrets are NOT set from here. GEMINI_API_KEY,
+      # SESSION_HMAC_KEY and FIREBASE_SERVICE_ACCOUNT live in the Worker and
+      # survive a deploy; a workflow that could rewrite them would put three
+      # production credentials inside GitHub's secret store for no benefit.
+      - if: steps.token.outputs.present == 'true'
+        name: Publish the Worker
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # The account id is not a secret (the dashboard URL carries it). Naming
+          # it means wrangler never has to guess which account the token is for.
+          CLOUDFLARE_ACCOUNT_ID: 7881ff7e02e67024dcf8a97e1f58283b
 
-      - name: Check the deployment answers
+      - if: steps.token.outputs.present == 'true'
+        name: Check the deployment answers
         run: |
           for attempt in $(seq 1 20); do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \

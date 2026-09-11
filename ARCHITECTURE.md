@@ -97,14 +97,13 @@ you download is what the model wrote.
 
 ## What the pieces are built from
 
-`edge/public/texmf/`, `edge/public/models/` and parts of `edge/public/vendor/`
-are build outputs produced by the scripts in `edge/tools/`, and none of them is
-committed. Most can be rebuilt from what is here — the ONNX Runtime and
-Tesseract from npm, the formula recogniser from the committed
-`edge/model-src/mfr-int8/`. `public/texmf/` cannot: it has to be harvested from a
-TeX Live installation, and `build:texmf` only post-processes a tree that
-already exists. See the caveat in
-[README.md](README.md#a-caveat-you-should-know-before-cloning).
+`edge/public/models/mfr/` and the ONNX Runtime and Tesseract bundles under
+`edge/public/vendor/` are build output, produced by `edge/tools/build-models.mjs`
+from the pinned npm packages and the committed `edge/model-src/mfr-int8/`, and
+are not committed. `edge/public/texmf/` and `edge/public/models/tessdata/` are
+committed: the first was harvested from a TeX Live installation and the second
+copied from an installed Tesseract, and neither can be regenerated from anything
+here. See [The runtime asset trees](README.md#the-runtime-asset-trees).
 
 ## Data
 

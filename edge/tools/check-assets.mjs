@@ -1,15 +1,14 @@
 /**
  * Does every asset this application asks for at runtime actually exist?
  *
- * WHY THIS IS NOT PARANOIA. Three of the four large payloads here -- the TeX
- * Live tree, the ONNX runtime and model, and tesseract.js with its language
- * data -- are **not in git**. They are produced by `npm run build:*` from
- * sources that live outside the repository. That is the right trade (a
- * repository is not a CDN) and it has one failure mode: a deploy from a clean
- * checkout that forgot a build step is a deploy where the preview never
- * compiles, or the offline conversion 404s halfway through a 50 MB download,
- * and NOTHING in the test suite would say so, because the test suite runs
- * against this machine, where those files happen to be present.
+ * WHY THIS IS NOT PARANOIA. The ONNX runtime and model and the tesseract.js
+ * bundles are **not in git**: `npm run build:models` produces them from the
+ * pinned packages and edge/model-src. (The TeX tree and the language data
+ * are committed, because nothing can produce them.) A deploy from a clean
+ * checkout that forgot that step is a deploy where the offline conversion
+ * 404s halfway through a 50 MB download, and NOTHING in the test suite would
+ * say so, because the test suite runs against this machine, where those
+ * files happen to be present.
  *
  * So this reads the source for every absolute path it fetches, imports or
  * links, resolves each one the way Cloudflare Pages would -- including
@@ -31,8 +30,8 @@ const JSON_OUT = process.argv.includes('--json');
  * rather than only the symptom.
  */
 const PRODUCED_BY = [
-  [/^\/texmf\//, 'npm run build:texmf'],
-  [/^\/pdftex\//, 'npm run build:texmf'],
+  [/^\/texmf\//, 'committed -- git checkout -- public/texmf'],
+  [/^\/pdftex\//, 'committed -- git checkout -- public/texmf'],
   [/^\/vendor\/PdfTeXEngine\.js$/, 'npm run build:engine'],
   [/^\/vendor\/swiftlatex/, 'npm run build:engine'],
   [/^\/vendor\/pdf-lib\//, 'npm run build:pdflib'],

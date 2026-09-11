@@ -31,3 +31,9 @@ bench/**                linguist-vendored=true
 edge/tests/corpus/**    linguist-vendored=true
 edge/tests/reference/** linguist-vendored=true
 edge/public/app.css     linguist-detectable=false
+
+# Frozen runtime artefacts, served byte-for-byte: the TeX tree and the language
+# data. Never normalise anything in them, and keep the .sty files out of the
+# language statistics.
+edge/public/texmf/**            -text linguist-vendored=true
+edge/public/models/tessdata/**  binary linguist-vendored=true

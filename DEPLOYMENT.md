@@ -26,19 +26,18 @@ dashboard → Workers & Pages once; visiting that page creates it. Without it
 `wrangler deploy` uploads every asset, resolves every binding, and then fails
 at the last step with `code: 10063`.
 
-**The runtime asset trees must be present.** Most can be rebuilt:
+**The runtime asset trees must be present.** The TeX tree and the language
+data are committed; the rest is one build step:
 
 ```bash
 cd edge
 npm ci
-npm run build:models -- model-src/mfr-int8   # ORT, Tesseract, the recogniser
-npm run build:ui                          # pages and the stylesheet
+cp public/models/tessdata/eng.traineddata /tmp/eng.traineddata
+npm run build:models -- model-src/mfr-int8 /tmp/eng.traineddata
 ```
 
-`edge/public/texmf/` cannot — `build:texmf` only adds the extensionless `.tfm`
-copies kpathsea needs to a tree that must already have been harvested from a
-TeX Live installation. See the caveat in
-[README.md](README.md#a-caveat-you-should-know-before-cloning).
+See [The runtime asset trees](README.md#the-runtime-asset-trees) for what each
+tree is and why the language data is handed over explicitly.
 
 `npm run check:assets` is the gate: it reports anything the application fetches
 at runtime that is not on disk. **Do not deploy if it reports something
@@ -53,6 +52,24 @@ npm run check:assets     # must report everything present
 npm test                 # must pass
 npx wrangler deploy
 ```
+
+### From GitHub Actions
+
+`.github/workflows/edge.yml` runs the suite on every pull request and push to
+`master`. On `master` it then publishes the Worker — **only if** the repository
+has a `CLOUDFLARE_API_TOKEN` Actions secret. Without one the deploy job prints
+a notice and finishes green, so a project that deploys by hand is never red
+for that reason.
+
+To enable it: Cloudflare dashboard → My Profile → API Tokens → Create Token →
+the **Edit Cloudflare Workers** template, with *Account Resources* restricted
+to this one account. Add the value as an Actions secret named
+`CLOUDFLARE_API_TOKEN` (Settings → Secrets and variables → Actions). The job
+runs in an environment called `production`, which GitHub creates on first use;
+add a required reviewer there if you want a deploy to wait for approval.
+
+The workflow never sets the three Worker secrets below. They are set once, by
+hand, and survive every deploy.
 
 ## Secrets — set them AFTER the first deploy
 

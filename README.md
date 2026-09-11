@@ -54,34 +54,42 @@ npm run dev          # wrangler dev on :8788
 npm test             # the full suite
 ```
 
-`npm test` needs the runtime asset trees described below.
+`npm test` needs the runtime asset trees described below; one build step
+produces the ones that are not committed.
 
-## A caveat you should know before cloning
+## The runtime asset trees
 
-**A fresh clone cannot serve this application yet.** 137 MB of what Cloudflare
-serves is gitignored build output. Most of it can be rebuilt from what is here;
-one tree cannot.
+Cloudflare serves everything under `edge/public/`. Three trees in it are build
+output and are not committed; two are committed because nothing can produce
+them.
 
-| Tree | Size | Rebuilt by | From the repo? |
-|---|---|---|---|
-| `edge/public/vendor/ort/`, `vendor/tesseract/` | ~17 MB | `npm ci && npm run build:models` | **yes** — npm packages |
-| `edge/public/models/mfr/` | ~32 MB | `npm run build:models -- model-src/mfr-int8` | **yes** — `edge/model-src/mfr-int8/` is committed |
-| `edge/public/models/tessdata/` | ~4 MB | same step | no — needs a local Tesseract install |
-| `edge/public/texmf/` | 84 MB, 2,384 files | `npm run build:texmf` | **no** |
+| Tree | Size | Where it comes from |
+|---|---|---|
+| `edge/public/vendor/ort/`, `vendor/tesseract/` | ~17 MB | `npm run build:models`, from the packages the lockfile pins |
+| `edge/public/models/mfr/` | ~32 MB | the same step, from the committed `edge/model-src/mfr-int8/` |
+| `edge/public/models/tessdata/` | 4 MB | **committed** — the language data of the Tesseract this was verified with |
+| `edge/public/texmf/` | 84 MB, 2,384 files | **committed** — a TeX Live subset and the SwiftLaTeX format file |
 
-`build:texmf` is the gap. It works *in place*: it adds the extensionless `.tfm`
-copies kpathsea needs to a `public/texmf/` that must already have been
-populated by harvesting a TeX Live installation. Nothing in this repository
-produces it, and the SwiftLaTeX format file inside it (10.36 MB) has no source
-here either.
+```bash
+cd edge
+npm ci
+cp public/models/tessdata/eng.traineddata /tmp/eng.traineddata
+npm run build:models -- model-src/mfr-int8 /tmp/eng.traineddata
+npm run check:assets      # "Everything this application fetches at runtime is present."
+```
 
-Until that is resolved, `npm run check:assets` fails on a clean clone, and —
-more dangerously — `wrangler deploy` would publish only the committed files and
-strip the live site of its fonts and engine data.
-`.github/workflows/edge.yml` refuses to run at all rather than let that happen.
+The language data is passed in explicitly so the build copies the committed
+file rather than whatever Tesseract happens to be installed. Each rebuilt tree
+is byte-identical to what is deployed — that was checked file by file before
+this arrangement was adopted — so a clean clone plus that one step *is* the
+production tree.
 
-Deciding how to close it (commit the tree, Git LFS, or a release artifact
-restored at build time) is the outstanding piece of work on this repository.
+The two committed trees are stored as opaque bytes (`-text` in
+`.gitattributes`) and are not in Git LFS, deliberately: a checkout that skips
+the LFS smudge — `actions/checkout` by default, or any machine without
+`git-lfs` — leaves 133-byte pointer files that *exist*, so `check:assets`
+passes and `wrangler deploy` publishes the pointers over the live site. Plain
+Git cannot fail that way.
 
 ## Documentation
 
