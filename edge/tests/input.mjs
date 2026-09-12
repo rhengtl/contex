@@ -187,9 +187,6 @@ heading('the writing canvas');
 
   await page.click('[data-action="draw-save"]');
   await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
-  // The dialog closes at once; the file arrives when toBlob has finished
-  // encoding the PNG, which on a slow runner is measurably later.
-  await page.waitForFunction(() => document.getElementById('convert-draw-upload').files.length === 1);
   const drawing = await chosen(page);
   check('Use this hands the drawing to the converter',
         drawing && drawing.name === 'drawing.png' && drawing.type === 'image/png',
@@ -299,13 +296,6 @@ await withCamera(async (page) => {
   await page.click('[data-action="camera-capture"]');
   await page.waitForFunction(() => document.getElementById('camera-modal').classList.contains('hidden'),
                              { timeout: 20000 });
-  // The dialog closes as soon as the shutter is pressed and the JPEG is
-  // encoded after it -- canvas.toBlob is asynchronous -- so the frame arrives
-  // a moment later than the dialog goes. Waiting on the dialog alone reads the
-  // input before the photograph is in it.
-  await page.waitForFunction(
-    () => document.getElementById('convert-camera-upload').files.length === 1,
-    { timeout: 20000 });
   const shot = await chosen(page);
   check('a capture becomes the chosen page',
         shot && shot.name === 'captured_photo.jpg' && shot.type === 'image/jpeg',
@@ -476,12 +466,6 @@ heading('the four methods are one choice');
     await page.mouse.up();
     await page.click('[data-action="draw-save"]');
     await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
-    // saveDrawing() encodes the PNG with canvas.toBlob, which is asynchronous
-    // and finishes after the dialog has already gone -- so the dialog closing
-    // is not the drawing having arrived.
-    await page.waitForFunction(
-      () => document.getElementById('convert-draw-upload').files.length === 1,
-      { timeout: 20000 });
   }
 
   await page.setInputFiles('#convert-file-upload', {

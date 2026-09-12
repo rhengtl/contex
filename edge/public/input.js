@@ -319,14 +319,18 @@ function capturePhoto() {
   const target = activeTarget;
   // JPEG, not PNG: a 4K photograph as PNG is tens of megabytes and would hit
   // the upload limit for no gain - photographs have no flat colour to keep.
+  //
+  // The dialog closes from inside the callback, after the file is on the
+  // input, and not before: toBlob encodes asynchronously, and a dialog that
+  // vanished while the encode was still running told the user (and the
+  // Convert button) that the page was ready when it was not yet anything.
   canvas.toBlob((blob) => {
-    if (!blob) { toast('Could not capture that photo.'); return; }
+    if (!blob) { toast('Could not capture that photo.'); closeCameraModal(); return; }
     attachBlob(target, 'camera', blob, 'captured_photo.jpg');
     showPreview(INPUT_TARGETS[target].cameraPreview, URL.createObjectURL(blob));
     toast('Photo captured.');
+    closeCameraModal();
   }, 'image/jpeg', 0.92);
-
-  closeCameraModal();
 }
 
 /* ---------------------------------------------------------------------------
@@ -759,16 +763,18 @@ function saveDrawing() {
   ctx.drawImage(sheet, ink.x, ink.y, ink.w, ink.h, margin, margin, ink.w, ink.h);
 
   const target = activeTarget;
+  // Closed from inside the callback, once the file is on the input, for the
+  // same reason as capturePhoto(): the dialog going away is the signal that
+  // the drawing is ready, so it must not go away first.
   out.toBlob((blob) => {
-    if (!blob) { toast('Could not save that drawing.'); return; }
+    if (!blob) { toast('Could not save that drawing.'); closeDrawModal(); return; }
     attachBlob(target, 'draw', blob, 'drawing.png');
     // The same bytes the blob already holds, rather than encoding the canvas
     // to PNG a second time and base64-ing the result.
     showPreview(INPUT_TARGETS[target].drawPreview, URL.createObjectURL(blob));
     toast('Drawing ready to convert.');
+    closeDrawModal();
   }, 'image/png');
-
-  closeDrawModal();
 }
 
 /* ---------------------------------------------------------------------------
