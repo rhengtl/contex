@@ -268,11 +268,39 @@ function startCamera() {
         return;
       }
       if (!error) return;
-      error.textContent = `Could not use the camera: ${err.message}`
-        + '. Check that this page has camera permission, then try again - or '
-        + 'write the page by hand instead.';
+      error.textContent = describeCameraError(err);
       error.classList.remove('hidden');
     });
+}
+
+/**
+ * What the person is told when the camera cannot start, by the error's name.
+ *
+ * getUserMedia rejects with a DOMException whose .name is the useful part and
+ * whose .message is the browser's own wording ("Permission denied",
+ * "Requested device not found", "Could not start video source") -- written
+ * for a console, and it used to be pasted into the dialog verbatim. The names
+ * are the same in every browser; the messages are not.
+ */
+const CAMERA_ERRORS = {
+  NotAllowedError: 'Camera permission was refused. Allow it for this site and '
+    + 'try again, or write the page by hand instead.',
+  SecurityError: 'Camera permission was refused. Allow it for this site and '
+    + 'try again, or write the page by hand instead.',
+  NotFoundError: 'No camera was found on this device. You can still choose a '
+    + 'file or write the page by hand.',
+  NotReadableError: 'The camera is in use by another app. Close it and try '
+    + 'again, or write the page by hand instead.',
+  AbortError: 'The camera is in use by another app. Close it and try '
+    + 'again, or write the page by hand instead.',
+};
+
+const CAMERA_FAILED = 'The camera could not be started. Try again, or write '
+  + 'the page by hand instead.';
+
+export function describeCameraError(err) {
+  const name = err && err.name;
+  return CAMERA_ERRORS[name] || CAMERA_FAILED;
 }
 
 /** The next camera along, or the other way round when there is no list. */

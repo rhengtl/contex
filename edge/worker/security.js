@@ -28,8 +28,9 @@ function csp(nonce, authDomain) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval' ${firebase}`.trimEnd(),
     "worker-src 'self' blob:",
-    "style-src 'self' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    // Fonts are served from this origin (public/fonts/); nothing external.
+    "style-src 'self'",
+    "font-src 'self'",
     // blob: for the camera preview, the canvas export and the compiled PDF;
     // data: for the small inline marks; googleusercontent for a Google
     // account's avatar.

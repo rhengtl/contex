@@ -98,7 +98,7 @@ async function openApp({ ai = { available: true, model: 'gemini-2.5-flash' },
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ isAuthenticated: authenticated, hasAcceptedTerms: true,
-                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
+                           maxUploadMb: 32, termsVersion: '2.1-2026-09-12',
                            email: authenticated ? 'someone@example.com' : null }),
   }));
   await page.route('**/api/ai-status', (route) => route.fulfill({
@@ -209,7 +209,7 @@ heading('a camera capture, converted');
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ isAuthenticated: false, hasAcceptedTerms: true,
-                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08' }),
+                           maxUploadMb: 32, termsVersion: '2.1-2026-09-12' }),
   }));
   await page.route('**/api/ai-status', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
@@ -420,7 +420,7 @@ heading('the terms gate');
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ isAuthenticated: false, hasAcceptedTerms: false,
-                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08' }),
+                           maxUploadMb: 32, termsVersion: '2.1-2026-09-12' }),
   }));
   await page.route('**/api/ai-status', (route) => route.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }),
@@ -474,7 +474,7 @@ heading('the terms gate');
         body.includes('Gemini API') && body.includes('offline conversion'),
         body.slice(0, 120));
   check('and it is stamped with the version in force',
-        body.includes('2.0-2026-09-08'));
+        body.includes('2.1-2026-09-12'));
 
   await context.close();
 }
@@ -602,7 +602,7 @@ heading('a submit that arrives before the script has wired the form');
     return route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ isAuthenticated: false, hasAcceptedTerms: true,
-                             maxUploadMb: 32, termsVersion: '2.0-2026-09-08' }),
+                             maxUploadMb: 32, termsVersion: '2.1-2026-09-12' }),
     });
   });
   let posted = 0;

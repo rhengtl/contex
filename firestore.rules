@@ -1,97 +1,30 @@
 rules_version = '2';
 
-// SCOPE OF THESE RULES
-// --------------------
-// The Flask server reaches Firestore through the Firebase Admin SDK
-// (services/firebase.py), which authenticates with a service account and
-// BYPASSES these rules entirely. The browser currently uses Firebase Auth
-// only and never touches Firestore directly.
+// DENY EVERYTHING FROM THE CLIENT
+// --------------------------------
+// The Worker reaches Firestore with a service account (worker/firebase.js),
+// which authenticates as the project and bypasses these rules entirely. It
+// scopes every read and write by the uid in the signed session cookie
+// (worker/history.js), and that is the control that protects the data.
 //
-// These rules are therefore defence-in-depth: they define the ownership model
-// that must hold for any direct client access, so a leaked Web API key can
-// never be used to read or tamper with another user's data. Server-side
-// enforcement is what actually protects the app today -- every uid comes from
-// the signed session cookie (web/session.py: current_user_uid), never from a
-// field, so a client cannot target another user's history by forging a uid.
+// No browser code reads or writes Firestore directly, and none is planned:
+// the page uses the Firebase SDK for one thing only -- the Google sign-in
+// popup -- and signs out of it again the moment it has an ID token.
 //
-// Because no client writes here today, these rules can be as strict as the
-// data model allows without breaking anything. They are written that way on
-// purpose: the day someone adds a direct client write, the safe shape is
-// already in place rather than being retrofitted under deadline.
+// So these rules deny everything. An earlier version allowed a signed-in user
+// owner-scoped access to their own documents, in case a client path was ever
+// added. It never was, and the allowance had a cost: with the public Web API
+// key and any Firebase ID token, a user could write their own ocr_history rows
+// directly -- past the Worker's truncation, its rate limit and its per-user
+// cap -- and fill the project's storage. A door nothing uses is a door that
+// only an attacker walks through. Closed.
+//
+// If a direct client path is ever wanted, reopen it deliberately, for one
+// collection, with the field and size checks the Worker applies, and add the
+// case to tests/firestore.rules.test.mjs.
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    // A field is either absent or of the expected type. Used rather than a
-    // bare type check so a partial update is not forced to resend everything.
-    function optionalString(data, field) {
-      return !(field in data) || data[field] is string;
-    }
-
-    // A user's own profile document. The document id IS the uid.
-    match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-
-      // Only your own document, and only the fields this app actually keeps.
-      // In particular the uid field can never disagree with the document id,
-      // which is what every ownership check elsewhere relies on.
-      allow create, update: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly([
-             'uid', 'email', 'displayName', 'createdAt', 'lastLogin',
-             'termsAcceptedVersion', 'termsAcceptedAt'
-           ])
-        && (!('uid' in request.resource.data)
-            || request.resource.data.uid == uid)
-        && optionalString(request.resource.data, 'email')
-        && optionalString(request.resource.data, 'displayName')
-        && optionalString(request.resource.data, 'termsAcceptedVersion');
-
-      // Deleting a profile is an account operation, not a document one. It
-      // goes through the server, which can also remove the history that would
-      // otherwise be orphaned.
-      allow delete: if false;
-    }
-
-    // Persistent OCR history. Every document carries its owner's uid.
-    match /ocr_history/{docId} {
-      // Read only your own records.
-      allow read: if signedIn() && request.auth.uid == resource.data.uid;
-
-      // Create only records stamped with your own uid, carrying only the
-      // fields the app stores, and with a timestamp the client cannot choose:
-      // request.time is the server's clock, so a record cannot be backdated
-      // to sort itself to the top of somebody's history or hide at the bottom.
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly([
-             'uid', 'fileName', 'ocrType', 'result', 'truncated', 'timestamp'
-           ])
-        && request.resource.data.fileName is string
-        && request.resource.data.result is string
-        // Matches HISTORY_RESULT_LIMIT in web/session.py plus the marker.
-        && request.resource.data.result.size() <= 60100
-        && request.resource.data.timestamp == request.time;
-
-      // Update only your own records, and never reassign ownership or move
-      // the record in time.
-      allow update: if signedIn()
-        && request.auth.uid == resource.data.uid
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.timestamp == resource.data.timestamp
-        && request.resource.data.keys().hasOnly([
-             'uid', 'fileName', 'ocrType', 'result', 'truncated', 'timestamp'
-           ]);
-
-      allow delete: if signedIn() && request.auth.uid == resource.data.uid;
-    }
-
-    // Anything else: denied. Guests (request.auth == null) match nothing above,
-    // so they have no read or write access to any persistent data.
     match /{document=**} {
       allow read, write: if false;
     }

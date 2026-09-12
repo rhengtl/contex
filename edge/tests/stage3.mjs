@@ -183,6 +183,9 @@ globalThis.fetch = async (input, init = {}) => {
       } else {
         rows.reverse();   // deliberately NOT sorted: the fallback must sort
       }
+      // offset, then limit -- the order Firestore applies them. prune() in
+      // history.js asks for "everything past the newest twenty".
+      rows = rows.slice(body.structuredQuery.offset || 0);
       rows = rows.slice(0, body.structuredQuery.limit || 100);
       return j(rows.map((r) => ({
         document: {
@@ -569,9 +572,9 @@ console.log('\n=== signing up and password reset (auth.py / accounts.py) ===');
     [{ fullname: 'A', email: 'a@b.c', password: 'abcdef' }, 'All fields are required'],
     [{ fullname: 'A', email: 'a@b.c', password: 'abcdef', confirm_password: 'other' },
      'Passwords do not match'],
-    [{ fullname: 'A', email: 'a@b.c', password: 'short', confirm_password: 'short' },
-     'Password must be at least 6 characters'],
-    [{ fullname: 'A', email: 'a@b.c', password: 'abcdef', confirm_password: 'abcdef' },
+    [{ fullname: 'A', email: 'a@b.c', password: 'seven77', confirm_password: 'seven77' },
+     'Password must be at least 8 characters'],
+    [{ fullname: 'A', email: 'a@b.c', password: 'abcdefgh', confirm_password: 'abcdefgh' },
      'You must agree to the terms and conditions'],
   ];
   for (const [body, expected] of cases) {
@@ -581,8 +584,8 @@ console.log('\n=== signing up and password reset (auth.py / accounts.py) ===');
   }
 
   const made = await call('/api/auth/signup', { method: 'POST', body: {
-    fullname: 'Alan T', email: 'alan@example.com', password: 'enigma1',
-    confirm_password: 'enigma1', terms: 'on' } });
+    fullname: 'Alan T', email: 'alan@example.com', password: 'enigma12',
+    confirm_password: 'enigma12', terms: 'on' } });
   check('a new account is created and the user is told to log in',
         made.body.ok === true &&
         made.body.success === 'Account created successfully! Please login.',
@@ -596,8 +599,8 @@ console.log('\n=== signing up and password reset (auth.py / accounts.py) ===');
         JSON.stringify([...store.users.entries()]));
 
   const again = await call('/api/auth/signup', { method: 'POST', body: {
-    fullname: 'Alan T', email: 'alan@example.com', password: 'enigma1',
-    confirm_password: 'enigma1', terms: 'on' } });
+    fullname: 'Alan T', email: 'alan@example.com', password: 'enigma12',
+    confirm_password: 'enigma12', terms: 'on' } });
   check('a duplicate address is reported as accounts.py reports it',
         again.body.error === 'Email already exists', JSON.stringify(again.body));
 

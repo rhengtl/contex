@@ -442,6 +442,123 @@ console.log('\n=== 8. the LaTeX guard still names the pdfTeX file primitives ===
   }
 }
 
+// ===========================================================================
+// 9. A retired model is parked and the chain moves on
+// ===========================================================================
+//
+// Google retires model names on a schedule. A retired name answers 404 (or a
+// 400/403 saying the model is not found), and that used to be handled as "your
+// file is wrong": non-retryable, chain never advanced, ai-status still
+// "available". Now it is a parked model, exactly like a quota outage but for a
+// day, and when the whole chain is gone ai-status says so -- which is what
+// makes the offline path get offered instead of a lie about the file.
+console.log('\n=== 9. a retired model is parked and the chain moves on ===');
+{
+  // An in-memory KV, so recordOutage() has somewhere to write.
+  const kv = new Map();
+  const OUTAGES = {
+    async get(key, type) {
+      const v = kv.get(key);
+      return v === undefined ? null : (type === 'json' ? JSON.parse(v) : v);
+    },
+    async put(key, value) { kv.set(key, String(value)); },
+  };
+  const env = { ...ENV, OUTAGES };
+
+  // Which models are "retired" for this section, and what they answer. The
+  // recorder from resetRecorder() still handles the upload and the delete.
+  let retired = new Map();
+  const install = () => {
+    const recorderFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.includes(':generateContent')) {
+        const model = /models\/([^:]+):generateContent/.exec(url)[1];
+        out.generates.push({ url, headers: init.headers || {}, body: init.body });
+        if (retired.has(model)) {
+          const [status, body] = retired.get(model);
+          return new Response(body, { status });
+        }
+        return Response.json({ candidates: [{ content: { parts: [
+          { text: '```latex\n\\documentclass{article}\\begin{document}x\\end{document}\n```' },
+        ] } }] });
+      }
+      return recorderFetch(input, init);
+    };
+  };
+  const fresh = () => { resetRecorder(); install(); };
+
+  const post = async (query = '') => {
+    const res = await worker.fetch(new Request(`https://contex.test/api/convert/page${query}`, {
+      method: 'POST', body: 'PNGDATA',
+      headers: { cookie: COOKIE, 'content-type': 'application/octet-stream', 'content-length': '7' },
+    }), env, CTX);
+    const text = await res.text();
+    let body = null; try { body = JSON.parse(text); } catch { /* */ }
+    return { status: res.status, body, text, model: res.headers.get('x-contex-model') };
+  };
+  const status = async () => (await (await worker.fetch(
+    new Request('https://contex.test/api/ai-status'), env, CTX)).json());
+  const notFound = (m) => [404, JSON.stringify({ error: {
+    code: 404, status: 'NOT_FOUND',
+    message: `models/${m} is not found for API version v1beta, or is not supported for generateContent.` } })];
+
+  // -- a 404 on the preferred model -----------------------------------------
+  kv.clear(); fresh();
+  retired = new Map([[MODEL_CHAIN[0], notFound(MODEL_CHAIN[0])]]);
+  let r = await post();
+  check('a 404 from the preferred model is retryable, not fatal',
+        r.status === 503 && r.body && r.body.retryable === true, `${r.status} ${r.text.slice(0, 120)}`);
+  check('the browser is told to move to the next chain entry',
+        r.body && r.body.nextAttempt === 1 && r.body.model === MODEL_CHAIN[0], JSON.stringify(r.body));
+  check('the user is not told their file is wrong',
+        !/different file/i.test(r.text), r.text.slice(0, 120));
+  check("Google's message is not forwarded", !r.text.includes('API version v1beta'));
+  const parked = JSON.parse(kv.get('models') || '{}');
+  check('the model is parked in KV for about a day',
+        parked[MODEL_CHAIN[0]] && parked[MODEL_CHAIN[0]].until - Math.floor(Date.now() / 1000) > 86000,
+        JSON.stringify(parked));
+  check('the uploaded page was still deleted', out.deletes.length === 1, `${out.deletes.length}`);
+
+  let st = await status();
+  check('ai-status stays available on the surviving models',
+        st.available === true && st.model === MODEL_CHAIN[1] && st.remaining === MODEL_CHAIN.length - 1,
+        JSON.stringify(st));
+
+  // -- the next attempt lands on a live model ------------------------------
+  fresh();
+  r = await post('?attempt=0');
+  check('with the dead model parked, attempt 0 is now the next live model',
+        r.status === 200 && r.model === MODEL_CHAIN[1], `${r.status} ${r.model}`);
+
+  // -- a genuine bad-file 400 is still the file's fault ---------------------
+  kv.clear(); fresh();
+  retired = new Map([[MODEL_CHAIN[0], [400, JSON.stringify({ error: {
+    code: 400, status: 'INVALID_ARGUMENT',
+    message: 'Request contains an invalid argument: the provided file is not a supported image.' } })]]]);
+  r = await post();
+  check('a 400 about the file is non-retryable, as before',
+        r.status === 400 && r.body && r.body.retryable === false, `${r.status} ${JSON.stringify(r.body)}`);
+  check('and parks nothing', Object.keys(JSON.parse(kv.get('models') || '{}')).length === 0);
+
+  // -- the whole chain retired ----------------------------------------------
+  kv.clear(); fresh();
+  retired = new Map(MODEL_CHAIN.map((m) => [m, notFound(m)]));
+  for (let i = 0; i < MODEL_CHAIN.length; i++) await post('?attempt=0');
+  check('every retired name is parked in turn',
+        Object.keys(JSON.parse(kv.get('models') || '{}')).length === MODEL_CHAIN.length,
+        kv.get('models'));
+  r = await post('?attempt=0');
+  check('then the endpoint reports the service unavailable, not the file',
+        r.status === 503 && /unavailable/i.test(r.body.error) && r.body.retryable === false, JSON.stringify(r.body));
+  check('and spends no upload doing so', out.uploads.length === MODEL_CHAIN.length, `${out.uploads.length} uploads`);
+  st = await status();
+  check('and ai-status says exhausted, so the offline path is offered',
+        st.available === false && st.reason === 'exhausted', JSON.stringify(st));
+
+  resetRecorder();
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log('\n=== SUMMARY ===');
 console.log(`checks: ${results.length - failed.length}/${results.length} passed`);

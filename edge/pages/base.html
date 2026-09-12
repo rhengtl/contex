@@ -46,15 +46,14 @@
     <meta property="og:image" content="/img/og-card.png">
     <meta name="twitter:card" content="summary_large_image">
 
+    {# The two webfonts are @font-face rules inside app.css, served from
+       /fonts/ on this origin - no Google Fonts stylesheet, no preconnect, and
+       nothing contacted before the page has done anything. Both have
+       metric-matched stand-ins in the stylesheet, so display=swap costs no
+       layout shift. Poppins 600 is preloaded because it sets the first thing
+       anyone reads - the heading and the buttons. #}
+    <link rel="preload" href="/fonts/poppins-600-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/app.css">
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    {# Three faces: Poppins for everything you operate, Spectral for display.
-       Both have metric-matched stand-ins in the stylesheet, so display=swap
-       costs no layout shift - the text is already occupying the right space
-       before the real fonts arrive. #}
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap" rel="stylesheet">
 
     <script type="module" src="/app.js"></script>
     {% block head %}{% endblock %}

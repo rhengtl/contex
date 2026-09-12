@@ -115,8 +115,8 @@ npx wrangler kv namespace create OUTAGES
 
 The three `[vars]` — `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`,
 `FIREBASE_API_KEY` — are public by design. A Firebase Web API key identifies
-the project and is not a credential; the security rules are what protect the
-data.
+the project and is not a credential; the Worker's uid scoping and the deny-all
+security rules are what protect the data.
 
 ## Firebase
 
@@ -128,10 +128,12 @@ Authentication → Settings). Without it, Google sign-in fails with
 all run server-side through the Worker and are unaffected — so this failure
 looks like "only the Google button is broken".
 
-**Firestore rules stay closed to the browser.** The Worker reaches Firestore
-with the service account, which bypasses the rules, so every read is scoped by
-uid in `worker/history.js` instead. The rules are the second line: they deny
-direct browser access outright.
+**Firestore rules deny everything from the client.** `firestore.rules` is
+`allow read, write: if false` for the whole database. The Worker reaches
+Firestore with the service account, which bypasses the rules, so every read is
+scoped by uid in `worker/history.js` instead; the rules make sure the public Web
+API key can never be a second way in. Deploy them whenever the file changes, and
+run the emulator suite first:
 
 ```bash
 firebase deploy --only firestore:rules,firestore:indexes

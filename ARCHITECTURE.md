@@ -108,9 +108,13 @@ here. See [The runtime asset trees](README.md#the-runtime-asset-trees).
 ## Data
 
 Firestore holds saved conversions and profiles, reached only through the
-Worker's service account. The security rules deny browser access outright — the
-Worker bypasses them by design, so uid scoping in `worker/history.js` is the
-real control and the rules are the second line.
+Worker's service account. The security rules (`firestore.rules`) deny every
+client operation — `allow read, write: if false` for the whole database — and
+`tests/firestore.rules.test.mjs` proves it against the real rules engine. The
+Worker bypasses the rules by design, so uid scoping in `worker/history.js` is
+the real control; the rules exist so that the public Web API key plus a Firebase
+ID token can never become a second route to the data, past the Worker's
+truncation, rate limit and per-user cap.
 
 Cloudflare KV holds per-model outage records. A Durable Object holds rate-limit
 state. Neither holds user content.

@@ -144,7 +144,7 @@ async function openApp(page, { shell = {}, onHistoryPost, texts = [pageTex] } = 
   // "guest" would answer that nobody signed in.
   const session = {
     isAuthenticated: false, hasAcceptedTerms: true, maxUploadMb: 32,
-    termsVersion: '2.0-2026-09-08', displayName: null, email: null,
+    termsVersion: '2.1-2026-09-12', displayName: null, email: null,
     firebaseConfig: null, ...shell,
   };
   await page.route('**/api/session', (route) => route.fulfill({
@@ -271,7 +271,7 @@ async function attach(page, name, bytes, mime) {
           await page.textContent('#legal-title'));
     const shown = await page.textContent('#legal-body [data-terms-version]');
     check(`${which}: names the version being enforced`,
-          shown === '2.0-2026-09-08', shown);
+          shown === '2.1-2026-09-12', shown);
     await page.click('[data-action="legal-close"]');
   }
 
@@ -372,7 +372,7 @@ async function attach(page, name, bytes, mime) {
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ ok: true, isAuthenticated: true, displayName: 'Ada L',
                              email: 'ada@example.com', hasAcceptedTerms: true,
-                             maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
+                             maxUploadMb: 32, termsVersion: '2.1-2026-09-12',
                              firebaseConfig: null }),
     });
   });

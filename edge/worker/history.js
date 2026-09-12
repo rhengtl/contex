@@ -21,8 +21,16 @@ import { configured, getDocument, mergeDocument, deleteDocument, runQuery,
 export const HISTORY_RESULT_LIMIT = 60000;
 export const TRUNCATION_MARK = '\n... [truncated]';
 
-// How many saved conversions the history page lists (web/pages.py).
+// How many saved conversions the history page lists (web/pages.py) -- and,
+// since the prune in save(), how many are KEPT. The two are one number on
+// purpose: a row the page cannot show is a row its owner cannot see or delete,
+// and the Privacy Policy now says exactly this many are retained.
 export const HISTORY_PAGE_LIMIT = 20;
+
+// How many surplus rows one save will remove. Ordinarily there is one -- the
+// row that just fell off the end -- so this is headroom for a backlog written
+// before the prune existed, cleared a slice at a time.
+const PRUNE_BATCH = 50;
 
 //: The fields the history list actually renders. Everything else -- the stored
 //: LaTeX above all -- is left in Firestore until a route asks for that
@@ -56,7 +64,66 @@ export async function save(env, uid, fileName, ocrType, result) {
     truncated,
   }, ['timestamp']);
   // A history write must never break the conversion the user came for.
-  return ok ? id : null;
+  if (!ok) return null;
+
+  // Keep the newest HISTORY_PAGE_LIMIT and let the rest go. Best effort, and
+  // after the save rather than before it: a prune that fails leaves one extra
+  // row, which the next save tries again; a save that fails leaves nothing.
+  try {
+    await prune(env, uid);
+  } catch (err) {
+    console.error('history prune failed:', err && err.message || err);
+  }
+  return id;
+}
+
+/**
+ * Delete this user's rows beyond the newest HISTORY_PAGE_LIMIT.
+ *
+ * WHY THIS EXISTS. Nothing else bounds what one account can store. The row
+ * limit is 60 KB and the brake allows thirty saves in five minutes, so an
+ * account that never stopped would put half a gigabyte a day into a project
+ * whose free tier holds one -- and when that fills, history stops saving for
+ * everyone, silently, because save() is built never to fail a conversion.
+ * Trimming to what the page shows makes stored equal visible, and makes the
+ * worst case one account holding 1.2 MB.
+ *
+ * Names only: `select __name__` fetches nothing but the document paths, so
+ * the 60 KB documents themselves never cross the wire to be deleted.
+ */
+async function prune(env, uid) {
+  const owned = {
+    fieldFilter: { field: { fieldPath: 'uid' }, op: 'EQUAL',
+                   value: { stringValue: uid } },
+  };
+  let surplus;
+  try {
+    surplus = await runQuery(env, {
+      from: [{ collectionId: 'ocr_history' }],
+      where: owned,
+      select: { fields: [{ fieldPath: '__name__' }] },
+      orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
+      offset: HISTORY_PAGE_LIMIT,
+      limit: PRUNE_BATCH,
+    });
+  } catch (err) {
+    if (!/index/i.test(err.detail || err.message || '')) throw err;
+    // The composite index is not deployed. Same fallback as recent(): this
+    // user's rows only, ordered here. Timestamps have to come along for the
+    // sort, so this costs more than the indexed path -- which is one more
+    // reason the index should be deployed.
+    const rows = await runQuery(env, {
+      from: [{ collectionId: 'ocr_history' }],
+      where: owned,
+      select: { fields: [{ fieldPath: 'timestamp' }] },
+      limit: HISTORY_PAGE_LIMIT + PRUNE_BATCH + 200,
+    }) || [];
+    rows.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+    surplus = rows.slice(HISTORY_PAGE_LIMIT, HISTORY_PAGE_LIMIT + PRUNE_BATCH);
+  }
+  for (const row of surplus || []) {
+    await deleteDocument(env, `ocr_history/${row.id}`);
+  }
 }
 
 /**

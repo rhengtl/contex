@@ -179,13 +179,16 @@ export async function createUser(env, email, password, displayName) {
     const code = await errorCode(response);
     if (code === 'EMAIL_EXISTS') return { success: false, error: 'Email already exists' };
     if (code === 'WEAK_PASSWORD') {
-      return { success: false, error: 'Password must be at least 6 characters' };
+      return { success: false, error: 'Password must be at least 8 characters' };
     }
     if (code === 'INVALID_EMAIL') {
       return { success: false, error: 'Malformed email address' };
     }
+    // The code goes to the log, never to the person: ADMIN_ONLY_OPERATION or
+    // OPERATION_NOT_ALLOWED is a project setting, and a stranger reading it
+    // on the sign-up form can do nothing with it but wonder.
     console.error(`Unexpected Firebase sign-up error: ${code || response.status}`);
-    return { success: false, error: code || 'Failed to create account' };
+    return { success: false, error: 'Failed to create account' };
   }
   const payload = await response.json();
 

@@ -37,7 +37,7 @@ async function stubApi(page, { authenticated = false } = {}) {
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ isAuthenticated: authenticated, hasAcceptedTerms: true,
-                           maxUploadMb: 32, termsVersion: '2.0-2026-09-08',
+                           maxUploadMb: 32, termsVersion: '2.1-2026-09-12',
                            email: authenticated ? 'someone@example.com' : null }),
   }));
   await page.route('**/api/history', (route) => route.fulfill({
@@ -426,6 +426,46 @@ await withCamera(async (page) => {
   check('a camera that has gone away is reported, not left hanging',
         recovered.live || recovered.said, JSON.stringify(recovered));
 });
+
+// The words a person sees when the camera cannot start. getUserMedia is
+// stubbed to reject with each DOMException name in turn; the browser's own
+// message ("Permission denied", "Requested device not found") must never be
+// what the dialog says, and each name must get its own sentence.
+{
+  const own = await chromium.launch({ channel: 'msedge', headless: true });
+  try {
+    const cases = [
+      ['NotAllowedError', 'Permission denied', /permission was refused/i],
+      ['NotFoundError', 'Requested device not found', /no camera was found/i],
+      ['NotReadableError', 'Could not start video source', /in use by another app/i],
+      ['OverconstrainedError', 'Constraints could be not satisfied', /could not be started/i],
+      ['SomethingNewError', 'Whatever the browser says next year', /could not be started/i],
+    ];
+    for (const [name, message, wanted] of cases) {
+      const context = await own.newContext();
+      const page = await context.newPage();
+      await stubApi(page);
+      await page.addInitScript(({ name, message }) => {
+        const err = new DOMException(message, name);
+        navigator.mediaDevices.getUserMedia = () => Promise.reject(err);
+        navigator.mediaDevices.enumerateDevices = async () => [];
+      }, { name, message });
+      await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
+      await page.waitForFunction(() => document.getElementById('convert-submit'));
+      await page.click('[data-action="camera-open"]');
+      await page.waitForFunction(
+        () => !document.getElementById('camera-error').classList.contains('hidden'),
+        { timeout: 10000 });
+      const said = await page.evaluate(() => document.getElementById('camera-error').textContent);
+      check(`${name}: the dialog explains in its own words`, wanted.test(said), said);
+      check(`${name}: the browser's message does not reach the page`,
+            !said.includes(message) && !/^Could not use the camera:/.test(said), said);
+      await context.close();
+    }
+  } finally {
+    await own.close();
+  }
+}
 
 await withCamera(async (page) => {
   await page.keyboard.press('Escape');

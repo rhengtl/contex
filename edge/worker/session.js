@@ -34,7 +34,7 @@ const MAX_AGE = 60 * 60 * 24 * 30;
 // session.py reads this from configuration, so termsVersion(env) does too:
 // setting TERMS_VERSION in [vars] and leaving this constant alone would
 // otherwise look like it worked and quietly change nothing.
-export const TERMS_VERSION = '2.0-2026-09-08';
+export const TERMS_VERSION = '2.1-2026-09-12';
 
 export function termsVersion(env) {
   return (env && env.TERMS_VERSION) || TERMS_VERSION;

@@ -51,7 +51,10 @@ FIREBASE_API_KEY = "AIzaSyDwR_fRTrqvSOt_CrJoVHOIpc2lLCF8dtc"
 
 # session.py reads this from configuration, so this does too. Bump it to make
 # every user accept the terms again.
-TERMS_VERSION = "2.0-2026-09-08"
+#   2.1-2026-09-12  history retention became "the 20 most recent"; the UI
+#                   typefaces moved in-house, so a page load no longer
+#                   contacts Google Fonts. Both are statements in the policy.
+TERMS_VERSION = "2.1-2026-09-12"
 
 # Secrets, set with `wrangler secret put` and never committed:
 #   GEMINI_API_KEY            the conversion key

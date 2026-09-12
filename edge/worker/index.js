@@ -63,7 +63,22 @@ async function withSession(env, session, body, status = 200) {
   return json(body, status, headers);
 }
 
+// The most JSON any route here has a reason to receive. The largest honest
+// body is a history save: 60 KB of LaTeX before truncation, and a document
+// that runs long is still well under this. Anything bigger is parsed into
+// memory for nothing -- request.json() buffers the lot -- so it is refused by
+// its declared length before a byte is read.
+const MAX_JSON_BYTES = 1024 * 1024;
+
+// The longest file name a history row keeps. Long enough for any real name;
+// short enough that a name cannot be the payload.
+const MAX_FILENAME_CHARS = 200;
+
+class TooLarge extends Error {}
+
 async function readJson(request) {
+  const declared = Number(request.headers.get('content-length') || 0);
+  if (declared > MAX_JSON_BYTES) throw new TooLarge();
   try { return (await request.json()) || {}; } catch { return {}; }
 }
 
@@ -133,8 +148,12 @@ async function signup(request, env, session) {
     return json({ error: 'All fields are required' }, 400);
   }
   if (password !== confirm) return json({ error: 'Passwords do not match' }, 400);
-  if (String(password).length < 6) {
-    return json({ error: 'Password must be at least 6 characters' }, 400);
+  // Eight, matching the page's minlength. auth.py said six, which is
+  // Firebase's own floor; the form has asked for eight since the port, and a
+  // server that accepts less than the page asks for is a server whose check
+  // is the weaker of the two.
+  if (String(password).length < 8) {
+    return json({ error: 'Password must be at least 8 characters' }, 400);
   }
   if (!terms) {
     return json({ error: 'You must agree to the terms and conditions' }, 400);
@@ -227,9 +246,10 @@ async function historyRoutes(url, request, env, session) {
       return json({ error: 'Nothing to save.' }, 400);
     }
     // Truncation is applied in history.save(), server-side, so the stored
-    // length is ours to decide and not the client's to claim.
-    const id = await history.save(env, uid, String(body.fileName || ''),
-                                  'convert', body.tex);
+    // length is ours to decide and not the client's to claim. The name is
+    // capped here for the same reason.
+    const fileName = String(body.fileName || '').slice(0, MAX_FILENAME_CHARS);
+    const id = await history.save(env, uid, fileName, 'convert', body.tex);
     return json({ ok: true, id, stored: !!id });
   }
 
@@ -449,11 +469,20 @@ export default {
     try {
       response = await handle(request, env, ctx);
     } catch (err) {
+      if (err instanceof TooLarge) {
+        return withSecurityHeaders(
+          json({ error: 'That request is too large.' }, 413), { nonce, env });
+      }
       // Mirrors convert.py's catch-all: log the detail, tell the user
-      // something they can act on.
+      // something they can act on. The conversion wording only on the
+      // conversion route: a Firestore hiccup during sign-in used to tell the
+      // user their FILE was wrong, which sent them looking in the wrong place.
       console.error('request failed:', err && err.stack || err);
+      const converting = new URL(request.url).pathname.startsWith('/api/convert');
       response = json({
-        error: 'The conversion failed. Please try a different file.',
+        error: converting
+          ? 'The conversion failed. Please try a different file.'
+          : 'Something went wrong on our side. Please try again.',
       }, 500);
     }
     return withSecurityHeaders(response, { nonce, env });

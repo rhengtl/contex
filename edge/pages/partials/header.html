@@ -15,7 +15,11 @@
    original's was: it is hidden on the sign-in page by app.js instead, at the
    same moment it learns whether there is anyone to hide it from.
    --------------------------------------------------------------------------- #}
-<header class="sticky top-0 z-40 border-b border-paper-300 bg-paper-100/95 backdrop-blur-sm">
+{# No backdrop-filter. The bar is 95% opaque, so a blur behind it was
+   invisible - and a backdrop-filter on a sticky element is re-sampled on
+   every scroll frame of every page, which on a phone is the difference
+   between a smooth page and a stuttering one. Same reasoning as .dialog. #}
+<header class="sticky top-0 z-40 border-b border-paper-300 bg-paper-100/95">
     <div class="wrap flex h-16 items-center justify-between gap-4">
 
         <a href="/" class="flex flex-shrink-0 items-center gap-2.5 rounded-sm"

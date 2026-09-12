@@ -33,6 +33,22 @@ const REQUEST_TIMEOUT_MS = 180_000;
 // worse path after the service has recovered.
 const ASSUME_OUTAGE_SECONDS = 900;
 
+// How long a model that answered "not found" is parked. See convertPage().
+const RETIRED_MODEL_SECONDS = 86_400;
+
+/**
+ * True when an error reply means the MODEL is unavailable rather than the
+ * request being wrong: a 404, or a 400/403 whose message says the model was
+ * not found or does not support generateContent. A genuine 400 for a bad file
+ * (INVALID_ARGUMENT about the content) is not this and is left to the caller.
+ */
+export function modelIsGone(status, text) {
+  if (status === 404) return true;
+  if (status !== 400 && status !== 403) return false;
+  return /models\/[\w.-]+ (?:is not found|was not found|not found)|is not supported for generateContent|is not supported for this method|NOT_FOUND|has been (?:retired|deprecated|discontinued)/i
+    .test(text || '');
+}
+
 /**
  * Must match gemini.py _config() exactly -- the generated LaTeX depends on it.
  *
@@ -364,6 +380,30 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
       ok: false, status: upstream.status, retryable: true, model,
       error: 'The AI conversion service is temporarily unavailable.',
       retryAfter,
+    };
+  }
+  // The model itself is gone, not the page. Google retires model names on a
+  // schedule, and a retired name answers 404 -- or a 400/403 whose message
+  // says the model is not found or not supported for this method. That used
+  // to fall through to the 4xx branch below, which is the branch for "your
+  // file is wrong": the user was told to try a different file, the chain
+  // never advanced, and ai-status went on saying the service was fine. For an
+  // application nobody is watching, that is how it dies.
+  //
+  // So a retired model is parked for a day -- long enough that a chain with
+  // one dead name stops paying an upload per attempt to rediscover it, short
+  // enough that a transient mistake on Google's side heals itself -- and the
+  // browser is told to move on to the next one. When every name in the chain
+  // is retired, availableModels() empties and ai-status says exhausted, which
+  // is the honest answer: the offline path is offered instead of a lie about
+  // the file.
+  if (modelIsGone(upstream.status, text)) {
+    console.error(`model ${model} answered ${upstream.status} - retired or renamed? `
+                  + text.slice(0, 300));
+    await recordOutage(env, model, upstream.status, RETIRED_MODEL_SECONDS);
+    return {
+      ok: false, status: 503, retryable: true, model,
+      error: 'That model is unavailable - trying the next one.',
     };
   }
   // A model that does not accept a thinking level at all: drop it once and

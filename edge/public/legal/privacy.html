@@ -108,7 +108,9 @@
         <tr>
           <td data-label="What">Saved history</td>
           <td data-label="Detail">For signed-in users: file name, the generated LaTeX (truncated at
-              60,000 characters) and a timestamp.</td>
+              60,000 characters) and a timestamp. Only your <strong>20 most
+              recent</strong> conversions are kept; each new one beyond that
+              deletes the oldest.</td>
           <td data-label="When" class="whitespace-nowrap">If you sign in</td>
         </tr>
         <tr>
@@ -290,11 +292,17 @@
         provider, and stores the abuse-prevention counters described in
         Section 2.</li>
   </ul>
-  <p>Services your browser contacts directly when a ConTeX page loads:</p>
+  <p>
+    Services your browser may contact directly. <strong>Loading an ordinary
+    ConTeX page contacts nobody but Cloudflare</strong>: the pages, scripts,
+    stylesheet and typefaces are all served from ConTeX's own address. The
+    only exception is signing in with Google:
+  </p>
   <ul>
     <li><code>www.gstatic.com</code> and <code>apis.google.com</code> &mdash;
         the Firebase JavaScript library and the sign-in frame, loaded only when
-        you open the sign-in view.</li>
+        you press <em>Continue with Google</em> on the sign-in or sign-up
+        page.</li>
     <li><code>identitytoolkit.googleapis.com</code>,
         <code>securetoken.googleapis.com</code> and your project's
         <code>firebaseapp.com</code> address &mdash; contacted by that library
@@ -347,7 +355,11 @@
             <td data-label="Kept for">Stored only in your own browser. Cleared when you refresh the
                 page or close the tab. <strong>It never reaches the
                 server.</strong></td></tr>
-        <tr><td data-label="Data">Signed-in history and profile</td>
+        <tr><td data-label="Data">Signed-in history</td>
+            <td data-label="Kept for">Your <strong>20 most recent</strong> conversions, until you delete
+                them yourself or ask us to. Older ones are deleted automatically
+                as new ones are saved.</td></tr>
+        <tr><td data-label="Data">Profile</td>
             <td data-label="Kept for">Until you ask us to delete it, or until you delete your account.
                 There is no automatic expiry.</td></tr>
         <tr><td data-label="Data">Session cookie</td>
