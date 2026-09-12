@@ -187,6 +187,9 @@ heading('the writing canvas');
 
   await page.click('[data-action="draw-save"]');
   await page.waitForFunction(() => document.getElementById('draw-modal').classList.contains('hidden'));
+  // The dialog closes at once; the file arrives when toBlob has finished
+  // encoding the PNG, which on a slow runner is measurably later.
+  await page.waitForFunction(() => document.getElementById('convert-draw-upload').files.length === 1);
   const drawing = await chosen(page);
   check('Use this hands the drawing to the converter',
         drawing && drawing.name === 'drawing.png' && drawing.type === 'image/png',
