@@ -450,10 +450,22 @@
          90  the processing screen, which covers everything by definition
        ----------------------------------------------------------------------- */
 
+    /* No backdrop-filter on the overlay. It used to carry a 2px blur, and the
+       blur is why the legal documents scrolled badly: a backdrop-filter is
+       re-sampled from the whole viewport on every compositor frame in which
+       anything inside it changes - which, while a 10,000px document is
+       scrolling underneath it, is every frame. On a phone at 3x that is a
+       full-screen blur pass sixty times a second, and WebKit and Gecko do
+       worse than that. The 60% dim separates the dialog from the page on
+       its own; the blur was never doing perceptible work.
+
+       overscroll-behavior on both scrollers: when the body reaches its end,
+       the remaining wheel or touch delta must not carry on into the overlay
+       or the page behind it. Chained scrolling reads as the dialog jumping. */
     .dialog {
         @apply fixed inset-0 z-[60] hidden items-center justify-center
-               overflow-y-auto bg-ink-900/60 p-4 backdrop-blur-[2px]
-               sm:p-6;
+               overflow-y-auto bg-ink-900/60 p-4 sm:p-6;
+        overscroll-behavior: contain;
     }
 
     .dialog.is-open {
@@ -477,6 +489,7 @@
 
     .dialog-body {
         @apply flex-1 overflow-y-auto px-5 py-4;
+        overscroll-behavior: contain;
     }
 
     .dialog-foot {
@@ -494,6 +507,13 @@
        Long-form documents: the Terms and the Privacy Policy, rendered into
        the legal dialog. They are long, so they get a real reading measure and
        real typographic hierarchy rather than a wall of 14px.
+
+       The documents live in public/legal/, which tailwind.config.cjs scans
+       on purpose: Tailwind only emits a component class it has seen in the
+       markup, and for a while nothing scanned those two files, so every
+       .doc-table rule below was silently dropped from the build and the
+       tables rendered as bare text. A class used only in those documents is
+       fine; a class used nowhere is not emitted at all.
        ----------------------------------------------------------------------- */
 
     .doc {
@@ -531,25 +551,89 @@
         @apply link;
     }
 
-    /* The Privacy Policy carries three data tables. A three-column table does
-       not fit a phone, so each gets its own horizontal scroll container - the
-       dialog itself must never scroll sideways. */
+    /* The version line under the caution note. Meta, like a timestamp. */
+    .doc-version {
+        @apply text-[0.8125rem] text-ink-400;
+    }
+
+    /* The Privacy Policy carries three data tables.
+
+       From the sm breakpoint up they are tables: a hairline grid, a shaded
+       header row, cells that align at the top so a one-line "When" sits
+       level with the first line of a six-line "Detail". The scroll
+       container is a guard rather than the plan - the widest table fits a
+       dialog at any width the breakpoint admits - but the dialog itself must
+       never scroll sideways, so if a table ever does overflow it happens
+       inside its own box.
+
+       Below sm a three-column grid does not fit, and a table scrolled
+       sideways inside a dialog scrolled lengthways is nobody's idea of
+       reading. So each row becomes a card: the first cell is its heading,
+       and every other cell is captioned with its column's name, which the
+       markup carries as data-label. The header row is dropped there because
+       the captions have replaced it. */
     .doc-scroll {
         @apply -mx-1 overflow-x-auto px-1;
+        overscroll-behavior-x: contain;
     }
 
     .doc-table {
-        @apply w-full border-collapse text-left text-xs;
+        @apply w-full border-collapse text-left text-[0.8125rem] leading-normal;
     }
 
     .doc-table th,
     .doc-table td {
-        @apply border border-paper-300 px-2.5 py-2 align-top;
+        @apply border border-paper-300 px-3 py-2 text-left align-top;
     }
 
     .doc-table th {
         @apply bg-paper-200 font-poppins font-semibold text-ink-900;
         white-space: nowrap;
+    }
+
+    /* The first column names the row, so it reads as a label. It is also
+       kept from being squeezed by a long neighbour. */
+    .doc-table td:first-child {
+        @apply min-w-[9rem] font-medium text-ink-900;
+    }
+
+    @media (max-width: 639.98px) {
+        .doc-table,
+        .doc-table tbody,
+        .doc-table tr,
+        .doc-table td {
+            @apply block;
+        }
+
+        .doc-table thead {
+            @apply hidden;
+        }
+
+        .doc-table tr {
+            @apply overflow-hidden rounded-md border border-paper-300;
+        }
+
+        .doc-table tr + tr {
+            @apply mt-2.5;
+        }
+
+        .doc-table td {
+            @apply min-w-0 border-0 px-3.5 py-2.5;
+        }
+
+        .doc-table td + td {
+            @apply border-t border-paper-300;
+        }
+
+        .doc-table td:first-child {
+            @apply bg-paper-200 font-poppins font-semibold;
+        }
+
+        .doc-table td + td::before {
+            content: attr(data-label);
+            @apply mb-0.5 block font-poppins text-[0.6875rem] font-semibold
+                   uppercase tracking-wide text-ink-500;
+        }
     }
 
     /* A disclosure that reads as one, without the browser's default marker.

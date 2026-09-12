@@ -39,6 +39,12 @@ module.exports = {
     // expands includes, so every class a page carries is already written here.
     './pages/**/*.html',
     './public/**/*.js',
+    // The two legal documents are not pages: they are fetched into the legal
+    // dialog as fragments, and they are hand-written where they are served
+    // from. They were missing here once, and every class only they use -
+    // the whole of .doc-table - was purged from the build unnoticed, because
+    // a missing component class looks like unstyled text, not an error.
+    './public/legal/*.html',
     // Vendored bundles are excluded by the negation below rather than by
     // listing directories: pdf.js and the ONNX runtime are megabytes of
     // minified code full of strings that scan as class names.

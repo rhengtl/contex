@@ -1158,9 +1158,6 @@ code, pre, kbd, samp {
   overflow-y: auto;
   background-color: rgb(23 28 26 / 0.6);
   padding: 1rem;
-  --tw-backdrop-blur: blur(2px);
-  -webkit-backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
-  backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
 }
 
 @media (min-width: 640px) {
@@ -1179,15 +1176,20 @@ code, pre, kbd, samp {
   overflow-y: auto;
   background-color: rgb(23 28 26 / 0.6);
   padding: 1rem;
-  --tw-backdrop-blur: blur(2px);
-  -webkit-backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
-  backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
 }
 
 @media (min-width: 640px) {
   .dialog {
     padding: 1.5rem;
   }
+}
+
+.\!dialog {
+  overscroll-behavior: contain !important;
+}
+
+.dialog {
+  overscroll-behavior: contain;
 }
 
 .\!dialog.is-open {
@@ -1289,6 +1291,7 @@ code, pre, kbd, samp {
   padding-right: 1.25rem;
   padding-top: 1rem;
   padding-bottom: 1rem;
+  overscroll-behavior: contain;
 }
 
 .dialog-foot {
@@ -1406,6 +1409,119 @@ code, pre, kbd, samp {
 
 .doc a:hover {
   text-decoration-color: #2B4C3F;
+}
+
+.doc-version {
+  font-size: 0.8125rem;
+  --tw-text-opacity: 1;
+  color: rgb(92 106 97 / var(--tw-text-opacity, 1));
+}
+
+.doc-scroll {
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  overflow-x: auto;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  overscroll-behavior-x: contain;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.doc-table th,
+    .doc-table td {
+  border-width: 1px;
+  --tw-border-opacity: 1;
+  border-color: rgb(216 209 197 / var(--tw-border-opacity, 1));
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-table th {
+  --tw-bg-opacity: 1;
+  background-color: rgb(232 227 218 / var(--tw-bg-opacity, 1));
+  font-family: Poppins, Poppins Fallback, sans-serif;
+  font-weight: 600;
+  --tw-text-opacity: 1;
+  color: rgb(23 28 26 / var(--tw-text-opacity, 1));
+  white-space: nowrap;
+}
+
+.doc-table td:first-child {
+  min-width: 9rem;
+  font-weight: 500;
+  --tw-text-opacity: 1;
+  color: rgb(23 28 26 / var(--tw-text-opacity, 1));
+}
+
+@media (max-width: 639.98px) {
+  .doc-table,
+        .doc-table tbody,
+        .doc-table tr,
+        .doc-table td {
+    display: block;
+  }
+
+  .doc-table thead {
+    display: none;
+  }
+
+  .doc-table tr {
+    overflow: hidden;
+    border-radius: 6px;
+    border-width: 1px;
+    --tw-border-opacity: 1;
+    border-color: rgb(216 209 197 / var(--tw-border-opacity, 1));
+  }
+
+  .doc-table tr + tr {
+    margin-top: 0.625rem;
+  }
+
+  .doc-table td {
+    min-width: 0px;
+    border-width: 0px;
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+  }
+
+  .doc-table td + td {
+    border-top-width: 1px;
+    --tw-border-opacity: 1;
+    border-color: rgb(216 209 197 / var(--tw-border-opacity, 1));
+  }
+
+  .doc-table td:first-child {
+    --tw-bg-opacity: 1;
+    background-color: rgb(232 227 218 / var(--tw-bg-opacity, 1));
+    font-family: Poppins, Poppins Fallback, sans-serif;
+    font-weight: 600;
+  }
+
+  .doc-table td + td::before {
+    content: attr(data-label);
+    margin-bottom: 0.125rem;
+    display: block;
+    font-family: Poppins, Poppins Fallback, sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    --tw-text-opacity: 1;
+    color: rgb(74 89 81 / var(--tw-text-opacity, 1));
+  }
 }
 
 .disclosure {
@@ -2040,6 +2156,10 @@ fieldset:disabled .dropzone:hover {
 
 .grid {
   display: grid;
+}
+
+.contents {
+  display: contents;
 }
 
 .hidden {

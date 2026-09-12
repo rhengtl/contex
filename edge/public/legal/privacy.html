@@ -73,67 +73,69 @@
   </p>
 
   <h4>2. What ConTeX collects</h4>
-  <table class="doc-table">
-    <thead><tr><th>What</th><th>Detail</th><th>When</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Documents you convert</td>
-        <td>Images, PDFs, camera photographs and canvas drawings, plus the file
-            name. May contain personal data if your document does. The file is
-            passed through to the AI provider; ConTeX itself keeps no copy.
-            Word documents are not accepted.</td>
-        <td>Each conversion</td>
-      </tr>
-      <tr>
-        <td>The LaTeX produced</td>
-        <td><strong>Stays in your browser.</strong> The <code>.tex</code> and
-            the PDF preview are produced and held by the page you are looking
-            at. They reach a server only if you are signed in, in which case
-            the <code>.tex</code> is saved to your history.</td>
-        <td>Each conversion</td>
-      </tr>
-      <tr>
-        <td>Account details</td>
-        <td>Email address, display name, and a user ID issued by Firebase
-            Authentication. Passwords are held by Firebase, never by ConTeX.</td>
-        <td>If you sign up</td>
-      </tr>
-      <tr>
-        <td>Account activity</td>
-        <td>Account creation time, last sign-in time, and which version of the
-            Terms you accepted and when.</td>
-        <td>If you sign in</td>
-      </tr>
-      <tr>
-        <td>Saved history</td>
-        <td>For signed-in users: file name, the generated LaTeX (truncated at
-            60,000 characters) and a timestamp.</td>
-        <td>If you sign in</td>
-      </tr>
-      <tr>
-        <td>Session cookie</td>
-        <td>A signed cookie holding your sign-in state (user ID, email address,
-            display name) and your Terms acceptance. It is signed, not
-            encrypted, and holds nothing secret.</td>
-        <td>Always</td>
-      </tr>
-      <tr>
-        <td>Abuse-prevention counters</td>
-        <td>To enforce the request limits in the Terms, ConTeX keeps a short
-            list of request times against a caller key &mdash; your user ID if
-            you are signed in, otherwise your IP address. No document content
-            is involved.</td>
-        <td>Always</td>
-      </tr>
-      <tr>
-        <td>Server request logs</td>
-        <td>The Service is hosted on Cloudflare, whose ordinary edge logs may
-            record your IP address, the time and the resource requested. ConTeX
-            itself writes no analytics.</td>
-        <td>Always</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="doc-scroll">
+    <table class="doc-table">
+      <thead><tr><th>What</th><th>Detail</th><th>When</th></tr></thead>
+      <tbody>
+        <tr>
+          <td data-label="What">Documents you convert</td>
+          <td data-label="Detail">Images, PDFs, camera photographs and canvas drawings, plus the file
+              name. May contain personal data if your document does. The file is
+              passed through to the AI provider; ConTeX itself keeps no copy.
+              Word documents are not accepted.</td>
+          <td data-label="When" class="whitespace-nowrap">Each conversion</td>
+        </tr>
+        <tr>
+          <td data-label="What">The LaTeX produced</td>
+          <td data-label="Detail"><strong>Stays in your browser.</strong> The <code>.tex</code> and
+              the PDF preview are produced and held by the page you are looking
+              at. They reach a server only if you are signed in, in which case
+              the <code>.tex</code> is saved to your history.</td>
+          <td data-label="When" class="whitespace-nowrap">Each conversion</td>
+        </tr>
+        <tr>
+          <td data-label="What">Account details</td>
+          <td data-label="Detail">Email address, display name, and a user ID issued by Firebase
+              Authentication. Passwords are held by Firebase, never by ConTeX.</td>
+          <td data-label="When" class="whitespace-nowrap">If you sign up</td>
+        </tr>
+        <tr>
+          <td data-label="What">Account activity</td>
+          <td data-label="Detail">Account creation time, last sign-in time, and which version of the
+              Terms you accepted and when.</td>
+          <td data-label="When" class="whitespace-nowrap">If you sign in</td>
+        </tr>
+        <tr>
+          <td data-label="What">Saved history</td>
+          <td data-label="Detail">For signed-in users: file name, the generated LaTeX (truncated at
+              60,000 characters) and a timestamp.</td>
+          <td data-label="When" class="whitespace-nowrap">If you sign in</td>
+        </tr>
+        <tr>
+          <td data-label="What">Session cookie</td>
+          <td data-label="Detail">A signed cookie holding your sign-in state (user ID, email address,
+              display name) and your Terms acceptance. It is signed, not
+              encrypted, and holds nothing secret.</td>
+          <td data-label="When" class="whitespace-nowrap">Always</td>
+        </tr>
+        <tr>
+          <td data-label="What">Abuse-prevention counters</td>
+          <td data-label="Detail">To enforce the request limits in the Terms, ConTeX keeps a short
+              list of request times against a caller key &mdash; your user ID if
+              you are signed in, otherwise your IP address. No document content
+              is involved.</td>
+          <td data-label="When" class="whitespace-nowrap">Always</td>
+        </tr>
+        <tr>
+          <td data-label="What">Server request logs</td>
+          <td data-label="Detail">The Service is hosted on Cloudflare, whose ordinary edge logs may
+              record your IP address, the time and the resource requested. ConTeX
+              itself writes no analytics.</td>
+          <td data-label="When" class="whitespace-nowrap">Always</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
   <p>
     ConTeX has <strong>no analytics, no advertising and no tracking
     cookies</strong>, and does not build a profile of you or make automated
@@ -253,21 +255,23 @@
   </p>
 
   <h4>5. Why we process it, and on what legal basis</h4>
-  <table class="doc-table">
-    <thead><tr><th>Purpose</th><th>Basis (GDPR Art. 6)</th><th>Basis (RA 10173 Sec. 12)</th></tr></thead>
-    <tbody>
-      <tr><td>Converting your document and giving you the result</td>
-          <td>Art. 6(1)(b) &mdash; performance of a contract with you</td>
-          <td>Sec. 12(b) &mdash; necessary to fulfil a contract with the data subject</td></tr>
-      <tr><td>Running your account and saved history</td>
-          <td>Art. 6(1)(b)</td><td>Sec. 12(b)</td></tr>
-      <tr><td>Recording that you accepted the Terms</td>
-          <td>Art. 6(1)(f) &mdash; legitimate interest in keeping a record of acceptance</td>
-          <td>Sec. 12(f) &mdash; legitimate interests of the controller</td></tr>
-      <tr><td>Keeping the Service secure and preventing abuse</td>
-          <td>Art. 6(1)(f)</td><td>Sec. 12(f)</td></tr>
-    </tbody>
-  </table>
+  <div class="doc-scroll">
+    <table class="doc-table">
+      <thead><tr><th>Purpose</th><th>Basis (GDPR Art. 6)</th><th>Basis (RA 10173 Sec. 12)</th></tr></thead>
+      <tbody>
+        <tr><td data-label="Purpose">Converting your document and giving you the result</td>
+            <td data-label="Basis (GDPR Art. 6)">Art. 6(1)(b) &mdash; performance of a contract with you</td>
+            <td data-label="Basis (RA 10173 Sec. 12)">Sec. 12(b) &mdash; necessary to fulfil a contract with the data subject</td></tr>
+        <tr><td data-label="Purpose">Running your account and saved history</td>
+            <td data-label="Basis (GDPR Art. 6)">Art. 6(1)(b)</td><td data-label="Basis (RA 10173 Sec. 12)">Sec. 12(b)</td></tr>
+        <tr><td data-label="Purpose">Recording that you accepted the Terms</td>
+            <td data-label="Basis (GDPR Art. 6)">Art. 6(1)(f) &mdash; legitimate interest in keeping a record of acceptance</td>
+            <td data-label="Basis (RA 10173 Sec. 12)">Sec. 12(f) &mdash; legitimate interests of the controller</td></tr>
+        <tr><td data-label="Purpose">Keeping the Service secure and preventing abuse</td>
+            <td data-label="Basis (GDPR Art. 6)">Art. 6(1)(f)</td><td data-label="Basis (RA 10173 Sec. 12)">Sec. 12(f)</td></tr>
+      </tbody>
+    </table>
+  </div>
   <p>Where a legitimate interest is relied on, you may object &mdash; see Section 9.</p>
 
   <h4>6. Who else receives your data</h4>
@@ -327,34 +331,36 @@
   </p>
 
   <h4>8. How long things are kept</h4>
-  <table class="doc-table">
-    <thead><tr><th>Data</th><th>Kept for</th></tr></thead>
-    <tbody>
-      <tr><td>Your uploaded file</td>
-          <td>Streamed through to Google without being stored by ConTeX, then
-              <strong>deleted from Google's Files API as soon as the reply
-              arrives</strong>. See the training note in Section 3 for what
-              deletion does not undo.</td></tr>
-      <tr><td>The generated <code>.tex</code> and PDF preview</td>
-          <td><strong>Held only by your browser tab</strong>, for as long as
-              you leave it open. No server holds a copy.</td></tr>
-      <tr><td>Guest history</td>
-          <td>Stored only in your own browser. Cleared when you refresh the
-              page or close the tab. <strong>It never reaches the
-              server.</strong></td></tr>
-      <tr><td>Signed-in history and profile</td>
-          <td>Until you ask us to delete it, or until you delete your account.
-              There is no automatic expiry.</td></tr>
-      <tr><td>Session cookie</td>
-          <td>Until you close your browser, or <strong>30 days</strong> if you
-              chose &ldquo;keep me signed in&rdquo;. Signing out clears it.</td></tr>
-      <tr><td>Abuse-prevention counters</td>
-          <td><strong>Five minutes</strong> from each request.</td></tr>
-      <tr><td>Data held by Google and Cloudflare</td>
-          <td>Under their own retention terms, which we do not control.
-              Free-tier training data cannot be recalled.</td></tr>
-    </tbody>
-  </table>
+  <div class="doc-scroll">
+    <table class="doc-table">
+      <thead><tr><th>Data</th><th>Kept for</th></tr></thead>
+      <tbody>
+        <tr><td data-label="Data">Your uploaded file</td>
+            <td data-label="Kept for">Streamed through to Google without being stored by ConTeX, then
+                <strong>deleted from Google's Files API as soon as the reply
+                arrives</strong>. See the training note in Section 3 for what
+                deletion does not undo.</td></tr>
+        <tr><td data-label="Data">The generated <code>.tex</code> and PDF preview</td>
+            <td data-label="Kept for"><strong>Held only by your browser tab</strong>, for as long as
+                you leave it open. No server holds a copy.</td></tr>
+        <tr><td data-label="Data">Guest history</td>
+            <td data-label="Kept for">Stored only in your own browser. Cleared when you refresh the
+                page or close the tab. <strong>It never reaches the
+                server.</strong></td></tr>
+        <tr><td data-label="Data">Signed-in history and profile</td>
+            <td data-label="Kept for">Until you ask us to delete it, or until you delete your account.
+                There is no automatic expiry.</td></tr>
+        <tr><td data-label="Data">Session cookie</td>
+            <td data-label="Kept for">Until you close your browser, or <strong>30 days</strong> if you
+                chose &ldquo;keep me signed in&rdquo;. Signing out clears it.</td></tr>
+        <tr><td data-label="Data">Abuse-prevention counters</td>
+            <td data-label="Kept for"><strong>Five minutes</strong> from each request.</td></tr>
+        <tr><td data-label="Data">Data held by Google and Cloudflare</td>
+            <td data-label="Kept for">Under their own retention terms, which we do not control.
+                Free-tier training data cannot be recalled.</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <h4>9. Your rights</h4>
   <p>
