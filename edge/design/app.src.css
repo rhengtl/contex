@@ -301,6 +301,28 @@
         @apply w-full;
     }
 
+    /* A button that is working. It is disabled, so a second press cannot
+       start a second job - but it must not LOOK disabled: at 45% it reads as
+       "unavailable", and a person who has just pressed it reads that as
+       stuck. So a busy button keeps its full colour, takes the progress
+       cursor, and carries a spinner and a label that says what it is
+       waiting for. The Google button is the case that forced this: after
+       its window is closed early the SDK takes eight seconds to say so, and
+       a greyed-out button for eight seconds is indistinguishable from a
+       broken one. */
+    .btn[aria-busy="true"] {
+        @apply cursor-progress opacity-100;
+    }
+
+    /* Two-thirds of a ring, turning. Coloured by currentColor so it sits in
+       any button without a variant of its own. Reduced motion slows it
+       rather than stopping it: a spinner that does not move says nothing. */
+    .spinner {
+        @apply inline-block h-4 w-4 flex-shrink-0 animate-spin rounded-full
+               border-2 border-current border-r-transparent
+               motion-reduce:[animation-duration:2s];
+    }
+
     /* On a dark surface - the camera, the processing screen - the ranks
        invert. The canvas toolbar has its own pair, .toolbtn / .toolbtn-active,
        because scripts.js rewrites those by assigning className. */
@@ -362,6 +384,27 @@
 
     .field-hint {
         @apply mt-1.5 text-[0.8125rem] text-ink-400;
+    }
+
+    /* A field with a control inside its right edge - the password reveal.
+       The wrapper is only a positioning context; the input keeps every
+       .field style and gains the room the button needs, so text and the
+       button never overlap. The button is the field's full height and 44px
+       wide: a real touch target, not a 16px eye. */
+    .field-wrap {
+        @apply relative;
+    }
+
+    .field-wrap > .field {
+        @apply pr-12;
+    }
+
+    .field-reveal {
+        @apply absolute inset-y-0 right-0 flex w-11 items-center justify-center
+               rounded-md text-ink-500 transition
+               hover:text-ink-900
+               focus:outline-none focus-visible:ring-2
+               focus-visible:ring-forest-800/25;
     }
 
     .field-error {
