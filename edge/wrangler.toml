@@ -22,6 +22,20 @@ html_handling = "drop-trailing-slash"
 # platform 404 with no way back to the workspace.
 not_found_handling = "404-page"
 
+# Workers Logs. Every console.error the Worker writes -- "retired or renamed?",
+# "page upload refused", "Firestore access token refused" -- is what says why
+# conversions stopped, and without this it is visible only to someone running
+# `wrangler tail` at that moment. Declared here rather than toggled in the
+# dashboard because a deploy overwrites the dashboard's answer with this
+# file's: a switch flipped there would be flipped back by the next publish.
+# invocation_logs adds one line per request (path, status, duration), which is
+# how a run of 429s or 503s shows up. Sampling at 1 keeps everything; at this
+# traffic that stays well inside the free plan's daily allowance.
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
+
 # Global per-caller rate limiting, replacing the per-process deque in
 # contex/web/security.py. SQLite backend: the only kind available on the
 # Workers Free plan.
