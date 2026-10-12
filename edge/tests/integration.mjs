@@ -468,7 +468,11 @@ heading('the terms gate');
 
   // The documents themselves have to be readable without leaving the page.
   await page.click('footer [data-action="legal"][data-arg="privacy"]');
-  await page.waitForSelector('#legal-modal.is-open');
+  // The dialog opens before its document arrives -- openLegal() shows a
+  // 'Loading…' placeholder while it fetches -- so wait for the document itself,
+  // as stage3-browser.mjs does. Reading on .is-open alone raced the fetch and
+  // failed on a slow runner.
+  await page.waitForSelector('#legal-modal.is-open .doc', { timeout: 10000 });
   const body = await page.textContent('#legal-body');
   check('the Privacy Policy opens and is the real document',
         body.includes('Gemini API') && body.includes('offline conversion'),
@@ -561,6 +565,12 @@ heading('on a 360px phone');
   });
   check('every writing-canvas control fits on the screen',
         controls.every((c) => c.ok), JSON.stringify(controls.filter((c) => !c.ok)));
+  // openDrawModal() sizes the canvas on the next animation frame, once layout
+  // has given it room; until then it is the 300x150 default. Two frames here
+  // run strictly after that callback, so this measures the canvas the user
+  // gets rather than racing it.
+  await page.evaluate(() => new Promise((r) =>
+    requestAnimationFrame(() => requestAnimationFrame(r))));
   const canvas = await page.locator('#draw-canvas').boundingBox();
   check('and the canvas itself has room to draw on',
         canvas.width > 200 && canvas.height > 200, JSON.stringify(canvas));
