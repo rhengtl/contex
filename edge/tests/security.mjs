@@ -559,6 +559,68 @@ console.log('\n=== 9. a retired model is parked and the chain moves on ===');
   resetRecorder();
 }
 
+// ===========================================================================
+// 10. A refused sampling parameter is the parameter's fault, not the file's
+// ===========================================================================
+// Google deprecated temperature, top_p and top_k in July 2026. Every model
+// still accepts temperature 0 today; this pins down what happens on the day
+// one stops. Before the fix such a 400 fell into "try a different file" on
+// every model in turn.
+console.log('\n=== 10. a refused temperature is retried without it ===');
+{
+  const { samplingRefused } = await import('../worker/gemini.js');
+  const msg = (m) => JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: m } });
+  check('a 400 naming temperature is a sampling refusal',
+        samplingRefused(400, msg('Invalid JSON payload: temperature is no longer supported.')));
+  check('so is one naming top_p / topK',
+        samplingRefused(400, msg('top_p is deprecated')) && samplingRefused(400, msg('Unknown name "topK"')));
+  check('a bad-file 400 is not',
+        !samplingRefused(400, msg('Request contains an invalid argument: the provided file is not a supported image.')));
+  check('nor is a 429 that happens to say temperature', !samplingRefused(429, 'temperature'));
+
+  // Refuse any body that carries a temperature; answer one that does not.
+  const refuseTemperature = () => {
+    resetRecorder();
+    const recorderFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.includes(':generateContent') &&
+          'temperature' in JSON.parse(init.body).generationConfig) {
+        out.generates.push({ url, headers: init.headers || {}, body: init.body });
+        return new Response(msg('generation_config.temperature is no longer supported for this model.'),
+                            { status: 400 });
+      }
+      return recorderFetch(input, init);
+    };
+  };
+
+  refuseTemperature();
+  const r = await convert();
+  check('the conversion succeeds', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+  check('on the SAME model, without advancing the chain',
+        r.res.headers.get('x-contex-model') === MODEL_CHAIN[0], r.res.headers.get('x-contex-model'));
+  check('with one upload, not two', out.uploads.length === 1, `${out.uploads.length}`);
+  check('and exactly one retry', out.generates.length === 2, `${out.generates.length}`);
+  const retry = JSON.parse(out.generates[1].body);
+  check('the retry drops temperature and nothing else',
+        retry.generationConfig.temperature === undefined &&
+        retry.generationConfig.maxOutputTokens === 32000 &&
+        retry.generationConfig.thinkingConfig?.thinkingLevel === 'LOW',
+        JSON.stringify(retry.generationConfig));
+  check('the retry is otherwise canonical',
+        canonical(out.generates[1].body).every((f) => /^temperature is/.test(f)),
+        canonical(out.generates[1].body).join('; '));
+  check('and the page is deleted once', out.deletes.length === 1, `${out.deletes.length}`);
+
+  // The client cannot ask for it. Only Google's refusal drops temperature.
+  resetRecorder();
+  await convert({ query: '?attempt=0&sampling=off&temperature=off' });
+  check('a client cannot drop temperature on its own',
+        JSON.parse(out.generates[0].body).generationConfig.temperature === 0);
+
+  resetRecorder();
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log('\n=== SUMMARY ===');
 console.log(`checks: ${results.length - failed.length}/${results.length} passed`);

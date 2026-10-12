@@ -60,11 +60,30 @@ export function modelIsGone(status, text) {
  * choices in side-by-side testing against the Python pipeline. `automatic
  * function calling` is an SDK-side setting with no wire representation, so it
  * has no counterpart here.
+ *
+ * `sampling: false` exists for one reason. Google deprecated temperature,
+ * top_p and top_k in July 2026. As of October 2026 every model in the chain
+ * still accepts temperature 0, and while it does it stays -- it is what keeps a
+ * page's LaTeX the same from one conversion to the next. But a parameter that
+ * starts being refused would arrive as a 400, which is the "your file is wrong"
+ * branch: every model would refuse it identically, the chain would never
+ * advance, and every user would be told to try a different file. See
+ * samplingRefused().
  */
-function generationConfig({ thinking = true } = {}) {
-  const cfg = { temperature: 0, maxOutputTokens: 32000 };
+function generationConfig({ thinking = true, sampling = true } = {}) {
+  const cfg = sampling
+    ? { temperature: 0, maxOutputTokens: 32000 }
+    : { maxOutputTokens: 32000 };
   if (thinking) cfg.thinkingConfig = { thinkingLevel: 'LOW' };
   return JSON.stringify(cfg);
+}
+
+/**
+ * True when a 400 is Google refusing a sampling parameter rather than the page.
+ * A bad-file 400 talks about the file or the argument, never about these names.
+ */
+export function samplingRefused(status, text) {
+  return status === 400 && /\b(?:temperature|top_?p|top_?k)\b/i.test(text || '');
 }
 
 /**
@@ -325,25 +344,40 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
   // Every byte of this is written here. There is no client-supplied text in
   // it at all -- the file is named by a uri Google issued, and the media type
   // came off the allowlist above.
-  const payload = '{"system_instruction":{"parts":[{"text":' +
-    JSON.stringify(DIRECT_SYSTEM) + '}]},' +
-    '"contents":[{"role":"user","parts":[' +
-      '{"text":' + JSON.stringify(DIRECT_PROMPT) + '},' +
-      '{"file_data":{"mime_type":' + JSON.stringify(mediaType) +
-        ',"file_uri":' + JSON.stringify(uploaded.uri) + '}}' +
-    ']}],"generationConfig":' + generationConfig({ thinking }) + '}';
+  const ask = (config) => fetch(`${ENDPOINT}/${model}:generateContent`, {
+    method: 'POST',
+    body: '{"system_instruction":{"parts":[{"text":' +
+      JSON.stringify(DIRECT_SYSTEM) + '}]},' +
+      '"contents":[{"role":"user","parts":[' +
+        '{"text":' + JSON.stringify(DIRECT_PROMPT) + '},' +
+        '{"file_data":{"mime_type":' + JSON.stringify(mediaType) +
+          ',"file_uri":' + JSON.stringify(uploaded.uri) + '}}' +
+      ']}],"generationConfig":' + config + '}',
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY,
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
 
   let upstream;
+  let text = null;
   try {
-    upstream = await fetch(`${ENDPOINT}/${model}:generateContent`, {
-      method: 'POST',
-      body: payload,
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': env.GEMINI_API_KEY,
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    upstream = await ask(generationConfig({ thinking }));
+    // A refused sampling parameter is retried HERE, not by the browser: the
+    // page is already uploaded, so asking again costs no upload, and the
+    // decision stays the Worker's -- there is no client flag to drop
+    // temperature, because there is nothing a client should be able to do
+    // to it. Once, and only on this exact refusal.
+    if (upstream.status === 400) {
+      text = await upstream.text();
+      if (samplingRefused(upstream.status, text)) {
+        console.error(`model ${model} refused a sampling parameter - retrying without: `
+                      + text.slice(0, 300));
+        upstream = await ask(generationConfig({ thinking, sampling: false }));
+        text = null;
+      }
+    }
   } catch (err) {
     ctx.waitUntil(deleteFile(env, uploaded.name));
     return {
@@ -364,7 +398,7 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
 
   // Error bodies are small, so parsing here is affordable and stays well
   // inside the CPU budget.
-  const text = await upstream.text();
+  if (text === null) text = await upstream.text();
   let retryAfter = 0;
   try {
     const j = JSON.parse(text);

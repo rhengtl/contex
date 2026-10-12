@@ -51,13 +51,44 @@ export const DIRECT_PROMPT =
   'Convert the attached page to LaTeX, following your instructions exactly.\n';
 
 /**
- * Ordered fallback candidates, from gemini.py MODEL_CHAIN[ROLE_DOCUMENT].
- * The first entry is the preference; the reasoning behind the order is in
- * gemini.py and is not repeated here.
+ * Ordered fallback candidates. Every entry is free-tier eligible, and every
+ * entry is a DISTINCT model -- checked against the live API, not just the docs.
+ *
+ * The principles are the ones gemini.py set down (recoverable from git history
+ * at 45dc49b^:contex/services/llm/gemini.py):
+ *
+ *   - The first entry is the preference, chosen on measured reading quality
+ *     rather than recency. gemini-3.1-flash-lite scored 0.6214 on socOCRbench,
+ *     tied with the best free-tier model; gemini-3.6-flash, the best measured
+ *     reader at 0.6225, is second.
+ *   - A model with a thin free daily quota goes last, where it is a fine
+ *     last resort and a poor primary.
+ *   - Nothing speculative: rotating onto a name that does not exist turns one
+ *     exhausted quota into a run of confusing errors.
+ *
+ * October 2026. Google deprecated gemini-3.5-flash and gemini-3.7-flash and now
+ * serves them by routing: a request to 3.5-flash is answered by 3.6-flash, and
+ * one to 3.7-flash by 3.8-flash (the reply's modelVersion says so). Left in
+ * place, the chain read [3.1-flash-lite, 3.6, 3.6, 3.8] -- the third slot
+ * re-asked the model that had just run out, under another name the outage
+ * record does not connect to it, and the status line named a model that was
+ * not the one answering. So:
+ *
+ *   gemini-3.5-flash  -> gemini-3.5-flash-lite  a genuinely separate model,
+ *       GA since July 2026, Google's named successor to 3.1-flash-lite, and
+ *       verified to accept this file's generation config unchanged.
+ *   gemini-3.7-flash  -> gemini-3.8-flash  what was already answering, by its
+ *       own name. Kept last: it is 3.7's successor and the free quota on
+ *       full-size Flash releases has been the first to run out.
+ *
+ * Neither newcomer has been through socOCRbench, which is why neither leads.
+ * gemini-3.1-flash-lite has a published shutdown of 2027-05-07; benchmark
+ * gemini-3.5-flash-lite against it well before then and promote it if it holds
+ * up, rather than discovering the date from a chain that has lost its head.
  */
 export const MODEL_CHAIN = [
   'gemini-3.1-flash-lite',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.7-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
 ];

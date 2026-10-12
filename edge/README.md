@@ -49,8 +49,8 @@ headers carried over.
 | `convert.py` `ai_status_route()` | `worker/gemini.js` `aiStatus()` | Still never probes the API |
 | `recognise/ai.py` `_DIRECT_SYSTEM` | `worker/prompt.js` | Copied character for character |
 | `recognise/ai.py` `fenced_latex()` | `gemini.js` / `app.js` | Same last-document-block preference |
-| `services/llm/gemini.py` `MODEL_CHAIN` | `worker/prompt.js` | Same four models, same order |
-| `services/llm/gemini.py` `_config()` | `gemini.js` `generationConfig()` | temperature 0, 32000 tokens, thinking LOW |
+| `services/llm/gemini.py` `MODEL_CHAIN` | `worker/prompt.js` | Four models, same order principles; two names replaced in Oct 2026 after Google began routing them to other models (see the comment in `prompt.js`) |
+| `services/llm/gemini.py` `_config()` | `gemini.js` `generationConfig()` | temperature 0, 32000 tokens, thinking LOW; retried once without temperature if Google refuses it (deprecated July 2026) |
 | `services/llm/availability.py` | `gemini.js` outage helpers | File → KV; still **per model**, not per service |
 | `web/session.py` cookie + terms | `worker/session.js` | itsdangerous → Web Crypto HMAC |
 | `web/security.py` headers/CSP | `public/_headers` + `worker/security.js` | See the two notes below |
