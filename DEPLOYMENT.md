@@ -210,17 +210,22 @@ engine request. Both are listed for that reason.
 
 ## Known operational limits
 
-**Gemini's free tier is geographically restricted.** A Worker has no fixed
-location: each request leaves from whichever Cloudflare PoP served it, and when
-that PoP sits in an unsupported region Google refuses the upload with
-`FAILED_PRECONDITION: User location is not supported for the API use`. This is
-intermittent by nature — the same document can succeed and fail minutes apart.
-`worker/gemini.js` maps every upload failure to a 502 with "try a different
-file", which for this cause is misleading advice; the upstream status is
-logged, so `wrangler tail` will show the real reason.
+**Gemini refuses requests by where they come from — so the Worker is pinned.**
+Google answers a request from an unsupported region with `400
+FAILED_PRECONDITION: User location is not supported for the API use.`, and by
+default a Worker runs wherever the visitor was served. For visitors in the
+Philippines that is often Hong Kong, which Gemini does not serve: on 2026-10-12
+every page upload from there was refused and those users never reached the AI
+at all. `[placement] region = "gcp:us-central1"` in `edge/wrangler.toml` runs
+the Worker beside Google in the US instead, so its requests always leave from a
+supported country. It costs a visitor far from the US one extra round trip on
+API calls only — static assets are still served from the nearest data centre.
 
-The application degrades correctly when it happens: the user is offered the
-in-browser conversion rather than a broken page.
+If this ever recurs, `wrangler tail` or the dashboard's Workers Logs show
+`page upload refused (400)` with that message. The browser no longer walks the
+model chain on a failed upload (no model saw the page), and the fallback notice
+says *"The page could not be sent to the AI conversion service"* rather than
+blaming the models.
 
 **The first compile is expensive.** The engine's format file is 10.36 MB and is
 served uncompressed — `.fmt` is an extension the edge does not recognise, so it

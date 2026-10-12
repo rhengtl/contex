@@ -600,8 +600,15 @@ async function loadPreview(issues) {
   }
   setText('preview-error-reason', parts.join(' '));
 
+  // What pdfTeX actually objected to. Without it a failed preview said only
+  // "could not be built", which is all a user -- or a screenshot sent from a
+  // phone -- could report, and there was no way to tell a bad formula from a
+  // missing font from a broken engine.
   const detail = el('preview-error-detail');
-  const found = issues && issues.length ? `Validation found: ${issues.join(' ')}` : '';
+  const found = [
+    issues && issues.length ? `Validation found: ${issues.join(' ')}` : '',
+    result.errors ? `LaTeX reported:\n${result.errors.split('\n').slice(0, 8).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
   if (detail) {
     detail.textContent = found;
     detail.classList.toggle('hidden', !found);

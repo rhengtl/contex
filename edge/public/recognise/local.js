@@ -122,6 +122,16 @@ async function recogniseRegions(page, masked, boxes, lines, { signal, onProgress
     try {
       tight = segment.tighten(masked, box);
       const result = await formulas.recognise(crop(page, tight), { signal });
+      if (result.complete === false) {
+        // A runaway, not a reading: the model never ended the formula. It is
+        // dropped like an unsafe one -- as a formula AND as salvage, because
+        // what it repeats is a loop, not the page. Kept, it was set as one
+        // giant truncated array that pdfTeX refused (2026-10-12, a notebook
+        // page photographed on a phone).
+        console.warn(`Notice: an expression was dropped (no end within ${result.tokens} tokens).`);
+        dropped.push('runaway');
+        continue;
+      }
       latex = result.latex;
     } catch (err) {
       console.warn('Notice: formula recognition failed for one region:', err);

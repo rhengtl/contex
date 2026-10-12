@@ -440,8 +440,13 @@ async function handle(request, env, ctx) {
       return json({
         error: result.error,
         retryable: result.retryable,
-        nextAttempt: result.retryable ? (result.retryWithoutThinking ? attempt : attempt + 1) : null,
+        // The same index when the model was never the problem: a thinking
+        // level it refused, or a page that never reached Google at all.
+        nextAttempt: result.retryable
+          ? (result.retryWithoutThinking || result.retrySameModel ? attempt : attempt + 1)
+          : null,
         retryWithoutThinking: !!result.retryWithoutThinking,
+        retrySameModel: !!result.retrySameModel,
         model: result.model || null,
         retryAfter: result.retryAfter || 0,
       }, result.status);

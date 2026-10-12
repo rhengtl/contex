@@ -384,6 +384,15 @@ console.log('\n=== 5. nothing leaks back to the caller ===');
         `${failedUpload.status}, ${out.generates.length} generates`);
   check('and does not leak the upload body back',
         !failedUpload.text.includes('upload refused'), failedUpload.text.slice(0, 100));
+  // No model saw the page, so the chain must not move past one.
+  check('an upload failure keeps the browser on the same chain entry',
+        failedUpload.body && failedUpload.body.retryable === true
+        && failedUpload.body.retrySameModel === true && failedUpload.body.nextAttempt === 0,
+        JSON.stringify(failedUpload.body));
+  check('and says the page could not be sent, not that the file is wrong',
+        failedUpload.body && /could not be sent/.test(failedUpload.body.error)
+        && !/different file/.test(failedUpload.body.error),
+        failedUpload.body && failedUpload.body.error);
 }
 
 // ===========================================================================

@@ -284,6 +284,28 @@ async function deleteFile(env, name) {
 }
 
 /**
+ * The page never reached Google, so no model has been asked anything.
+ *
+ * This used to be reported like a model failure -- retryable, advance the
+ * chain -- and the browser did exactly that: it re-sent the same page to the
+ * next model, whose upload failed the same way, four times over, and then told
+ * the user "Every available model refused this conversion" when no model had
+ * seen the page at all. Observed in production on 2026-10-12, from the
+ * Philippines: every attempt's upload failed in about a second.
+ *
+ * The upload is the same whatever model comes next, so it is retried on the
+ * SAME chain entry (the browser allows itself one resend) and then reported
+ * for what it is. `retrySameModel` is what tells the browser not to advance.
+ */
+function uploadFailed(model, detail) {
+  return {
+    ok: false, status: 502, retryable: true, retrySameModel: true, model,
+    error: 'The page could not be sent to the AI conversion service.',
+    detail,
+  };
+}
+
+/**
  * @param request  body is the raw bytes of one page, and nothing else
  * @param attempt  index into the surviving chain, supplied by the browser
  */
@@ -321,11 +343,7 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
     // Not the same thing as Google refusing the upload: this is the request
     // never completing -- a timeout, or the connection itself failing.
     console.error('page upload threw:', err && err.stack || err);
-    return {
-      ok: false, status: 502, retryable: true, model,
-      error: 'The conversion failed. Please try a different file.',
-      detail: String(err && err.message || err).slice(0, 200),
-    };
+    return uploadFailed(model, String(err && err.message || err).slice(0, 200));
   }
   if (!uploaded.ok) {
     // The upstream status never reaches the browser -- the route sends the
@@ -334,11 +352,7 @@ export async function convertPage(request, env, ctx, { attempt = 0, mime = 'imag
     // any other reason. It is the one thing needed to tell "the file is wrong"
     // from "we are over quota".
     console.error(`page upload refused (${uploaded.status}):`, uploaded.detail);
-    return {
-      ok: false, status: 502, retryable: true, model,
-      error: 'The conversion failed. Please try a different file.',
-      detail: uploaded.detail,
-    };
+    return uploadFailed(model, uploaded.detail);
   }
 
   // Every byte of this is written here. There is no client-supplied text in

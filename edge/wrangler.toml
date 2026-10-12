@@ -22,6 +22,29 @@ workers_dev = true
 pattern = "contex.rhengtl.tech"
 custom_domain = true
 
+# Where the Worker runs. By default Cloudflare runs it in whichever data
+# centre answered the visitor -- and the Gemini API refuses a request by where
+# it COMES FROM. Visitors in the Philippines are served from Manila or Hong
+# Kong; Hong Kong is not a supported Gemini region, and on 2026-10-12 every
+# upload from there was refused:
+#
+#     page upload refused (400): "User location is not supported for the API
+#     use." FAILED_PRECONDITION
+#
+# which took the AI path down for those users entirely. A placement hint runs
+# the Worker beside a Google Cloud region instead, so its requests to Google
+# always leave from a supported country, wherever the visitor is.
+#
+# us-central1 rather than a nearer Asian region: Cloudflare's egress in Asia
+# is what was misplaced, so the hint has to land somewhere whose egress is
+# unambiguous. The Gemini API and the Firestore database are both served from
+# there, so the Worker's own subrequests get shorter too. The visitor pays one
+# extra round trip to reach it (~150-200 ms from Manila) on API calls only:
+# static assets -- the pages, the TeX tree, the models -- are still served from
+# the nearest data centre, because run_worker_first is false.
+[placement]
+region = "gcp:us-central1"
+
 # Static assets are served by the platform, not by the Worker. This is what
 # keeps the TeX Live tree and the model weights off the 100,000 requests/day
 # meter -- requests that do not invoke the Worker are free and unlimited.

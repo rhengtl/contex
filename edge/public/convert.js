@@ -102,6 +102,9 @@ export class Rotation {
   }
 }
 
+/** How long to wait before re-sending a page whose upload failed. */
+const RESEND_DELAY_MS = 1500;
+
 /**
  * One page through the Worker.
  *
@@ -119,6 +122,7 @@ export async function convertOne(unit, rotation, api,
     ? unit.bytes : new Uint8Array(unit.bytes);
   let attempt = rotation.attempt;
   let thinking = true;
+  let resent = false;
 
   for (let guard = 0; guard < 10; guard++) {
     const res = await api.convertPage({ body, mime: unit.mime, attempt, thinking });
@@ -147,7 +151,19 @@ export async function convertOne(unit, rotation, api,
       rotation.fatal = err.error || 'Every AI model has reached its quota.';
       return { ok: false, message: rotation.fatal };
     }
-    if (err.retryWithoutThinking) {
+    if (err.retrySameModel) {
+      // The page never reached Google, so no model refused anything and the
+      // chain must not move: the next model's upload would be the same
+      // upload. One resend after a pause, for a blip; then say what actually
+      // happened instead of walking the whole chain into "every model
+      // refused". The round is left where it is -- the models are fine.
+      if (resent) {
+        return { ok: false, message: err.error || 'The page could not be sent to the AI conversion service.' };
+      }
+      resent = true;
+      if (onStatus) onStatus('Could not reach the AI service — trying again…');
+      await new Promise((r) => setTimeout(r, RESEND_DELAY_MS));
+    } else if (err.retryWithoutThinking) {
       // This model does not accept a thinking level. Drop it once and retry
       // the same model -- gemini.py ask() does exactly this.
       thinking = false;

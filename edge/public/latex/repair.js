@@ -53,6 +53,64 @@ function braceBalance(source) {
   return { unmatchedOpen: depth, strayClose: stray };
 }
 
+const OPEN_ENV = /^\\begin\s*\{([^}]*)\}/;
+const CLOSE_ENV = /^\\end\s*\{([^}]*)\}/;
+const LEFT = /^\\left(?![a-zA-Z])/;
+const RIGHT = /^\\right(?![a-zA-Z])/;
+
+/**
+ * Everything still open at the end of an expression, innermost last:
+ * '{' for a group, 'left' for a \left, or an environment name.
+ *
+ * ONE stack, because the closers have to come out in the order the openers
+ * went in. A formula cut off mid-way -- the recogniser looping until it hits
+ * its token cap, which is what took down a phone conversion on 2026-10-12 --
+ * ends inside a group inside an array inside a \left inside a group:
+ *
+ *     { \sum \left[ \begin{array}{c} { ( x_{j}, x_{
+ *
+ * Counting each kind separately and closing all the braces first, then every
+ * \right., then every \end, closed the OUTER group while the array was still
+ * open: `}}}}\right.\end{array}` -- pdfTeX's "Extra }, or forgotten $", and no
+ * preview at all. Closed innermost-first, the same input is well formed.
+ */
+function openGroups(source) {
+  const stack = [];
+  const closeLast = (match) => {
+    for (let k = stack.length - 1; k >= 0; k--) {
+      if (match(stack[k])) { stack.splice(k, 1); return; }
+    }
+  };
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '\\') {
+      const rest = source.slice(i);
+      let m;
+      if ((m = OPEN_ENV.exec(rest))) { stack.push(m[1].trim()); i += m[0].length - 1; continue; }
+      if ((m = CLOSE_ENV.exec(rest))) {
+        const env = m[1].trim();
+        closeLast((s) => s === env);
+        i += m[0].length - 1;
+        continue;
+      }
+      if (LEFT.test(rest)) { stack.push('left'); i += 4; continue; }
+      if (RIGHT.test(rest)) { closeLast((s) => s === 'left'); i += 5; continue; }
+      i += 1;                                    // \{, \}, \\ and the like
+      continue;
+    }
+    if (ch === '{') stack.push('{');
+    else if (ch === '}') closeLast((s) => s === '{');
+  }
+  return stack;
+}
+
+/** The text that closes what openGroups() found, innermost first. */
+function closersFor(stack) {
+  return stack.slice().reverse().map((open) => (
+    open === '{' ? '}' : open === 'left' ? '\\right.' : `\\end{${open}}`
+  )).join('');
+}
+
 /** Drop closing braces that never had an opener. */
 function dropStrayCloses(source) {
   const out = [];
@@ -108,18 +166,6 @@ function hasTopLevelAlignment(source) {
   return false;
 }
 
-/** Environments opened and not closed, innermost last. */
-function openEnvironments(source) {
-  const stack = [];
-  for (const m of source.matchAll(/\\(begin|end)\s*\{([^}]*)\}/g)) {
-    const env = m[2].trim();
-    if (m[1] === 'begin') stack.push(env);
-    else if (stack.length && stack[stack.length - 1] === env) stack.pop();
-    else if (stack.length) stack.pop();          // mismatched: closes something
-  }
-  return stack;
-}
-
 /**
  * Make one recognised expression safe to place in a document.
  *
@@ -152,24 +198,17 @@ export function sanitiseMath(latex) {
   //    model has no reason to emit one and the document has no use for it.
   if (source.includes('%')) source = source.split('%').join('\\%');
 
-  // 4. Braces. Stray closes go; unclosed opens are closed at the end, which is
-  //    where TeX would have wanted them for a superscript or a \frac argument.
-  const balance = braceBalance(source);
-  if (balance.strayClose) source = dropStrayCloses(source);
-  const after = braceBalance(source);
-  if (after.unmatchedOpen) source += '}'.repeat(after.unmatchedOpen);
-
-  // 5. \left without \right is a fatal TeX error rather than a cosmetic one.
-  //    '\right.' is the empty delimiter, so the expression keeps its shape.
+  // 4. Closers with no opener: stray braces go, and a \right with no \left
+  //    gets an empty '\left.' in front so the expression keeps its shape.
+  if (braceBalance(source).strayClose) source = dropStrayCloses(source);
   const left = countOf(source, COUNT_LEFT);
   const right = countOf(source, COUNT_RIGHT);
-  if (left > right) source += '\\right.'.repeat(left - right);
-  else if (right > left) source = '\\left.'.repeat(right - left) + source;
+  if (right > left) source = '\\left.'.repeat(right - left) + source;
 
-  // 6. Environments. \begin{matrix} with no \end is the common one, from a
-  //    matrix whose bottom row fell outside the crop.
-  const open = openEnvironments(source);
-  for (const env of open.slice().reverse()) source += `\\end{${env}}`;
+  // 5. Openers with no closer -- an unclosed brace, a \left without \right
+  //    (fatal, not cosmetic), a \begin{matrix} whose bottom row fell outside
+  //    the crop -- are closed at the end, innermost first. See openGroups().
+  source += closersFor(openGroups(source));
 
   // 7. Commands that only exist inside a numbered equation environment.
   if (EQUATION_ONLY.test(source)) {
@@ -228,26 +267,24 @@ export function repair(tex) {
     fixes.push(`Removed ${strays.strayClose} unmatched closing brace(s).`);
   }
 
-  const open = openEnvironments(body);
-  if (open.length) {
-    for (const env of open.slice().reverse()) body += `\n\\end{${env}}`;
-    fixes.push(`Closed ${open.length} unclosed environment(s): ${open.join(', ')}.`);
-  }
-
-  const depth = braceBalance(body).unmatchedOpen;
-  if (depth) {
-    body += '}'.repeat(depth);
-    fixes.push(`Closed ${depth} unclosed brace(s).`);
-  }
-
   const left = countOf(body, COUNT_LEFT);
   const right = countOf(body, COUNT_RIGHT);
-  if (left > right) {
-    body += '\\right.'.repeat(left - right);
-    fixes.push(`Balanced ${left - right} \\left without \\right.`);
-  } else if (right > left) {
+  if (right > left) {
     body = '\\left.'.repeat(right - left) + body;
     fixes.push(`Balanced ${right - left} \\right without \\left.`);
+  }
+
+  // Unclosed environments, braces and \left, closed innermost first -- one
+  // stack, not one pass per kind, for the reason given at openGroups().
+  const open = openGroups(body);
+  if (open.length) {
+    body += closersFor(open);
+    const envs = open.filter((o) => o !== '{' && o !== 'left');
+    const braces = open.filter((o) => o === '{').length;
+    const lefts = open.filter((o) => o === 'left').length;
+    if (envs.length) fixes.push(`Closed ${envs.length} unclosed environment(s): ${envs.join(', ')}.`);
+    if (braces) fixes.push(`Closed ${braces} unclosed brace(s).`);
+    if (lefts) fixes.push(`Balanced ${lefts} \\left without \\right.`);
   }
 
   // \[ and \] are written in pairs by assemble.js, so an imbalance means a

@@ -197,6 +197,7 @@ export async function recognise(source, { signal } = {}) {
   const hidden = encoded[encoder.outputNames[0]];
 
   const ids = [START];
+  let ended = false;
   for (let step = 0; step < MAX_NEW; step++) {
     if (signal && signal.aborted) break;
     const inputIds = new ort.Tensor(
@@ -213,13 +214,17 @@ export async function recognise(source, { signal } = {}) {
       const value = logits.data[offset + v];
       if (value > bestValue) { bestValue = value; best = v; }
     }
-    if (best === EOS) break;
+    if (best === EOS) { ended = true; break; }
     ids.push(best);
   }
 
   return {
     latex: decodeIds(ids, vocab, byteDecoder).trim(),
     tokens: ids.length - 1,
+    // False when MAX_NEW ran out first: by the definition above, a runaway --
+    // typically the model repeating `x_{j},` until it is cut off mid-group --
+    // and not a transcription of anything.
+    complete: ended,
     ms: Math.round(performance.now() - t0),
   };
 }

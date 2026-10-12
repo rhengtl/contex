@@ -234,6 +234,39 @@ if (!skip()) {
         && nothink.calls[0].thinking === true && nothink.calls[1].thinking === false,
         JSON.stringify(nothink.calls));
 
+  // An upload that never reached Google is not a model refusing the page.
+  // Production, 2026-10-12: every upload from one location failed, the chain
+  // was walked end to end on the same page, and the user was told "Every
+  // available model refused this conversion" when no model had seen it.
+  const uploadFailure = { retryable: true, nextAttempt: 0, retrySameModel: true,
+                          model: 'gemini-2.5-flash',
+                          error: 'The page could not be sent to the AI conversion service.' };
+  const blip = await run(({ u, s, f }) => window.convertWith([u], {
+    available: s, allowFallback: false, pages: [f, 'ok'],
+  }), { u: '/bench/img_mixed/print_prose.png', s: up, f: uploadFailure });
+  check('an upload that fails once is re-sent to the SAME model',
+        blip.ok && blip.summary.path === 'ai' && blip.calls.length === 2
+        && blip.calls[0].attempt === 0 && blip.calls[1].attempt === 0,
+        JSON.stringify(blip.calls));
+  check('and the user is not told a model is unavailable',
+        blip.ok && !blip.statuses.some((m) => m.includes('trying the next one')),
+        JSON.stringify(blip.ok && blip.statuses));
+
+  const unreachable = await run(({ u, s, f }) => window.convertWith([u], {
+    available: s, allowFallback: true, pages: [f],
+  }), { u: '/bench/img_mixed/print_prose.png', s: up, f: uploadFailure });
+  check('an upload that keeps failing stops after one resend, not after the whole chain',
+        unreachable.ok && unreachable.calls.length === 2
+        && unreachable.calls.every((c) => c.attempt === 0),
+        JSON.stringify(unreachable.calls));
+  check('the local path finishes the document',
+        unreachable.ok && unreachable.summary.path === 'converters',
+        unreachable.ok ? unreachable.summary.path : unreachable.message);
+  check('and the notice says the page could not be sent, not that every model refused',
+        unreachable.ok && /could not be sent/.test(unreachable.summary.fallbackNotice.reason)
+        && !/refused/.test(unreachable.summary.fallbackNotice.reason),
+        unreachable.ok && unreachable.summary.fallbackNotice.reason);
+
   // A fatal error is not a fallback: the document is unconvertible, and
   // running the recognisers over it would produce nonsense with a warning.
   const fatal = await run(({ u, s }) => window.convertWith([u], {
@@ -630,6 +663,18 @@ if (!skip()) {
     ['f(t) = 1 \\tag * { \\omega } ( 2 )', 'a \\tag'],
     ['a = b \\\\ c = d', 'a bare line break'],
     ['a &= b \\\\ c &= d', 'alignment tabs'],
+    // A formula cut off mid-group inside an array inside a \left inside a
+    // group. Closed by kind (all braces, then \right., then \end) it was
+    // "Extra }, or forgotten $"; it must be closed innermost first.
+    ['{ \\left[ \\begin{array}{c} { x_{', 'a formula cut off inside nested groups'],
+    // The one that happened: a notebook page on Brave mobile, 2026-10-12,
+    // the recogniser looping on `x_{j},` until its token cap. Shortened, but
+    // cut at the same depth.
+    ['\\begin{array} { c } { { \\displaystyle \\sum _ { j = 1 } ^ { \\infty } '
+     + '\\left[ \\begin{array} { c } { { \\scriptstyle \\alpha _ { j } } } \\\\ '
+     + '\\end{array} \\right] } } \\\\ { { \\displaystyle \\sum _ { j = 1 } ^ { \\infty } '
+     + '\\left[ \\begin{array} { c } { { \\scriptstyle ( x _ { j } , x _ { j } , x _ {',
+     'the truncated runaway from the phone report'],
   ]) {
     const safe = await run((s) => window.pure.sanitiseMath(s), expression);
     const built = await run((t) => window.compileTex(t),
