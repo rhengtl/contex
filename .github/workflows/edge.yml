@@ -145,18 +145,34 @@ jobs:
           # it means wrangler never has to guess which account the token is for.
           CLOUDFLARE_ACCOUNT_ID: 7881ff7e02e67024dcf8a97e1f58283b
 
+      # Both addresses, because both are promised: contex.rhengtl.tech is the
+      # published one and contex.rhengtl.workers.dev the fallback, and a deploy
+      # can lose either on its own -- the custom domain through DNS or the
+      # zone, workers.dev through `workers_dev` in wrangler.toml. On each, the
+      # Worker (/api/session) and the static tree (/) are separate paths
+      # through Cloudflare, so both are asked.
       - if: steps.token.outputs.present == 'true'
         name: Check the deployment answers
         run: |
-          for attempt in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-                   https://contex.rhengtl.workers.dev/api/session || true)
-            if [ "$code" = "200" ]; then
-              echo "Live: /api/session answered 200 after $((attempt * 5))s."
-              exit 0
-            fi
-            echo "  attempt $attempt: $code"
-            sleep 5
+          failed=0
+          for origin in https://contex.rhengtl.tech https://contex.rhengtl.workers.dev; do
+            for path in /api/session /; do
+              ok=0
+              for attempt in $(seq 1 20); do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+                       "$origin$path" || true)
+                if [ "$code" = "200" ]; then
+                  echo "Live: $origin$path answered 200 after $((attempt * 5))s."
+                  ok=1
+                  break
+                fi
+                echo "  $origin$path attempt $attempt: $code"
+                sleep 5
+              done
+              if [ "$ok" = 0 ]; then
+                echo "::error::$origin$path never answered 200."
+                failed=1
+              fi
+            done
           done
-          echo "::error::The Worker published but /api/session never answered 200."
-          exit 1
+          exit "$failed"

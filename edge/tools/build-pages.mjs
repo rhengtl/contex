@@ -42,6 +42,7 @@
  */
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
+import { PRIMARY_ORIGIN } from './site.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PAGES = resolve(ROOT, 'pages');
@@ -112,7 +113,13 @@ async function build(name, route) {
 
   // {% set %} is read off the page and then removed, so the values are in
   // scope for the shell and every partial it pulls in.
-  const vars = {};
+  // Plus the two the shell needs for its canonical link: the primary origin
+  // (from wrangler.toml) and the address this page is served at -- /login, not
+  // /login/index.html, matching html_handling = "drop-trailing-slash".
+  const vars = {
+    site: PRIMARY_ORIGIN,
+    path: '/' + route.replace(/(?:^|\/)index\.html$/, ''),
+  };
   html = html.replace(SET, (_, key, value) => { vars[key] = value; return ''; });
 
   const parent = html.match(EXTENDS);

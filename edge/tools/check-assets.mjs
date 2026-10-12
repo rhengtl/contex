@@ -21,6 +21,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, extname } from 'node:path';
+import { PRIMARY_ORIGIN } from './site.mjs';
 
 const PUBLIC = resolve(process.env.CONTEX_PUBLIC || 'public');
 const JSON_OUT = process.argv.includes('--json');
@@ -108,6 +109,10 @@ function applyRedirects(path, rules) {
 // prevent, and a false positive only costs a line in the ignore list below.
 const IN_CODE = /['"`](\/[A-Za-z0-9_@./-]*\.[A-Za-z0-9]+)['"`]/g;
 const IN_HTML = /(?:src|href)\s*=\s*["'](\/[^"']+)["']/g;
+// The same reference written against the primary origin -- og:image has to be
+// absolute for a crawler to use it -- is still a file this tree must carry.
+const ON_SITE = new RegExp(
+  `["']${PRIMARY_ORIGIN.replace(/\./g, '\\.')}(\\/[^"'#?]*\\.[A-Za-z0-9]+)["']`, 'g');
 
 // Paths that are references but not files.
 const NOT_ASSETS = [
@@ -159,7 +164,7 @@ const referenced = new Map();   // path -> Set of files that ask for it
 
 for (const { rel, full } of await sources(PUBLIC)) {
   const text = await readFile(full, 'utf8');
-  for (const pattern of [IN_CODE, IN_HTML]) {
+  for (const pattern of [IN_CODE, IN_HTML, ON_SITE]) {
     pattern.lastIndex = 0;
     for (const m of text.matchAll(pattern)) {
       const path = m[1];

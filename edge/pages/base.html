@@ -43,7 +43,15 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="ConTeX">
     <meta property="og:title" content="{% block og_title %}ConTeX{% endblock %}">
-    <meta property="og:image" content="/img/og-card.png">
+    {# Absolute, because a crawler reading a shared link resolves nothing: a
+       relative og:image is simply dropped by most of them. Both point at the
+       primary address on either host, so a page reached through the
+       workers.dev fallback is still filed under contex.rhengtl.tech. site and
+       path come from tools/build-pages.mjs; the 404 page has no address of
+       its own to claim. #}
+    {% if page == 'error' %}{% else %}<link rel="canonical" href="{{ site }}{{ path }}">
+    <meta property="og:url" content="{{ site }}{{ path }}">
+    {% endif %}<meta property="og:image" content="{{ site }}/img/og-card.png">
     <meta name="twitter:card" content="summary_large_image">
 
     {# The two webfonts are @font-face rules inside app.css, served from

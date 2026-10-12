@@ -2,6 +2,26 @@ name = "contex"
 main = "worker/index.js"
 compatibility_date = "2026-01-15"
 
+# Two addresses, one Worker. contex.rhengtl.tech is the published one;
+# contex.rhengtl.workers.dev stays up as the fallback.
+#
+# workers_dev is set explicitly because it is NOT the default once a route
+# exists: Wrangler's documented default is true only "when the configuration
+# has no route or routes, and false otherwise". Left implicit, adding the
+# custom domain below would have taken workers.dev down on the next deploy.
+workers_dev = true
+
+# A Custom Domain, not a zone route: Cloudflare creates the DNS record and the
+# certificate itself, and the Worker is the origin -- there is no server behind
+# it. It needs rhengtl.tech to be an active zone on this account (nameservers
+# moved to Cloudflare), and contex.rhengtl.tech must not already have a CNAME.
+# tools/site.mjs reads this entry: the canonical link and the absolute
+# share-card URLs in every page are built from it, so this is the one place the
+# primary address is written.
+[[routes]]
+pattern = "contex.rhengtl.tech"
+custom_domain = true
+
 # Static assets are served by the platform, not by the Worker. This is what
 # keeps the TeX Live tree and the model weights off the 100,000 requests/day
 # meter -- requests that do not invoke the Worker are free and unlimited.

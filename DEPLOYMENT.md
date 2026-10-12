@@ -12,12 +12,59 @@ actually happened.
 | | |
 |---|---|
 | Worker | `contex` |
-| URL | https://contex.rhengtl.workers.dev |
+| URL | https://contex.rhengtl.tech (primary) |
+| Fallback URL | https://contex.rhengtl.workers.dev |
 | Config | [`edge/wrangler.toml`](edge/wrangler.toml) |
 | Firebase project | `contex-28bfd` |
 
 The workers.dev hostname is the Worker's *name* plus the account subdomain, so
-renaming the Worker renames the site.
+renaming the Worker renames the fallback.
+
+Both addresses serve the same Worker and the same assets, and both are fully
+working: neither redirects to the other. Every page carries
+`<link rel="canonical">` and `og:url` pointing at contex.rhengtl.tech, so a
+link shared or indexed from the fallback is still filed under the primary.
+Sessions are per host (the cookie has no `Domain`), so signing in on one
+address does not sign you in on the other.
+
+## The custom domain
+
+`rhengtl.tech` came from the GitHub Student Developer Pack (get.tech), claimed
+2026-10-12 for one year. `edge/wrangler.toml` attaches it as a Workers
+**Custom Domain** — Cloudflare creates the DNS record and the certificate — and
+sets `workers_dev = true` explicitly, because Wrangler turns workers.dev
+*off* by default as soon as any route exists. `edge/tools/site.mjs` reads the
+hostname from that same entry for the canonical links, so wrangler.toml is the
+only place it is written.
+
+One-time setup, in this order — **the first deploy after the custom-domain
+entry fails until step 2 is complete**, because a Custom Domain can only be
+created on an active zone:
+
+1. **Add the zone.** Cloudflare dashboard → Add a domain → `rhengtl.tech` →
+   Free plan. Cloudflare imports the existing DNS records and shows two
+   nameservers. Do **not** create a record for `contex` — the Custom Domain
+   makes its own, and an existing CNAME there blocks it.
+2. **Point the domain at Cloudflare.** get.tech control panel → the domain →
+   Name Servers → replace the four `*.orderbox-dns.com` entries with the two
+   Cloudflare gave. Wait for the zone to show **Active** (usually minutes,
+   occasionally hours). `nslookup -type=NS rhengtl.tech` shows the switch.
+3. **Authorise the hostname in Firebase** (see [Firebase](#firebase)): add
+   `contex.rhengtl.tech` to Authorized domains and keep
+   `contex.rhengtl.workers.dev` there too.
+4. **Check the deploy token can reach the zone.** The token's *Zone
+   Resources* must include `rhengtl.tech` (or all zones) with *Workers Routes:
+   Edit*. A token scoped before the zone existed may not cover it. If the
+   deploy then fails while creating the domain, add *DNS: Edit* for the zone.
+5. **Deploy** — push to `master`, or `npx wrangler deploy` from `edge/`. The
+   workflow's last step requires `/` and `/api/session` to answer 200 on
+   **both** hosts.
+
+**When the domain lapses** (2027-10-12 unless renewed), the primary stops
+resolving and the fallback keeps working. Either renew it, or remove the
+`[[routes]]` entry and point `site.mjs` at the workers.dev origin, then
+`npm run build:pages` — otherwise the canonical links keep sending crawlers to
+a dead name.
 
 ## Before the first deploy
 
@@ -63,7 +110,8 @@ for that reason.
 
 To enable it: Cloudflare dashboard → My Profile → API Tokens → Create Token →
 the **Edit Cloudflare Workers** template, with *Account Resources* restricted
-to this one account. Add the value as an Actions secret named
+to this one account and *Zone Resources* including `rhengtl.tech` (the
+custom domain is created by the deploy). Add the value as an Actions secret named
 `CLOUDFLARE_API_TOKEN` (Settings → Secrets and variables → Actions). The job
 runs in an environment called `production`, which GitHub creates on first use;
 add a required reviewer there if you want a deploy to wait for approval.
@@ -122,8 +170,9 @@ security rules are what protect the data.
 
 Auth and Firestore are used; Hosting and Cloud Run are not.
 
-**Add the deployed hostname to Authorized domains** (Firebase Console →
-Authentication → Settings). Without it, Google sign-in fails with
+**Add every deployed hostname to Authorized domains** (Firebase Console →
+Authentication → Settings) — today both `contex.rhengtl.tech` and
+`contex.rhengtl.workers.dev`. Without it, Google sign-in fails with
 `auth/unauthorized-domain`. Email/password sign-in, signup and password reset
 all run server-side through the Worker and are unaffected — so this failure
 looks like "only the Google button is broken".
