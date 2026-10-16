@@ -4,7 +4,7 @@ Photograph a page of handwriting, or drop in a PDF, and get LaTeX back — with 
 PDF preview compiled in the browser so you can see what you are about to
 download.
 
-Live at **https://contex.rhengtl.workers.dev**
+Live at **https://contex.rhengtl.tech** · Case study: [rhengtl.tech/projects/contex](https://rhengtl.tech/projects/contex)
 
 ---
 
