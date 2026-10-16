@@ -28,7 +28,7 @@
  */
 
 import { staticValidate } from '/latex/validate.js';
-import { compile } from '/latex/compile.js';
+import { compile, warm as warmCompiler } from '/latex/compile.js';
 import { renderPdf } from '/preview.js';
 import { aiUnits, checkInput, extensionOf, totalPages, ACCEPTED,
          ACCEPTED_EXTENSIONS, MAX_PDF_PAGES } from '/pages.js';
@@ -432,6 +432,11 @@ async function startConversion(headline, detail) {
     // Said before the conversion by checkPageLimit(); repeated here so the
     // finished document carries it too, for anyone who comes back to it later.
 
+    // Every conversion ends in a preview, and on a first visit the preview
+    // has ~10 MB of engine files to fetch. Start that now, so it overlaps the
+    // conversion instead of following it.
+    warmCompiler();
+
     let result;
     try {
       result = await convertDocument({
@@ -548,11 +553,31 @@ async function showResult(name, { tex, summary, issues }, pageNotes) {
  * costs the .tex, and the reason is named -- the missing package, the unsafe
  * construct, or the engine error -- rather than reported as a generic failure.
  */
+// Which loadPreview() call owns the panel. A compile that finishes after a
+// newer one started -- a new conversion, or Reload preview -- is discarded
+// rather than painted over the newer result.
+let previewGeneration = 0;
+
 async function loadPreview(issues) {
+  const generation = ++previewGeneration;
+  const reload = el('preview-reload');
+  // One preview at a time from the button: pressing it again while a compile
+  // runs would only queue the same work (compile() joins identical requests,
+  // but there is no reason to offer the click).
+  if (reload) reload.disabled = true;
+  try {
+    await showPreview(issues, generation);
+  } finally {
+    if (reload && generation === previewGeneration) reload.disabled = false;
+  }
+}
+
+async function showPreview(issues, generation) {
   const pages = el('preview-pages');
   const loading = el('preview-loading');
   const error = el('preview-error');
   if (!pages) return;
+  const current = () => generation === previewGeneration;
 
   toggle(error, false);
   toggle(pages, false);
@@ -561,7 +586,17 @@ async function loadPreview(issues) {
   setText('preview-loading-text', 'Compiling your document…');
   pages.replaceChildren();
 
-  const result = await compile(state.tex);
+  const result = await compile(state.tex, {
+    // The first preview on a device downloads the LaTeX engine's files, about
+    // 10 MB. Said so, with progress, rather than "Compiling…" for a minute.
+    onProgress: ({ loaded, total }) => {
+      if (!current()) return;
+      const mb = (n) => (n / 1048576).toFixed(1);
+      setText('preview-loading-text',
+        `Downloading the LaTeX engine (first time only)… ${mb(loaded)} of ${mb(total)} MB`);
+    },
+  });
+  if (!current()) return;
 
   // A preview that only exists because a package was dropped is not the same
   // document as the .tex beside it, and saying so is the whole point of the
@@ -584,6 +619,7 @@ async function loadPreview(issues) {
     if (open) open.href = state.pdfUrl;
 
     await renderPdf(result.pdf, pages);
+    if (!current()) return;
     toggle(loading, false);
     toggle(pages, true);
     return;

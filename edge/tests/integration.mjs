@@ -390,6 +390,79 @@ heading('a PDF longer than the cap');
 }
 
 // ---------------------------------------------------------------------------
+heading('a preview that fails, and Reload preview');
+// ---------------------------------------------------------------------------
+// The .tex must survive a failed preview, and Reload must be one controlled
+// retry. Before, the button was live during a compile, and a second compile
+// on the busy engine made the error handler discard the engine the first one
+// was still running on. tests/compile.mjs covers the engine side.
+{
+  const BROKEN = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n'
+    + '\\[ { \\left[ \\begin{array}{c} x }}\\right.\\end{array} \\]\n\\end{document}\n';
+  const { context, page, errors } = await openApp({
+    convert: (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      headers: { 'x-contex-model': 'gemini-2.5-flash' },
+      body: JSON.stringify({ candidates: [{ content: { parts: [{
+        text: '```latex\n' + BROKEN + '```' }] } }] }),
+    }),
+  });
+  const compiles = [];
+  page.on('console', (m) => { if (m.text().startsWith('[compile]')) compiles.push(m.text()); });
+  await attach(page, 'maxresdefault.jpg', samplePng, 'image/png');
+  await page.click('#convert-submit');
+  await settled(page);
+
+  check('a preview that LaTeX rejects shows the failure',
+        await page.isVisible('#preview-error'));
+  check('names what pdfTeX objected to',
+        /LaTeX reported:[\s\S]*Extra \}/.test(await page.textContent('#preview-error-detail')),
+        await page.textContent('#preview-error-detail'));
+  check('and is classified as a LaTeX error, not a timeout',
+        compiles.some((c) => /^\[compile\] latex-error /.test(c)), compiles.join(' | '));
+  const download = await page.evaluate(() => {
+    const a = document.getElementById('download-tex');
+    return { href: a && a.href, name: a && a.download, visible: !!(a && a.offsetParent) };
+  });
+  check('the .tex is still offered for download after the preview failed',
+        download.visible && download.href.startsWith('blob:') && download.name.endsWith('.tex'),
+        JSON.stringify(download));
+  // The blob itself cannot be read back here -- connect-src rightly refuses
+  // blob: -- but it is made from the same state.tex the source panel shows.
+  check('and the source beside it is the one that failed, intact',
+        (await page.textContent('#convert-tex')).trim() === BROKEN.trim());
+  check('Copy LaTeX is still there too', await page.isVisible('[data-action="copy-tex"]'));
+
+  // Two clicks as fast as a person can manage: the first starts one compile
+  // and disables the button before the second can land.
+  const before = compiles.length;
+  const states = await page.evaluate(async () => {
+    const button = document.getElementById('preview-reload');
+    const seen = [];
+    new MutationObserver(() => seen.push(button.disabled))
+      .observe(button, { attributes: true, attributeFilter: ['disabled'] });
+    button.click();
+    const disabledAfterFirst = button.disabled;
+    button.click();
+    await new Promise((resolve) => {
+      const wait = () => (button.disabled ? setTimeout(wait, 50) : resolve());
+      wait();
+    });
+    return { disabledAfterFirst, seen };
+  });
+  check('Reload disables itself while it compiles',
+        states.disabledAfterFirst === true, JSON.stringify(states));
+  check('and comes back when the compile is done',
+        states.seen[states.seen.length - 1] === false, JSON.stringify(states));
+  check('a double click compiles once, not twice',
+        compiles.length - before === 1, compiles.slice(before).join(' | '));
+  check('the panel shows the result of that compile, not a stale one',
+        await page.isVisible('#preview-error') && !(await page.isVisible('#preview-loading')));
+  check('the page threw nothing', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
+// ---------------------------------------------------------------------------
 heading('history, across a conversion');
 // ---------------------------------------------------------------------------
 {

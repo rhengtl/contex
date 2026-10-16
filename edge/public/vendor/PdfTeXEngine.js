@@ -143,6 +143,7 @@ var PdfTeXEngine = /** @class */ (function () {
                                     var nice_report = new CompileResult();
                                     nice_report.status = status;
                                     nice_report.log = log;
+                                    nice_report.netfail = data['netfail'] | 0;
                                     if (result === 'ok') {
                                         var pdf = new Uint8Array(data['pdf']);
                                         nice_report.pdf = pdf;

@@ -227,12 +227,27 @@ model chain on a failed upload (no model saw the page), and the fallback notice
 says *"The page could not be sent to the AI conversion service"* rather than
 blaming the models.
 
-**The first compile is expensive.** The engine's format file is 10.36 MB and is
-served uncompressed — `.fmt` is an extension the edge does not recognise, so it
-gets no content type and no compression. Measured on a phone at 1.6 Mbps that
-is ~55 s for the first conversion; the `immutable` cache headers make it a
-once-only cost. The reasoning and the two rejected workarounds are recorded in
-`edge/public/_headers`.
+**The first preview on a device downloads ~10.6 MB.** The engine's format
+file is 10.36 MB and is served uncompressed — `.fmt` is an extension the edge
+does not recognise, so it gets no content type and no compression (the
+reasoning and two rejected workarounds are in `edge/public/_headers`). The
+`immutable` cache headers make it a once-per-device cost.
+
+That download used to happen *inside* the compile, one synchronous request at
+a time, so a phone under ~0.8 Mbps got "Compilation timed out after 120s" on a
+document TeX builds in half a second — and every Reload restarted the download.
+`edge/public/latex/compile.js` now downloads the files every document needs
+before compiling (with progress, a 30 s stall limit and a 10-minute cap, and it
+keeps what arrived for a retry), starts that download when a conversion begins,
+and hands the files to the engine through the `preload` command patched into
+it by `edge/tools/patch-engine.mjs`. The 120 s compile deadline now measures
+TeX alone. Measured on an emulated phone at 0.7 Mbps: the preview renders,
+TeX takes ~0.3 s, and the rest is the one-time download. `npm run test:compile`
+holds it there.
+
+Every compile logs one line to the browser console —
+`[compile] <outcome> phase=… total=…ms engine=…ms tex=…ms bytes=…` — with no
+document text in it, so a report from a slow device says where the time went.
 
 ## Rolling back
 

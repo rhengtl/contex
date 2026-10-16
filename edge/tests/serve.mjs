@@ -88,8 +88,16 @@ function headersFor(path) {
 
 export const requestLog = [];
 
+// A network failure on demand, for the compile suite: /__fail?match=cmti10&mode=503
+// makes every TeX-tree request whose path contains `match` fail -- 503, or
+// `drop` to cut the connection -- until /__fail is requested with no match.
+// Done here rather than with the browser's request routing because routing
+// does not reliably reach the engine worker's synchronous requests.
+let failRule = null;
+
 createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  const url = new URL(req.url, 'http://x');
+  const path = decodeURIComponent(url.pathname);
 
   if (path === '/__log') {
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -97,6 +105,18 @@ createServer(async (req, res) => {
     return;
   }
   if (path === '/__reset') { requestLog.length = 0; res.writeHead(200).end('ok'); return; }
+  if (path === '/__fail') {
+    const match = url.searchParams.get('match');
+    failRule = match ? { match, mode: url.searchParams.get('mode') || '503' } : null;
+    res.writeHead(200).end('ok');
+    return;
+  }
+  if (failRule && path.startsWith('/pdftex/') && path.includes(failRule.match)) {
+    requestLog.push({ path, status: failRule.mode === 'drop' ? 0 : 503, bytes: 0 });
+    if (failRule.mode === 'drop') { req.socket.destroy(); return; }
+    res.writeHead(503).end('unavailable');
+    return;
+  }
 
   // _redirects: PK bitmaps are never hosted.
   if (path.startsWith('/pdftex/pk/')) {
